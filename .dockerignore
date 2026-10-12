@@ -1,0 +1,16 @@
+.git
+.agents
+.codex
+.aws
+.planning
+.env
+.env.*
+node_modules
+dist
+docs
+tests
+artifacts
+.superdesign
+test-results
+.DS_Store
+*.log

@@ -1,0 +1,1674 @@
+openapi: 3.1.0
+info:
+  title: LAVR Storefront and CRM API
+  version: 0.1.0-design
+  description: >-
+    Проектируемый контракт рабочего backend. Статическое демо не реализует эти
+    маршруты, серверную авторизацию или интеграцию с 1С. Все деньги — целые копейки
+    RUB; сумма заказа включает только товары. Оплата в MVP отсутствует.
+    Vue — тонкий клиент FastAPI: данные сайта, категории, публикации и метаданные
+    медиа хранятся в PostgreSQL, файлы — на постоянном дисковом томе вне dist и
+    эфемерного слоя контейнера. Формы и API-кеши браузера временные; локальная
+    корзина может хранить только productId/quantity. Публичный режим не требует
+    входа. Manager работает с заказами; admin также управляет сайтом, каталогом,
+    медиа и интеграцией. Роль проверяется сервером для каждого запроса.
+    Все PATCH проверяют текущую version атомарно через If-Match; 412 требует
+    перечитать объект. POST создаёт новый объект с version=1, если версия у него
+    предусмотрена, и не перезаписывает существующий. Закрытые ответы — no-store.
+    Товар публично доступен только при isActive=true в учётной проекции
+    (не удалён и не помечен к удалению в 1С) AND category.isVisible=true.
+    isActive — внутреннее поле импорта, а не редактируемое поле сайта.
+    Один предикат действует для каталога, оформления, меню, CTA и публичных медиа.
+servers:
+  - url: /api
+    description: Будущий API на том же origin, что и витрина
+security: []
+tags:
+  - name: Catalog
+  - name: Orders
+  - name: ManagerSession
+  - name: ManagerOrders
+  - name: Integration
+  - name: Site
+  - name: AdminSite
+  - name: AdminCatalog
+  - name: Media
+paths:
+  /catalog:
+    get:
+      tags: [Catalog]
+      operationId: listProducts
+      summary: Публичный каталог без данных покупателей
+      description: >-
+        Поиск по name, sku и brand без учёта регистра. Фильтры объединяются AND.
+        inStock=true оставляет stock > 0; false не фильтрует. Сортировка стабильна:
+        при равном основном значении используется id. Устаревшую проекцию можно
+        просматривать, но при stale=true создание заказа заблокировано.
+        Сервер исключает товары с isActive=false, товары скрытых категорий и
+        приватные медиа; фильтр или прямая карточка не обходят эту проверку. Поиск также
+        учитывает websiteTitle. Показываемый заголовок — websiteTitle либо name.
+      parameters:
+        - name: q
+          in: query
+          schema: { type: string, maxLength: 120 }
+        - name: category
+          in: query
+          schema: { $ref: '#/components/schemas/Category' }
+        - name: brand
+          in: query
+          schema: { type: string, maxLength: 80 }
+        - name: inStock
+          in: query
+          schema: { type: boolean, default: false }
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [relevance, price_asc, price_desc]
+            default: relevance
+        - $ref: '#/components/parameters/Offset'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Проекция каталога; пустой результат также имеет статус 200
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CatalogPage' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /catalog/{productId}:
+    get:
+      tags: [Catalog]
+      operationId: getProduct
+      summary: Публичная карточка товара
+      description: Фильтрация видимости и медиа выполняется сервером, как в /catalog
+      parameters:
+        - $ref: '#/components/parameters/ProductId'
+      responses:
+        '200':
+          description: Товар и давность проекции
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [product, catalogUpdatedAt, stale]
+                properties:
+                  product: { $ref: '#/components/schemas/Product' }
+                  catalogUpdatedAt: { type: string, format: date-time }
+                  stale: { type: boolean }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /orders:
+    post:
+      tags: [Orders]
+      operationId: createOrder
+      summary: Сохранить заявку и событие outbox в одной транзакции
+      description: >-
+        Сервер берёт цены из своей проекции и сравнивает их с expectedUnitPriceKopecks,
+        затем повторно проверяет доступность при экспорте в 1С. Клиентские цены
+        используются для проверки согласия, но никогда для расчёта суммы.
+        Заказ принимает товар только при isActive=true AND category.isVisible=true,
+        даже если клиент ранее сохранил id неактивного/скрытого товара.
+        Публичного списка или поиска заказов нет. Действующий ключ с тем же
+        нормализованным телом возвращает исходную квитанцию, с другим — 409.
+        Параллельная ещё не завершённая операция возвращает 409
+        IDEMPOTENCY_IN_PROGRESS и Retry-After. Ответ не обещает резерв в 1С.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateOrderRequest' }
+      responses:
+        '201':
+          description: >-
+            Заявка сохранена: new/pending_sync. Квитанция не содержит контактов.
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrderReceipt' }
+        '200':
+          description: Повтор исходной квитанции без создания второго заказа
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrderReceipt' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /manager/session:
+    post:
+      tags: [ManagerSession]
+      operationId: loginManager
+      summary: Создать серверную сессию сотрудника
+      description: >-
+        Вход проверяет Origin и ограничивает частоту попыток. Ошибка не раскрывает,
+        существует ли логин. Пароль и тело запроса не логируются. Cookie:
+        HttpOnly; Secure; SameSite=Strict; Path=/api. Один cookie обслуживает
+        /manager и /admin; выход удаляет его с тем же Path. Ответы no-store.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [login, password]
+              properties:
+                login: { type: string, minLength: 1, maxLength: 120 }
+                password: { type: string, minLength: 1, maxLength: 256, writeOnly: true }
+      responses:
+        '200':
+          description: Сессия создана, csrfToken передаётся в закрытых изменяющих запросах
+          headers:
+            Set-Cookie: { schema: { type: string } }
+            Cache-Control: { schema: { type: string, const: no-store } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ManagerSession' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+    get:
+      tags: [ManagerSession]
+      operationId: getManagerSession
+      summary: Текущая сессия и роль сотрудника
+      security: [{ ManagerCookie: [] }]
+      x-required-roles: [manager, admin]
+      responses:
+        '200':
+          description: Действующая сессия, no-store
+          headers:
+            Cache-Control: { schema: { type: string, const: no-store } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ManagerSession' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    delete:
+      tags: [ManagerSession]
+      operationId: logoutManager
+      summary: Отозвать серверную сессию и удалить cookie
+      security: [{ ManagerCookie: [] }]
+      x-required-roles: [manager, admin]
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      responses:
+        '204':
+          description: Сессия отозвана
+          headers:
+            Set-Cookie: { schema: { type: string } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /manager/orders:
+    get:
+      tags: [ManagerOrders]
+      operationId: listManagerOrders
+      summary: Закрытый список заказов с контактными данными
+      description: >-
+        Роли manager/admin. Сортировка createdAt DESC, id DESC. Ответы no-store;
+        контакты из ответа и текст поиска не попадают в журналы запросов.
+      security: [{ ManagerCookie: [] }]
+      x-required-roles: [manager, admin]
+      parameters:
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/OrderStatus' }
+        - name: integrationStatus
+          in: query
+          schema: { $ref: '#/components/schemas/IntegrationStatus' }
+        - name: q
+          in: query
+          description: Номер заказа, имя или телефон; фильтр только закрытого API
+          schema: { type: string, maxLength: 120 }
+        - $ref: '#/components/parameters/Offset'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Заказы, доступные сотруднику
+          headers:
+            Cache-Control: { schema: { type: string, const: no-store } }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, total, offset, limit]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/ManagerOrder' }
+                  total: { type: integer, minimum: 0 }
+                  offset: { type: integer, minimum: 0 }
+                  limit: { type: integer, minimum: 1, maximum: 100 }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /manager/orders/{orderId}:
+    get:
+      tags: [ManagerOrders]
+      operationId: getManagerOrder
+      summary: Заказ для manager/admin
+      security: [{ ManagerCookie: [] }]
+      x-required-roles: [manager, admin]
+      parameters:
+        - $ref: '#/components/parameters/OrderId'
+      responses:
+        '200':
+          description: Заказ со снимком цены и текущей версией
+          headers:
+            ETag: { $ref: '#/components/headers/OrderETag' }
+            Cache-Control: { schema: { type: string, const: no-store } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ManagerOrder' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /manager/orders/{orderId}/status:
+    patch:
+      tags: [ManagerOrders]
+      operationId: changeOrderStatus
+      summary: Изменить бизнес-статус с проверкой текущей версии
+      description: >-
+        Роли manager/admin. Допустимы confirmed -> ready и ready -> completed.
+        new -> cancelled допустим только при canCancel=true: отправка ещё не
+        началась или однозначно отвергнута 1С. Экспортированную заявку отменяют
+        в 1С; результат импортируется в CRM. completed — терминальный статус.
+        confirmed устанавливается только по подтверждённому ответу 1С.
+        Строки заказа и цены этим endpoint не редактируются.
+      security: [{ ManagerCookie: [] }]
+      x-required-roles: [manager, admin]
+      parameters:
+        - $ref: '#/components/parameters/OrderId'
+        - $ref: '#/components/parameters/CsrfToken'
+        - name: If-Match
+          in: header
+          required: true
+          description: ETag из GET заказа; отсутствующий или неверный формат — 400
+          schema:
+            type: string
+            pattern: '^"[1-9][0-9]*"$'
+            examples: ['"3"']
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [status]
+              properties:
+                status: { type: string, enum: [ready, completed, cancelled] }
+      responses:
+        '200':
+          description: Статус изменён, версия увеличена, запись аудита сохранена
+          headers:
+            ETag: { $ref: '#/components/headers/OrderETag' }
+            Cache-Control: { schema: { type: string, const: no-store } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ManagerOrder' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '412':
+          description: VERSION_CONFLICT — заказ изменился, нужно перечитать его
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /manager/integration/health:
+    get:
+      tags: [Integration]
+      operationId: getIntegrationHealth
+      summary: Состояние обмена, только admin
+      description: Проверяется роль admin; не возвращает URL, пароли, токены и необработанный ответ 1С
+      security: [{ ManagerCookie: [] }]
+      x-required-roles: [admin]
+      responses:
+        '200':
+          description: Состояние обмена; недоступность 1С отражается в теле ответа
+          headers:
+            Cache-Control: { schema: { type: string, const: no-store } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SyncHealth' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /manager/integration/sync:
+    post:
+      tags: [Integration]
+      operationId: enqueueCatalogSync
+      summary: Поставить импорт в очередь, только admin
+      description: >-
+        Проверяются роль, Origin и CSRF. Повтор с прежним Idempotency-Key
+        возвращает тот же jobId. Уже запущенный цикл не запускает параллельный
+        импорт; ответ указывает существующую задачу.
+      security: [{ ManagerCookie: [] }]
+      x-required-roles: [admin]
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '202':
+          description: Задача принята; 202 не означает успешный обмен с 1С
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SyncJob' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /manager/integration/orders/{orderId}/retry:
+    post:
+      tags: [Integration]
+      operationId: retryOrderExport
+      summary: Поставить ошибочный экспорт на повтор, только admin
+      description: >-
+        Не создаёт новое событие/внешнюю ссылку заказа. Если результат предыдущей
+        отправки неизвестен, worker сначала выполняет сверку с 1С по Order.id.
+        Повтор того же ключа возвращает прежнюю задачу. exported, cancelled и
+        completed не допускают повторного создания документа; конфликт — 409.
+      security: [{ ManagerCookie: [] }]
+      x-required-roles: [admin]
+      parameters:
+        - $ref: '#/components/parameters/OrderId'
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '202':
+          description: Повтор/сверка поставлены в очередь
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SyncJob' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /site:
+    get:
+      tags: [Site]
+      operationId: getPublicSite
+      summary: Опубликованные настройки и материалы фиксированного шаблона
+      description: >-
+        Вход не требуется. Backend возвращает только status=published с
+        startsAt=null или startsAt <= now и endsAt=null или now < endsAt.
+        Время — серверное UTC; граница endsAt исключается. Публикации сортируются
+        position ASC, id ASC; draft/archived/вне окна отсутствуют в ответе.
+        Публикации со скрытой/недоступной целью также исключаются.
+        Меню исключает isVisible=false и ссылки на скрытые/недоступные объекты.
+        Для целей товара обязательны isActive=true AND category.isVisible=true.
+        Если цель hero недоступна, hero.target=null и кнопка не показывается;
+        заголовок, описание и фон остаются видимыми.
+        Медиа возвращаются только для видимых объектов. Нет контактов покупателей,
+        сессий, внутренних версий или секретов 1С. HTML и произвольные URL не поддерживаются.
+      responses:
+        '200':
+          description: Текущая публичная проекция сайта
+          headers:
+            Cache-Control: { schema: { type: string, const: no-store } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PublicSite' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /categories:
+    get:
+      tags: [Catalog]
+      operationId: listPublicCategories
+      summary: Видимые категории витрины без входа
+      description: >-
+        Сервер оставляет только isVisible=true и сортирует position ASC, id ASC.
+        showInMenu определяет присутствие в меню каталога, а не доступность
+        категории через поиск. В /site/menu находятся отдельные настроенные ссылки;
+        они не заменяют навигацию из categories.showInMenu. Повтор ссылки на
+        категорию в двух этих местах допустим как намеренная настройка.
+      responses:
+        '200':
+          description: Категории для фильтров и меню каталога
+          headers:
+            Cache-Control: { schema: { type: string, const: no-store } }
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/PublicCategory' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /admin/site:
+    get:
+      tags: [AdminSite]
+      operationId: getAdminSite
+      summary: Настройки фиксированного шаблона, только admin
+      description: Роль admin проверяется сервером; объект включает текущую version
+      security: [{ ManagerCookie: [] }]
+      x-required-roles: [admin]
+      responses:
+        '200':
+          description: Настройки и версия для следующего изменения
+          headers:
+            ETag: { $ref: '#/components/headers/ResourceETag' }
+            Cache-Control: { schema: { type: string, const: no-store } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SiteConfiguration' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    patch:
+      tags: [AdminSite]
+      operationId: updateSite
+      summary: Изменить тексты, баннер и меню, только admin
+      description: >-
+        Проверяются роль admin, Origin, CSRF и If-Match. Отсутствующие секции
+        сохраняются; переданная hero/settings/menu заменяется целиком. Изменение
+        сразу обновляет публичную проекцию. Сервер проверяет ссылки на готовые
+        медиа и внутренние цели; конструктор HTML-страниц отсутствует.
+      security: [{ ManagerCookie: [] }]
+      x-required-roles: [admin]
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SitePatch' }
+      responses:
+        '200':
+          description: Настройки сохранены, версия увеличена
+          headers:
+            ETag: { $ref: '#/components/headers/ResourceETag' }
+            Cache-Control: { schema: { type: string, const: no-store } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SiteConfiguration' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '412': { $ref: '#/components/responses/VersionConflict' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /admin/publications:
+    get:
+      tags: [AdminSite]
+      operationId: listAdminPublications
+      summary: Публикации всех состояний, только admin
+      description: Роль admin проверяется сервером; сортировка position ASC, id ASC
+      security: [{ ManagerCookie: [] }]
+      x-required-roles: [admin]
+      parameters:
+        - name: kind
+          in: query
+          schema: { type: string, enum: [offer, announcement, hot] }
+        - name: status
+          in: query
+          schema: { type: string, enum: [draft, published, archived] }
+        - $ref: '#/components/parameters/Offset'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Публикации, включая черновики и архив
+          headers:
+            Cache-Control: { schema: { type: string, const: no-store } }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, total, offset, limit]
+                properties:
+                  items: { type: array, items: { $ref: '#/components/schemas/Publication' } }
+                  total: { type: integer, minimum: 0 }
+                  offset: { type: integer, minimum: 0 }
+                  limit: { type: integer, minimum: 1, maximum: 100 }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+    post:
+      tags: [AdminSite]
+      operationId: createPublication
+      summary: Создать акцию, объявление или горячее предложение, только admin
+      description: >-
+        Проверяются роль admin, Origin и CSRF. По умолчанию status=draft,
+        startsAt/endsAt=null; version=1. Сервер проверяет существование готовых
+        mediaId и целей. При публикации цели должны быть публично доступны;
+        для товара это isActive=true AND category.isVisible=true.
+        При двух непустых границах startsAt < endsAt; проверка выполняется также
+        над итоговым объектом после PATCH. Тексты — обычный текст, без HTML.
+      security: [{ ManagerCookie: [] }]
+      x-required-roles: [admin]
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/PublicationInput'
+                - required: [kind, title, description, imageIds, target, buttonText, position]
+      responses:
+        '201':
+          description: Публикация создана
+          headers:
+            ETag: { $ref: '#/components/headers/ResourceETag' }
+            Cache-Control: { schema: { type: string, const: no-store } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Publication' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /admin/publications/{publicationId}:
+    get:
+      tags: [AdminSite]
+      operationId: getAdminPublication
+      summary: Публикация и версия, только admin
+      description: Роль admin проверяется сервером, включая чтение черновиков и архива
+      security: [{ ManagerCookie: [] }]
+      x-required-roles: [admin]
+      parameters:
+        - $ref: '#/components/parameters/PublicationId'
+      responses:
+        '200':
+          description: Публикация для редактирования
+          headers:
+            ETag: { $ref: '#/components/headers/ResourceETag' }
+            Cache-Control: { schema: { type: string, const: no-store } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Publication' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [AdminSite]
+      operationId: updatePublication
+      summary: Изменить материал и его публикацию, только admin
+      description: >-
+        Проверяются роль admin, Origin, CSRF и If-Match. Отсутствующие поля
+        сохраняются; imageIds заменяется целиком; null сбрасывает временную границу.
+        Проверки содержимого и окна действуют над итоговым объектом, как при POST.
+        Архивирование или скрытие цели прекращает публичную выдачу и доступ к
+        файлам, если больше нет других текущих публичных ссылок на эти медиа.
+      security: [{ ManagerCookie: [] }]
+      x-required-roles: [admin]
+      parameters:
+        - $ref: '#/components/parameters/PublicationId'
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PublicationInput' }
+      responses:
+        '200':
+          description: Публикация сохранена, версия увеличена
+          headers:
+            ETag: { $ref: '#/components/headers/ResourceETag' }
+            Cache-Control: { schema: { type: string, const: no-store } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Publication' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '412': { $ref: '#/components/responses/VersionConflict' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /admin/categories:
+    get:
+      tags: [AdminCatalog]
+      operationId: listAdminCategories
+      summary: Категории, включая скрытые, только admin
+      description: >-
+        Роль admin проверяется сервером. Сортировка position ASC, id ASC.
+        version каждого элемента позволяет собрать If-Match в двойных кавычках.
+      security: [{ ManagerCookie: [] }]
+      x-required-roles: [admin]
+      parameters:
+        - $ref: '#/components/parameters/Offset'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Категории для управления витриной
+          headers:
+            Cache-Control: { schema: { type: string, const: no-store } }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, total, offset, limit]
+                properties:
+                  items: { type: array, items: { $ref: '#/components/schemas/CatalogCategory' } }
+                  total: { type: integer, minimum: 0 }
+                  offset: { type: integer, minimum: 0 }
+                  limit: { type: integer, minimum: 1, maximum: 100 }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+    post:
+      tags: [AdminCatalog]
+      operationId: createCategory
+      summary: Создать категорию витрины, только admin
+      description: >-
+        Проверяются роль admin, Origin и CSRF. Название нормализуется через trim
+        и свёртку пробелов, уникально без учёта регистра; совпадение — 409.
+        Не создаёт группу или номенклатуру в 1С. Сервер выдаёт id и version=1.
+      security: [{ ManagerCookie: [] }]
+      x-required-roles: [admin]
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/CategoryInput'
+                - required: [name, position, isVisible, showInMenu]
+      responses:
+        '201':
+          description: Категория создана
+          headers:
+            ETag: { $ref: '#/components/headers/ResourceETag' }
+            Cache-Control: { schema: { type: string, const: no-store } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CatalogCategory' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /admin/categories/{categoryId}:
+    patch:
+      tags: [AdminCatalog]
+      operationId: updateCategory
+      summary: Изменить название, порядок и видимость, только admin
+      description: >-
+        Проверяются роль admin, Origin, CSRF и If-Match. Отсутствующие поля
+        сохраняются. Уникальность названия проверяется как при POST. isVisible=false
+        скрывает категорию и её товары из публичного API и оформления; showInMenu
+        влияет только на меню категорий. Включение категории не открывает товары
+        с isActive=false. Учётные данные 1С не изменяются.
+      security: [{ ManagerCookie: [] }]
+      x-required-roles: [admin]
+      parameters:
+        - $ref: '#/components/parameters/CategoryId'
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CategoryInput' }
+      responses:
+        '200':
+          description: Категория сохранена, версия увеличена
+          headers:
+            ETag: { $ref: '#/components/headers/ResourceETag' }
+            Cache-Control: { schema: { type: string, const: no-store } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CatalogCategory' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '412': { $ref: '#/components/responses/VersionConflict' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /admin/products:
+    get:
+      tags: [AdminCatalog]
+      operationId: listAdminProducts
+      summary: Поиск всей номенклатуры, включая скрытые категории, только admin
+      description: >-
+        Роль admin проверяется сервером. Поиск q по sku, учётному name, brand,
+        внутреннему id и externalId без учёта регистра; фильтры объединяются AND.
+        Скрытые категории и их товары остаются доступными в этом закрытом списке,
+        чтобы новый сеанс CRM мог найти товар и открыть его presentation по id.
+        Неактивные товары проекции также включаются. isVisible вычисляется как
+        isActive=true AND category.isVisible=true. Сортировка name ASC,
+        id ASC. Ответ не содержит путей файлов или учётных данных 1С.
+      security: [{ ManagerCookie: [] }]
+      x-required-roles: [admin]
+      parameters:
+        - name: q
+          in: query
+          schema: { type: string, maxLength: 120 }
+        - name: category
+          in: query
+          schema: { $ref: '#/components/schemas/Category' }
+        - $ref: '#/components/parameters/Offset'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Номенклатура для таблицы CRM; пустой результат также имеет статус 200
+          headers:
+            Cache-Control: { schema: { type: string, const: no-store } }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, total, offset, limit]
+                properties:
+                  items: { type: array, items: { $ref: '#/components/schemas/AdminProductSummary' } }
+                  total: { type: integer, minimum: 0 }
+                  offset: { type: integer, minimum: 0 }
+                  limit: { type: integer, minimum: 1, maximum: 100 }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /admin/products/{productId}/presentation:
+    get:
+      tags: [AdminCatalog]
+      operationId: getProductPresentation
+      summary: Товар и версия оформления, только admin
+      description: >-
+        Роль admin проверяется сервером; доступны неактивные товары проекции и
+        товары скрытых категорий.
+        Учётные поля product только для чтения; presentation — отдельные
+        серверные данные витрины, которые импорт из 1С не перезаписывает.
+      security: [{ ManagerCookie: [] }]
+      x-required-roles: [admin]
+      parameters:
+        - $ref: '#/components/parameters/ProductId'
+      responses:
+        '200':
+          description: Учётная проекция и редактируемое оформление
+          headers:
+            ETag: { $ref: '#/components/headers/ResourceETag' }
+            Cache-Control: { schema: { type: string, const: no-store } }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [product, presentation]
+                properties:
+                  product: { $ref: '#/components/schemas/Product' }
+                  presentation: { $ref: '#/components/schemas/ProductPresentation' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [AdminCatalog]
+      operationId: updateProductPresentation
+      summary: Назначить категорию и оформление товара, только admin
+      description: >-
+        Проверяются роль admin, Origin, CSRF и If-Match версии presentation.
+        Отсутствующие поля сохраняются; null удаляет текстовую замену; imageIds
+        заменяется целиком, пустой список возвращает доверенное статическое
+        изображение либо пустую строку. categoryId и готовые mediaId должны существовать.
+        sku, учётное name, brand, externalId, priceKopecks и stock не принимаются
+        и не отправляются в 1С. Создание номенклатуры ждёт отдельного контракта адаптера.
+      security: [{ ManagerCookie: [] }]
+      x-required-roles: [admin]
+      parameters:
+        - $ref: '#/components/parameters/ProductId'
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProductPresentationInput' }
+      responses:
+        '200':
+          description: Оформление сохранено, версия увеличена
+          headers:
+            ETag: { $ref: '#/components/headers/ResourceETag' }
+            Cache-Control: { schema: { type: string, const: no-store } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProductPresentation' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '412': { $ref: '#/components/responses/VersionConflict' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /admin/media:
+    get:
+      tags: [Media]
+      operationId: listAdminMedia
+      summary: Библиотека готовых медиа, только admin
+      description: Роль admin проверяется сервером; сортировка createdAt DESC, id DESC
+      security: [{ ManagerCookie: [] }]
+      x-required-roles: [admin]
+      parameters:
+        - $ref: '#/components/parameters/Offset'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Метаданные и закрытые пути предпросмотра
+          headers:
+            Cache-Control: { schema: { type: string, const: no-store } }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, total, offset, limit]
+                properties:
+                  items: { type: array, items: { $ref: '#/components/schemas/Media' } }
+                  total: { type: integer, minimum: 0 }
+                  offset: { type: integer, minimum: 0 }
+                  limit: { type: integer, minimum: 1, maximum: 100 }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+    post:
+      tags: [Media]
+      operationId: uploadMedia
+      summary: Загрузить JPG, PNG или WebP до 5 MiB, только admin
+      description: >-
+        Проверяются роль admin, Origin и CSRF. Лимит файла 5242880 байт,
+        ширина/высота не более 4096. Формат и размеры подтверждаются декодированием;
+        SVG, неподдерживаемый/повреждённый файл — 415, превышение байтов — 413,
+        размеров/некорректный alt — 422. Имя и Content-Type клиента не доверенные:
+        сервер создаёт UUID-имя с проверенным расширением. Файл сохраняется на
+        постоянный том; только после успеха метаданные в PostgreSQL получают
+        state=ready. При неудаче записи метаданных файл убирается. Новый файл
+        приватный до появления текущей публичной ссылки; статическая раздача
+        дискового каталога uploads запрещена. Файл после загрузки неизменяемый.
+      security: [{ ManagerCookie: [] }]
+      x-required-roles: [admin]
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [file, alt]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: Декодируемое JPG/PNG/WebP, от 1 до 5242880 байт, до 4096×4096
+                alt:
+                  type: string
+                  maxLength: 240
+                  description: Текст изображения; пустая строка только для декоративного изображения
+            encoding:
+              file:
+                contentType: image/jpeg, image/png, image/webp
+      responses:
+        '201':
+          description: Готовый файл и его метаданные
+          headers:
+            Cache-Control: { schema: { type: string, const: no-store } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Media' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '413': { $ref: '#/components/responses/PayloadTooLarge' }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /media/{mediaId}:
+    get:
+      tags: [Media]
+      operationId: getPublicMediaFile
+      summary: Файл только с текущей публичной ссылкой, без входа
+      description: >-
+        Каждый запрос проверяет готовность и ссылку из текущего публичного сайта,
+        публикации в окне с доступной целью или товара с isActive=true AND
+        category.isVisible=true. id сам по себе не даёт
+        доступа: неопубликованный/архивный/скрытый файл без другой публичной ссылки
+        возвращает 404. Проверка и no-store действуют также при прямом URL.
+      parameters:
+        - $ref: '#/components/parameters/MediaId'
+      responses:
+        '200': { $ref: '#/components/responses/MediaImage' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /admin/media/{mediaId}/file:
+    get:
+      tags: [Media]
+      operationId: getAdminMediaFile
+      summary: Закрытый предпросмотр готового файла, только admin
+      description: Роль admin проверяется сервером, в том числе для неопубликованного медиа
+      security: [{ ManagerCookie: [] }]
+      x-required-roles: [admin]
+      parameters:
+        - $ref: '#/components/parameters/MediaId'
+      responses:
+        '200': { $ref: '#/components/responses/MediaImage' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+components:
+  securitySchemes:
+    ManagerCookie:
+      type: apiKey
+      in: cookie
+      name: lavr_session
+      description: >-
+        Серверная сессия сотрудника. Роль проверяется backend на каждом запросе;
+        наличие вкладки CRM в frontend не даёт доступа. Cookie Path=/api;
+        /admin/* и /manager/integration/* требуют admin, /manager/orders/* —
+        manager/admin. Публичные запросы никогда не расширяют доступ по cookie.
+  parameters:
+    ProductId:
+      name: productId
+      in: path
+      required: true
+      schema: { $ref: '#/components/schemas/Id' }
+    OrderId:
+      name: orderId
+      in: path
+      required: true
+      schema: { $ref: '#/components/schemas/Id' }
+    CategoryId:
+      name: categoryId
+      in: path
+      required: true
+      schema: { $ref: '#/components/schemas/Id' }
+    PublicationId:
+      name: publicationId
+      in: path
+      required: true
+      schema: { $ref: '#/components/schemas/Id' }
+    MediaId:
+      name: mediaId
+      in: path
+      required: true
+      schema: { $ref: '#/components/schemas/Id' }
+    Offset:
+      name: offset
+      in: query
+      schema: { type: integer, minimum: 0, default: 0 }
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 24 }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: >-
+        UUID одной логической операции. Область ключа: HTTP-метод, фактический
+        путь с orderId и сотрудник для административных команд. Сетевой повтор
+        сохраняет ключ и тело. Ключ оформления хранится до удаления заказа;
+        ключи административного импорта/повтора — не менее 24 часов. Повтор
+        другой задачи не возвращает задачу другого заказа. Неверный/отсутствующий ключ — 400.
+      schema: { type: string, format: uuid }
+    CsrfToken:
+      name: X-CSRF-Token
+      in: header
+      required: true
+      description: Токен текущей серверной сессии; дополнительно проверяется Origin
+      schema: { type: string, minLength: 32, maxLength: 256 }
+    IfMatch:
+      name: If-Match
+      in: header
+      required: true
+      description: >-
+        ETag редактируемого ресурса либо его version в двойных кавычках.
+        Отсутствующий/неверный формат — 400; устаревшая версия — 412.
+      schema:
+        type: string
+        pattern: '^"[1-9][0-9]*"$'
+        examples: ['"3"']
+  headers:
+    ResourceETag:
+      description: Текущая version ресурса в двойных кавычках для следующего If-Match
+      schema:
+        type: string
+        pattern: '^"[1-9][0-9]*"$'
+        examples: ['"3"']
+    OrderETag:
+      description: Версия заказа в двойных кавычках для следующего If-Match
+      schema:
+        type: string
+        pattern: '^"[1-9][0-9]*"$'
+        examples: ['"3"']
+  schemas:
+    Id:
+      type: string
+      minLength: 1
+      maxLength: 128
+      description: Стабильный непрозрачный идентификатор, не артикул/номер заказа
+    MoneyKopecks:
+      type: integer
+      minimum: 0
+      maximum: 9007199254740991
+      description: Целые копейки RUB в безопасном диапазоне целых JavaScript
+    Category:
+      $ref: '#/components/schemas/Id'
+      description: Идентификатор категории витрины, которой управляет CRM
+      examples: [filters]
+    Product:
+      type: object
+      additionalProperties: false
+      required: [id, externalId, sku, brand, name, category, priceKopecks, stock, image, deliveryDays]
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        externalId:
+          type: string
+          readOnly: true
+          minLength: 1
+          maxLength: 128
+          description: Стабильная внешняя ссылка, а не учётные данные или URL 1С
+        sku: { type: string, minLength: 1, maxLength: 80, readOnly: true }
+        brand: { type: string, minLength: 1, maxLength: 80, readOnly: true }
+        name:
+          type: string
+          minLength: 1
+          maxLength: 240
+          readOnly: true
+          description: Учётное имя из 1С; для витрины websiteTitle может его заменить
+        category:
+          $ref: '#/components/schemas/Category'
+          description: Идентификатор категории из серверного оформления товара
+        priceKopecks:
+          $ref: '#/components/schemas/MoneyKopecks'
+          readOnly: true
+        stock:
+          type: integer
+          readOnly: true
+          minimum: 0
+          maximum: 2147483647
+          description: Доступность проекции с учётом ещё не учтённых в 1С локальных резервов
+        image:
+          type: string
+          format: uri-reference
+          pattern: '^(|/api/media/[A-Za-z0-9_-]+|/images/(hero-car|motor-oil|oil-filter|brake-disc|spark-plug|air-filter)\.jpg)$'
+          description: >-
+            Первый текущий PublicMedia.path из images, один из шести доверенных
+            статических файлов или пустая строка для товара без фото. Серверный
+            mapper игнорирует произвольные пути/URL изображения из 1С, проверяет
+            текущую публичную ссылку медиа и не скачивает внешние изображения.
+            Закрытый предпросмотр использует /admin/media/{mediaId}/file.
+        websiteTitle: { type: [string, 'null'], minLength: 1, maxLength: 240 }
+        websiteDescription: { type: [string, 'null'], maxLength: 4000 }
+        images:
+          type: array
+          maxItems: 8
+          items: { $ref: '#/components/schemas/PublicMedia' }
+        deliveryDays:
+          type: integer
+          minimum: 0
+          maximum: 365
+          description: Ориентир срока; итоговые условия подтверждает менеджер
+    CatalogPage:
+      type: object
+      additionalProperties: false
+      required: [items, total, offset, limit, catalogUpdatedAt, stale]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Product' }
+        total: { type: integer, minimum: 0 }
+        offset: { type: integer, minimum: 0 }
+        limit: { type: integer, minimum: 1, maximum: 100 }
+        catalogUpdatedAt: { type: string, format: date-time }
+        stale: { type: boolean }
+    InternalTarget:
+      description: >-
+        Внутренняя цель; backend проверяет существование и публичную доступность.
+        Для категории нужна isVisible=true, для товара — isActive=true AND
+        category.isVisible=true. Каталог и фиксированные разделы доступны публично.
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [type]
+          properties:
+            type: { const: catalog }
+        - type: object
+          additionalProperties: false
+          required: [type, categoryId]
+          properties:
+            type: { const: category }
+            categoryId: { $ref: '#/components/schemas/Id' }
+        - type: object
+          additionalProperties: false
+          required: [type, productId]
+          properties:
+            type: { const: product }
+            productId: { $ref: '#/components/schemas/Id' }
+        - type: object
+          additionalProperties: false
+          required: [type, section]
+          properties:
+            type: { const: section }
+            section: { type: string, enum: [offers, announcements, hot] }
+    MenuItem:
+      type: object
+      additionalProperties: false
+      required: [label, target, position, isVisible]
+      properties:
+        label: { type: string, minLength: 1, maxLength: 80 }
+        target: { $ref: '#/components/schemas/InternalTarget' }
+        position: { type: integer, minimum: 0, maximum: 1000000 }
+        isVisible: { type: boolean }
+    SiteSettings:
+      type: object
+      additionalProperties: false
+      required: [storeName, phone, address, hours, categoriesTitle, promotionsTitle, catalogTitle]
+      description: Публичные реквизиты и заголовки фиксированных разделов; все поля — обычный текст, не HTML
+      properties:
+        storeName: { type: string, minLength: 1, maxLength: 120 }
+        phone: { type: string, minLength: 10, maxLength: 30 }
+        address: { type: string, minLength: 1, maxLength: 500 }
+        hours: { type: string, minLength: 1, maxLength: 240 }
+        categoriesTitle: { type: string, minLength: 1, maxLength: 120, examples: ['Что нужно вашему авто?'] }
+        promotionsTitle: { type: string, minLength: 1, maxLength: 120, examples: ['Акции и объявления'] }
+        catalogTitle: { type: string, minLength: 1, maxLength: 120, examples: ['Каталог автозапчастей'] }
+    SiteHero:
+      type: object
+      additionalProperties: false
+      required: [title, description, imageId, buttonText, target]
+      properties:
+        title: { type: string, minLength: 1, maxLength: 240 }
+        description: { type: string, maxLength: 2000 }
+        imageId:
+          oneOf:
+            - $ref: '#/components/schemas/Id'
+            - type: 'null'
+          description: Готовое медиа; null убирает только фоновое изображение, сохраняя тексты и CTA
+        buttonText: { type: string, minLength: 1, maxLength: 80 }
+        target: { $ref: '#/components/schemas/InternalTarget' }
+    SitePatch:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        hero: { $ref: '#/components/schemas/SiteHero' }
+        settings: { $ref: '#/components/schemas/SiteSettings' }
+        menu:
+          type: array
+          maxItems: 12
+          items: { $ref: '#/components/schemas/MenuItem' }
+          description: Порядок position ASC; при равенстве сохраняется порядок элементов списка
+    SiteConfiguration:
+      type: object
+      additionalProperties: false
+      required: [hero, settings, menu, version]
+      properties:
+        hero: { $ref: '#/components/schemas/SiteHero' }
+        settings: { $ref: '#/components/schemas/SiteSettings' }
+        menu: { type: array, maxItems: 12, items: { $ref: '#/components/schemas/MenuItem' } }
+        version: { type: integer, minimum: 1 }
+    PublicSite:
+      type: object
+      additionalProperties: false
+      required: [hero, settings, menu, publications]
+      properties:
+        hero:
+          type: object
+          additionalProperties: false
+          required: [title, description, image, buttonText, target]
+          properties:
+            title: { type: string, minLength: 1, maxLength: 240 }
+            description: { type: string, maxLength: 2000 }
+            buttonText: { type: string, minLength: 1, maxLength: 80 }
+            target:
+              oneOf:
+                - $ref: '#/components/schemas/InternalTarget'
+                - type: 'null'
+              description: null скрывает CTA, если внутренняя цель стала недоступна
+            image:
+              oneOf:
+                - $ref: '#/components/schemas/PublicMedia'
+                - type: 'null'
+        settings: { $ref: '#/components/schemas/SiteSettings' }
+        menu:
+          type: array
+          maxItems: 12
+          items:
+            allOf:
+              - $ref: '#/components/schemas/MenuItem'
+              - properties:
+                  isVisible: { const: true }
+        publications:
+          type: array
+          items: { $ref: '#/components/schemas/PublicPublication' }
+    PublicationInput:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        kind: { type: string, enum: [offer, announcement, hot] }
+        title: { type: string, minLength: 1, maxLength: 240 }
+        description: { type: string, maxLength: 4000 }
+        imageIds:
+          type: array
+          maxItems: 8
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/Id' }
+        target: { $ref: '#/components/schemas/InternalTarget' }
+        buttonText: { type: string, minLength: 1, maxLength: 80 }
+        position: { type: integer, minimum: 0, maximum: 1000000 }
+        status: { type: string, enum: [draft, published, archived], default: draft }
+        startsAt: { type: [string, 'null'], format: date-time }
+        endsAt: { type: [string, 'null'], format: date-time }
+    Publication:
+      type: object
+      additionalProperties: false
+      required: [id, kind, title, description, imageIds, target, buttonText, position, status, startsAt, endsAt, version]
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        kind: { type: string, enum: [offer, announcement, hot] }
+        title: { type: string, minLength: 1, maxLength: 240 }
+        description: { type: string, maxLength: 4000 }
+        imageIds: { type: array, maxItems: 8, uniqueItems: true, items: { $ref: '#/components/schemas/Id' } }
+        target: { $ref: '#/components/schemas/InternalTarget' }
+        buttonText: { type: string, minLength: 1, maxLength: 80 }
+        position: { type: integer, minimum: 0, maximum: 1000000 }
+        status: { type: string, enum: [draft, published, archived] }
+        startsAt: { type: [string, 'null'], format: date-time }
+        endsAt: { type: [string, 'null'], format: date-time }
+        version: { type: integer, minimum: 1 }
+    PublicPublication:
+      type: object
+      additionalProperties: false
+      required: [id, kind, title, description, images, target, buttonText, position]
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        kind: { type: string, enum: [offer, announcement, hot] }
+        title: { type: string, minLength: 1, maxLength: 240 }
+        description: { type: string, maxLength: 4000 }
+        images: { type: array, maxItems: 8, items: { $ref: '#/components/schemas/PublicMedia' } }
+        target: { $ref: '#/components/schemas/InternalTarget' }
+        buttonText: { type: string, minLength: 1, maxLength: 80 }
+        position: { type: integer, minimum: 0, maximum: 1000000 }
+    CategoryInput:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        name: { type: string, minLength: 1, maxLength: 80 }
+        position: { type: integer, minimum: 0, maximum: 1000000 }
+        isVisible: { type: boolean }
+        showInMenu: { type: boolean }
+    CatalogCategory:
+      type: object
+      additionalProperties: false
+      required: [id, name, position, isVisible, showInMenu, version]
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        name: { type: string, minLength: 1, maxLength: 80 }
+        position: { type: integer, minimum: 0, maximum: 1000000 }
+        isVisible: { type: boolean }
+        showInMenu: { type: boolean }
+        version: { type: integer, minimum: 1 }
+    PublicCategory:
+      type: object
+      additionalProperties: false
+      required: [id, name, position, showInMenu]
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        name: { type: string, minLength: 1, maxLength: 80 }
+        position: { type: integer, minimum: 0, maximum: 1000000 }
+        showInMenu: { type: boolean }
+    AdminProductSummary:
+      type: object
+      additionalProperties: false
+      required: [id, sku, brand, name, category, priceKopecks, stock, isVisible]
+      description: Учётные поля только для чтения; оформление меняется через отдельный presentation endpoint
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        sku: { type: string, minLength: 1, maxLength: 80, readOnly: true }
+        brand: { type: string, minLength: 1, maxLength: 80, readOnly: true }
+        name: { type: string, minLength: 1, maxLength: 240, readOnly: true }
+        category: { $ref: '#/components/schemas/Category' }
+        priceKopecks: { $ref: '#/components/schemas/MoneyKopecks', readOnly: true }
+        stock: { type: integer, minimum: 0, maximum: 2147483647, readOnly: true }
+        isVisible:
+          type: boolean
+          readOnly: true
+          description: Текущая видимость товара, вычисленная как isActive=true AND category.isVisible=true
+    ProductPresentationInput:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        categoryId: { $ref: '#/components/schemas/Id' }
+        websiteTitle: { type: [string, 'null'], minLength: 1, maxLength: 240 }
+        websiteDescription: { type: [string, 'null'], maxLength: 4000 }
+        imageIds:
+          type: array
+          maxItems: 8
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/Id' }
+    ProductPresentation:
+      type: object
+      additionalProperties: false
+      required: [productId, categoryId, websiteTitle, websiteDescription, imageIds, version]
+      properties:
+        productId: { $ref: '#/components/schemas/Id' }
+        categoryId: { $ref: '#/components/schemas/Id' }
+        websiteTitle: { type: [string, 'null'], minLength: 1, maxLength: 240 }
+        websiteDescription: { type: [string, 'null'], maxLength: 4000 }
+        imageIds: { type: array, maxItems: 8, uniqueItems: true, items: { $ref: '#/components/schemas/Id' } }
+        version: { type: integer, minimum: 1 }
+    PublicMedia:
+      type: object
+      additionalProperties: false
+      required: [id, path, alt, width, height]
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        path:
+          type: string
+          pattern: '^/api/media/[A-Za-z0-9_-]+$'
+          description: Только маршрут с серверной проверкой текущей публичной ссылки
+        alt: { type: string, maxLength: 240 }
+        width: { type: integer, minimum: 1, maximum: 4096 }
+        height: { type: integer, minimum: 1, maximum: 4096 }
+    Media:
+      type: object
+      additionalProperties: false
+      required: [id, path, alt, width, height, mimeType, sizeBytes, state, createdAt]
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        path:
+          type: string
+          pattern: '^/api/admin/media/[A-Za-z0-9_-]+/file$'
+          description: Закрытый путь предпросмотра; путь файла на дисковом томе не раскрывается
+        alt: { type: string, maxLength: 240 }
+        width: { type: integer, minimum: 1, maximum: 4096 }
+        height: { type: integer, minimum: 1, maximum: 4096 }
+        mimeType: { type: string, enum: [image/jpeg, image/png, image/webp] }
+        sizeBytes: { type: integer, minimum: 1, maximum: 5242880 }
+        state: { type: string, const: ready }
+        createdAt: { type: string, format: date-time }
+    CartItem:
+      type: object
+      additionalProperties: false
+      required: [productId, quantity]
+      description: Локальная корзина; хранение цены здесь не требуется
+      properties:
+        productId: { $ref: '#/components/schemas/Id' }
+        quantity: { type: integer, minimum: 1, maximum: 999 }
+    OrderItemInput:
+      type: object
+      additionalProperties: false
+      required: [productId, quantity, expectedUnitPriceKopecks]
+      properties:
+        productId: { $ref: '#/components/schemas/Id' }
+        quantity: { type: integer, minimum: 1, maximum: 999 }
+        expectedUnitPriceKopecks:
+          $ref: '#/components/schemas/MoneyKopecks'
+          description: Показанная клиенту цена для обнаружения конфликта, не источник расчёта
+    Customer:
+      type: object
+      additionalProperties: false
+      required: [name, phone]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100 }
+        phone:
+          type: string
+          minLength: 10
+          maxLength: 30
+          description: >-
+            Backend нормализует номер и проверяет допустимый телефон после удаления
+            пробелов/скобок/дефисов; не принимает произвольный текст.
+        email:
+          type: string
+          maxLength: 254
+          anyOf:
+            - format: email
+            - const: ''
+          description: Необязательный email; пустая строка означает отсутствие email
+    Fulfillment:
+      type: object
+      additionalProperties: false
+      required: [method]
+      properties:
+        method: { type: string, enum: [pickup, delivery] }
+        address: { type: string, maxLength: 500 }
+      allOf:
+        - if:
+            properties:
+              method: { const: delivery }
+            required: [method]
+          then:
+            required: [address]
+            properties:
+              address: { minLength: 1 }
+      description: >-
+        Для доставки требуется непустой адрес после trim. Сумма заказа не
+        включает доставку; стоимость и сроки уточняет менеджер.
+    CreateOrderRequest:
+      type: object
+      additionalProperties: false
+      required: [customer, fulfillment, items]
+      properties:
+        customer: { $ref: '#/components/schemas/Customer' }
+        fulfillment: { $ref: '#/components/schemas/Fulfillment' }
+        items:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items: { $ref: '#/components/schemas/OrderItemInput' }
+          description: Повторяющиеся productId отвергаются с 422; дробные количества запрещены
+    OrderStatus:
+      type: string
+      enum: [new, confirmed, ready, completed, cancelled]
+    IntegrationStatus:
+      type: string
+      enum: [not_connected, pending_sync, exporting, exported, error, cancelled_before_sync]
+      description: >-
+        not_connected — демо/ненастроенное соединение; pending_sync — локально
+        принятая заявка; exporting — отправка/сверка; exported — подтверждены
+        документ и резерв 1С; error — проблема обмена; cancelled_before_sync —
+        безопасная отмена без документа 1С. Бизнес-статус хранится отдельно.
+    OrderItem:
+      type: object
+      required: [productId, sku, brand, name, quantity, unitPriceKopecks]
+      description: Неизменяемый снимок на момент создания заказа
+      properties:
+        productId: { $ref: '#/components/schemas/Id' }
+        sku: { type: string }
+        brand: { type: string }
+        name: { type: string }
+        quantity: { type: integer, minimum: 1, maximum: 999 }
+        unitPriceKopecks: { $ref: '#/components/schemas/MoneyKopecks' }
+    Order:
+      type: object
+      description: >-
+        Общая модель демо/будущей CRM; публичное оформление возвращает только
+        OrderReceipt. Демо использует integrationStatus=not_connected.
+      required: [id, number, createdAt, customer, fulfillment, items, totalKopecks, status, integrationStatus]
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        number: { type: string, minLength: 1, maxLength: 80 }
+        createdAt: { type: string, format: date-time }
+        customer: { $ref: '#/components/schemas/Customer' }
+        fulfillment: { $ref: '#/components/schemas/Fulfillment' }
+        items:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/OrderItem' }
+        totalKopecks: { $ref: '#/components/schemas/MoneyKopecks' }
+        status: { $ref: '#/components/schemas/OrderStatus' }
+        integrationStatus: { $ref: '#/components/schemas/IntegrationStatus' }
+    OrderReceipt:
+      type: object
+      additionalProperties: false
+      required: [id, number, createdAt, totalKopecks, status, integrationStatus]
+      description: Без контактов покупателя; это квитанция, не endpoint чтения истории заказа
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        number: { type: string }
+        createdAt: { type: string, format: date-time }
+        totalKopecks: { $ref: '#/components/schemas/MoneyKopecks' }
+        status: { $ref: '#/components/schemas/OrderStatus' }
+        integrationStatus: { $ref: '#/components/schemas/IntegrationStatus' }
+    ManagerOrder:
+      allOf:
+        - $ref: '#/components/schemas/Order'
+        - type: object
+          required: [version, canCancel, externalDocumentId]
+          properties:
+            version: { type: integer, minimum: 1 }
+            canCancel:
+              type: boolean
+              description: Вычисляется сервером с учётом состояния worker и определённости результата 1С
+            externalDocumentId:
+              type: [string, 'null']
+              description: Полученная ссылка документа 1С; null до подтверждения экспорта
+    ManagerSession:
+      type: object
+      required: [user, csrfToken, expiresAt]
+      properties:
+        user:
+          type: object
+          required: [id, name, role]
+          properties:
+            id: { $ref: '#/components/schemas/Id' }
+            name: { type: string }
+            role: { type: string, enum: [manager, admin] }
+        csrfToken: { type: string, minLength: 32, maxLength: 256 }
+        expiresAt: { type: string, format: date-time }
+    SyncHealth:
+      type: object
+      required: [state, catalogUpdatedAt, lastOrderExportAt, catalogStale, pendingCount, errorCount]
+      properties:
+        state: { type: string, enum: [not_connected, healthy, degraded, offline] }
+        catalogUpdatedAt: { type: [string, 'null'], format: date-time }
+        lastOrderExportAt: { type: [string, 'null'], format: date-time }
+        catalogStale: { type: boolean }
+        pendingCount: { type: integer, minimum: 0 }
+        errorCount: { type: integer, minimum: 0 }
+        lastErrorCode:
+          type: [string, 'null']
+          description: Безопасный внутренний код без тела/URL/учётных данных 1С
+    SyncJob:
+      type: object
+      required: [jobId, state]
+      properties:
+        jobId: { $ref: '#/components/schemas/Id' }
+        state: { type: string, enum: [queued, running] }
+    Error:
+      type: object
+      additionalProperties: false
+      required: [code, message, requestId]
+      properties:
+        code:
+          type: string
+          description: >-
+            Например PRICE_CHANGED, OUT_OF_STOCK, PRODUCT_UNAVAILABLE,
+            IDEMPOTENCY_CONFLICT, IDEMPOTENCY_IN_PROGRESS, INVALID_TRANSITION,
+            CANCEL_NOT_ALLOWED, VERSION_CONFLICT, CATALOG_STALE, VALIDATION_ERROR.
+        message: { type: string, description: Безопасное сообщение для пользователя }
+        requestId: { type: string, description: Идентификатор для обращения в поддержку }
+        details:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            properties:
+              field: { type: string }
+              productId: { $ref: '#/components/schemas/Id' }
+              code: { type: string }
+              currentPriceKopecks: { $ref: '#/components/schemas/MoneyKopecks' }
+              availableStock: { type: integer, minimum: 0 }
+  responses:
+    BadRequest:
+      description: Некорректный JSON, обязательный заголовок отсутствует/имеет неверный формат
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Unauthorized:
+      description: Нет действующей сессии или неверные данные входа
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Forbidden:
+      description: Недостаточная роль, запрещённый Origin или неверный CSRF-токен
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: Объект не найден или товар скрыт из публичного каталога
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Conflict:
+      description: Конфликт цены, наличия, состояния заказа, ключа идемпотентности или имени категории
+      headers:
+        Retry-After:
+          description: Секунды до повтора только при IDEMPOTENCY_IN_PROGRESS
+          schema: { type: integer, minimum: 1 }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    ValidationError:
+      description: Валидный JSON/параметры, но значения, неизвестные поля или ссылки недопустимы
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    VersionConflict:
+      description: VERSION_CONFLICT — ресурс изменился; нужно перечитать объект и повторить осознанное изменение
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    PayloadTooLarge:
+      description: Файл больше 5242880 байт; медиа не создано
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    UnsupportedMediaType:
+      description: Поддерживаются только успешно декодируемые JPG, PNG и WebP; медиа не создано
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    MediaImage:
+      description: Проверенное готовое изображение; доступ проверяется сервером для каждого запроса
+      headers:
+        Cache-Control: { schema: { type: string, const: no-store } }
+        X-Content-Type-Options: { schema: { type: string, const: nosniff } }
+      content:
+        image/jpeg:
+          schema: { type: string, format: binary }
+        image/png:
+          schema: { type: string, format: binary }
+        image/webp:
+          schema: { type: string, format: binary }
+    RateLimited:
+      description: Слишком много запросов
+      headers:
+        Retry-After:
+          schema: { type: integer, minimum: 1 }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Unavailable:
+      description: >-
+        Каталог ещё не загружен/устарел для оформления либо backend временно
+        недоступен. Клиент повторяет запрос с исходным ключом: ошибка или
+        сетевой сбой сами по себе не доказывают отсутствие сохранённого заказа.
+      headers:
+        Retry-After:
+          schema: { type: integer, minimum: 1 }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }

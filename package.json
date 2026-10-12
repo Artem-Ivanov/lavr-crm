@@ -1,0 +1,27 @@
+{
+  "name": "lavr-crm-mvp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Демонстрационная витрина автозапчастей и CRM с архитектурой интеграции 1С",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "dev": "vite",
+    "dev:demo": "vite --mode demo",
+    "start": "vite",
+    "build": "vite build",
+    "build:demo": "vite build --mode demo",
+    "preview": "vite preview --host 127.0.0.1",
+    "test": "node --test tests/*.test.js",
+    "check": "node --check vite.config.js && for source_file in src/*.js src/data/*.js; do node --check \"$source_file\" || exit; done"
+  },
+  "dependencies": {
+    "vue": "3.5.43"
+  },
+  "devDependencies": {
+    "vite": "8.3.4",
+    "@vitejs/plugin-vue": "6.0.10"
+  }
+}

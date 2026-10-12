@@ -1,0 +1,122 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="1100" viewBox="0 0 1400 1100" role="img" aria-labelledby="title description">
+  <title id="title">LAVR — целевая схема компонентов MVP</title>
+  <desc id="description">Один тонкий клиент Vue с публичным и административным режимами обращается к FastAPI. Администратор управляет сайтом, меню, категориями, представлением товаров, медиа и публикациями; менеджер работает с заказами. Каталог, заказы, клиенты и контент хранятся в PostgreSQL; файлы изображений — в постоянном серверном media volume, их метаданные и связи — в PostgreSQL. Публичный API выдаёт только опубликованные видимые данные и медиа, без черновиков и контактов покупателей из заказов. Сервер проверяет роли, цены и остатки. Заказ и событие outbox сохраняются одной транзакцией; worker обменивается с 1С через серверный адаптер. 1С — источник товаров, артикулов, цен и остатков. Это архитектура будущей системы: текущий UI работает с локальными демонстрационными данными, backend и живой обмен не реализованы.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto-start-reverse" markerUnits="strokeWidth">
+      <path d="M0 0L9 4.5L0 9Z" fill="#68798c"/>
+    </marker>
+    <style>
+      text{font-family:Arial,Helvetica,sans-serif;fill:#192b3e}
+      .title{font-size:34px;font-weight:700}
+      .lead{font-size:20px;fill:#526477}
+      .section{font-size:17px;font-weight:700;letter-spacing:1px;fill:#526477}
+      .name{font-size:23px;font-weight:700}
+      .body{font-size:18px;fill:#526477}
+      .note{font-size:17px;fill:#526477}
+      .white{fill:white}
+      .line{fill:none;stroke:#68798c;stroke-width:2}
+      .edge{fill:none;stroke:#68798c;stroke-width:2;marker-end:url(#arrow)}
+      .exchange{fill:none;stroke:#68798c;stroke-width:2;marker-start:url(#arrow);marker-end:url(#arrow)}
+    </style>
+  </defs>
+  <rect width="1400" height="1100" fill="#fff"/>
+  <rect x="60" y="145" width="960" height="155" rx="18" fill="#fff5f5" stroke="#f0dadd"/>
+  <rect x="60" y="345" width="960" height="470" rx="18" fill="#f4f7fa" stroke="#d8e1e9"/>
+  <rect x="60" y="865" width="1280" height="155" rx="18" fill="#f4f7fa" stroke="#d8e1e9"/>
+  <text x="60" y="67" class="title">LAVR · Схема компонентов MVP</text>
+  <text x="60" y="106" class="lead">Тонкий Vue-клиент → FastAPI → PostgreSQL + постоянные файлы медиа</text>
+  <rect x="1070" y="34" width="270" height="36" rx="18" fill="#fff0f1"/>
+  <text x="1205" y="58" text-anchor="middle" font-size="15" font-weight="700" fill="#ba1c2c">ЦЕЛЕВАЯ АРХИТЕКТУРА</text>
+
+  <text x="84" y="172" class="section">01 · БРАУЗЕР · ОДИН VUE 3 + VITE · ДВА РЕЖИМА</text>
+  <rect x="100" y="188" width="350" height="86" rx="12" fill="#d82333"/>
+  <text x="125" y="220" class="name white">Публичная витрина</text>
+  <text x="125" y="249" class="body white">Поиск · публикации · заявка</text>
+  <rect x="540" y="188" width="440" height="86" rx="12" fill="#192b3e"/>
+  <text x="565" y="219" class="name white">Административный режим</text>
+  <text x="565" y="245" class="body white">Администратор: сайт и данные</text>
+  <text x="565" y="266" class="body white">Менеджер: заказы</text>
+  <path d="M275 274V390" class="edge"/>
+  <path d="M760 274V390" class="edge"/>
+  <text x="292" y="325" class="note">HTTPS / JSON</text>
+  <text x="777" y="325" class="note">Сессия + роль</text>
+
+  <text x="84" y="369" class="section">02 · FASTAPI</text>
+  <text x="420" y="369" class="section">МОДУЛЬНЫЙ МОНОЛИТ</text>
+  <rect x="100" y="390" width="350" height="78" rx="12" fill="#fff" stroke="#d0dce7"/>
+  <text x="125" y="421" class="name">Публичный API</text>
+  <text x="125" y="449" class="body">Опубликованное · поиск · заявка</text>
+  <rect x="540" y="390" width="440" height="78" rx="12" fill="#fff" stroke="#d0dce7"/>
+  <text x="565" y="421" class="name">Закрытый API</text>
+  <text x="565" y="449" class="body">Сессии · роли · аудит · состояние 1С</text>
+  <path d="M275 468V489H830M760 468V489M220 489H275" class="line"/>
+  <path d="M220 489V510" class="edge"/>
+  <path d="M510 489V510" class="edge"/>
+  <path d="M830 489V510" class="edge"/>
+  <rect x="100" y="510" width="240" height="100" rx="12" fill="#fff" stroke="#d0dce7"/>
+  <text x="124" y="542" class="name">Каталог</text>
+  <text x="124" y="569" class="body">Категории · витрина</text>
+  <text x="124" y="593" class="body">Товары · цены · остатки</text>
+  <rect x="380" y="510" width="260" height="100" rx="12" fill="#fff" stroke="#d0dce7"/>
+  <text x="404" y="542" class="name">Заказы и клиенты</text>
+  <text x="404" y="569" class="body">Проверка · снимок цен</text>
+  <text x="404" y="593" class="body">Статусы · резерв · клиент</text>
+  <rect x="680" y="510" width="300" height="100" rx="12" fill="#fff" stroke="#d0dce7"/>
+  <text x="704" y="542" class="name">Контент сайта</text>
+  <text x="704" y="569" class="body">Настройки · меню · медиа</text>
+  <text x="704" y="593" class="body">Черновики · публикации</text>
+  <path d="M220 610V650" class="edge"/>
+  <path d="M510 610V650" class="edge"/>
+  <path d="M830 610V650" class="edge"/>
+  <path d="M980 580H1040V709H1060" class="exchange"/>
+  <text x="991" y="567" font-size="14" fill="#526477">Файлы</text>
+  <rect x="100" y="650" width="880" height="140" rx="14" fill="#192b3e"/>
+  <text x="128" y="682" class="name white">PostgreSQL · все данные приложения</text>
+  <text x="128" y="708" class="body white">Каталог · заказы · клиенты · сайт · меню</text>
+  <text x="128" y="731" class="body white">Публикации · метаданные и связи медиа</text>
+  <text x="128" y="759" class="body white">Заказ + событие outbox: одна транзакция</text>
+  <rect x="690" y="674" width="260" height="90" rx="10" fill="#31465c" stroke="#91a5b8" stroke-dasharray="5 4"/>
+  <text x="714" y="709" class="name white">Outbox</text>
+  <text x="714" y="738" class="body white">События и попытки</text>
+  <path d="M260 790V910" class="exchange"/>
+  <rect x="275" y="827" width="326" height="27" fill="#fff"/>
+  <text x="285" y="847" class="note">Outbox / результаты импорта</text>
+
+  <rect x="1060" y="145" width="280" height="155" rx="16" fill="#f4f7fa"/>
+  <text x="1083" y="179" class="name">Тонкий клиент</text>
+  <text x="1083" y="211" class="body">Фиксированные шаблоны.</text>
+  <text x="1083" y="238" class="body">Данные и права — сервер.</text>
+  <text x="1083" y="265" class="body">Без конструктора страниц.</text>
+  <rect x="1060" y="345" width="280" height="142" rx="16" fill="#f4f7fa"/>
+  <text x="1083" y="381" class="name">Проверки сервера</text>
+  <text x="1083" y="414" class="body">Роль · цены · остатки.</text>
+  <text x="1083" y="441" class="body">Покупателю — видимое.</text>
+  <text x="1083" y="467" class="body">Без контактов покупателей.</text>
+  <rect x="1060" y="507" width="280" height="142" rx="16" fill="#f4f7fa"/>
+  <text x="1083" y="543" class="name">Источник данных</text>
+  <text x="1083" y="575" class="body">1С: товары, цены, остатки.</text>
+  <text x="1083" y="602" class="body">Админ: категории и сайт.</text>
+  <text x="1083" y="629" class="body">Секреты 1С — на сервере.</text>
+  <rect x="1060" y="669" width="280" height="146" rx="16" fill="#fff5f5" stroke="#f0dadd"/>
+  <text x="1083" y="705" class="name">Media · файлы</text>
+  <text x="1083" y="734" class="body">Постоянный том сервера.</text>
+  <text x="1083" y="761" class="body">Публично — через API</text>
+  <text x="1083" y="789" class="body">по опубликованной связи.</text>
+
+  <text x="84" y="890" class="section">03 · ОБМЕН</text>
+  <text x="480" y="890" class="section">СЕРВЕР · ОТДЕЛЬНЫЙ ПРОЦЕСС</text>
+  <rect x="100" y="910" width="330" height="86" rx="12" fill="#fff" stroke="#d0dce7"/>
+  <text x="124" y="944" class="name">Python worker</text>
+  <text x="124" y="974" class="body">Outbox · импорт · повторы</text>
+  <rect x="550" y="910" width="330" height="86" rx="12" fill="#fff" stroke="#d0dce7"/>
+  <text x="574" y="944" class="name">Адаптер 1С</text>
+  <text x="574" y="974" class="body">Протокол и преобразования</text>
+  <rect x="1000" y="910" width="300" height="86" rx="12" fill="#fff" stroke="#d0dce7"/>
+  <text x="1024" y="944" class="name">1С</text>
+  <text x="1024" y="974" class="body">Конфигурация уточняется</text>
+  <path d="M430 953H550" class="exchange"/>
+  <path d="M880 953H1000" class="exchange"/>
+  <text x="913" y="934" class="note">HTTPS</text>
+  <text x="60" y="1055" class="note">Только архитектура: текущий UI — локальная демонстрация; FastAPI, PostgreSQL, media и worker ещё не реализованы.</text>
+  <text x="60" y="1080" class="note">Живого обмена и оплаты нет. Запись номенклатуры в 1С требует согласованного контракта.</text>
+</svg>

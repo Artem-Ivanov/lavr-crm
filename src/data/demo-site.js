@@ -1,0 +1,53 @@
+export const demoSite = {
+  hero: {
+    title: 'Всё для вашего\nавтомобиля.\nВ одном месте.',
+    description: 'Найдите запчасть по артикулу\nили начните с нужной категории.',
+    image: { id: 'demo-hero', path: '/images/hero-car.jpg', alt: '' },
+    buttonText: 'Найти свою запчасть',
+    target: { type: 'catalog' },
+    kicker: 'ДЕТАЛИ, КОТОРЫЕ ВАЖНЫ',
+    note: 'От фильтра до деталей подвески',
+    corner: 'НА ХОДУ. КАЖДЫЙ ДЕНЬ.',
+    highlightLastLine: true,
+  },
+  settings: {
+    storeName: 'LAVR', phone: '', address: '', hours: '',
+    categoriesTitle: 'Что нужно вашему авто?',
+    promotionsTitle: 'Акции и объявления',
+    catalogTitle: 'Каталог автозапчастей',
+    categoriesKicker: 'ПРОСТО НАЙТИ. ЛЕГКО ВЫБРАТЬ.',
+    promotionsKicker: 'ПОЛЕЗНО ПЕРЕД ПОЕЗДКОЙ',
+    promotionsNote: 'Примеры для демонстрационной витрины',
+    promotionsFootnote: 'Объявления иллюстративные. Действующие акции и условия покупки уточняются отдельно.',
+  },
+  menu: [],
+  publications: [
+    {
+      id: 'demo-filters', kind: 'offer', position: 0,
+      title: 'Свежий фильтр.\nСпокойная дорога.',
+      description: 'Масляные и воздушные фильтры для очередного ТО. Подберите нужный артикул в каталоге.',
+      images: [
+        { id: 'demo-air-filter', path: '/images/air-filter.jpg', alt: '' },
+        { id: 'demo-oil-filter', path: '/images/oil-filter.jpg', alt: '' },
+      ],
+      buttonText: 'Посмотреть запчасти', target: { type: 'category', categoryId: 'filters' },
+      kicker: 'ПЛАНОВОЕ ОБСЛУЖИВАНИЕ', label: 'Пример акции', style: 'service',
+    },
+    {
+      id: 'demo-oils', kind: 'offer', position: 1,
+      title: 'Время заменить\nмасло?',
+      description: 'Начните с вязкости и допуска производителя автомобиля. Сравните позиции в каталоге.',
+      images: [{ id: 'demo-motor-oil', path: '/images/motor-oil.jpg', alt: '' }],
+      buttonText: 'Посмотреть запчасти', target: { type: 'category', categoryId: 'oils' },
+      kicker: 'МАСЛА И ЖИДКОСТИ', label: 'Пример акции', style: 'oil',
+    },
+    {
+      id: 'demo-search', kind: 'announcement', position: 2,
+      title: 'Знаете артикул?\nНачните с него.',
+      description: 'Введите артикул в поиск над каталогом. При оформлении выберите самовывоз или доставку.',
+      images: [],
+      buttonText: 'Перейти в каталог', target: { type: 'catalog' },
+      kicker: 'УДОБНО ВЫБРАТЬ', label: 'Пример объявления', style: 'notice',
+    },
+  ],
+};
