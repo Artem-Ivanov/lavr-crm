@@ -48,14 +48,15 @@ test('live Docker stack stores catalog/content/images in PostgreSQL and serves V
   t.after(async () => {
     for (const context of contexts) await context.close();
     await browser.close();
+    const canKeep = keepFixtures && completed && errors.length === 0;
     const cleanups = [];
     if (siteVersion) cleanups.push(() => api('/api/admin/site', { method: 'PATCH', body: { hero: siteBefore.hero }, headers: { 'If-Match': `"${siteVersion}"` } }));
     if (presentationVersion) {
       const { version, productId, ...presentation } = presentationBefore;
       cleanups.push(() => api(`/api/admin/products/${product.id}/presentation`, { method: 'PATCH', body: presentation, headers: { 'If-Match': `"${presentationVersion}"` } }));
     }
-    if ((!keepFixtures || !completed) && publication) cleanups.push(() => api(`/api/admin/publications/${publication.id}`, { method: 'PATCH', body: { status: 'archived' }, headers: { 'If-Match': `"${publication.version}"` } }));
-    if ((!keepFixtures || !completed) && category) cleanups.push(() => api(`/api/admin/categories/${category.id}`, { method: 'PATCH', body: { isVisible: false }, headers: { 'If-Match': `"${category.version}"` } }));
+    if (!canKeep && publication) cleanups.push(() => api(`/api/admin/publications/${publication.id}`, { method: 'PATCH', body: { status: 'archived' }, headers: { 'If-Match': `"${publication.version}"` } }));
+    if (!canKeep && category) cleanups.push(() => api(`/api/admin/categories/${category.id}`, { method: 'PATCH', body: { isVisible: false }, headers: { 'If-Match': `"${category.version}"` } }));
     if (sessionHeaders) cleanups.push(() => api('/api/manager/session', { method: 'DELETE' }, 204));
     const cleanupFailures = [];
     for (const cleanup of cleanups) {
@@ -63,7 +64,7 @@ test('live Docker stack stores catalog/content/images in PostgreSQL and serves V
     }
     assert.equal(cleanupFailures.length, 0, 'QA cleanup failed; a concurrent edit may have changed a record version.');
     assert.equal(errors.length, 0, 'A browser page raised an unexpected JavaScript exception.');
-    console.log(keepFixtures && completed ? 'Cleanup: original hero/product restored; QA publication retained for persistence verification.' : 'Cleanup: original hero/product restored; QA category hidden and publication archived.');
+    console.log(canKeep ? 'Cleanup: original hero/product restored; QA publication retained for persistence verification.' : 'Cleanup: original hero/product restored; QA category hidden and publication archived.');
   });
 
   const site = await (await request('/api/site')).json();
@@ -216,6 +217,7 @@ test('live Docker stack stores catalog/content/images in PostgreSQL and serves V
   await mobile.getByTestId(`media-${media.id}`).waitFor();
   await fits(mobile, 'Mobile image library');
   console.log('Chrome 390: public server changes, image decoding, SKU search, retained cart and administrator editor passed.');
+  assert.equal(errors.length, 0, 'A browser page raised an unexpected JavaScript exception.');
   completed = true;
   console.log('QA_RECORDS ' + JSON.stringify({ categoryId: category.id, mediaId: media.id, publicationId: publication.id, publicationTitle: publicTitle, publicImagePath: `/api/media/${media.id}` }));
 });

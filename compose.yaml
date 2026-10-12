@@ -12,6 +12,7 @@ services:
     depends_on:
       backend:
         condition: service_healthy
+        restart: true
     cap_drop:
       - ALL
     security_opt:

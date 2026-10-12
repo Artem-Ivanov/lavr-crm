@@ -29,7 +29,7 @@ npm run dev:demo
 
 ## Запуск в Docker и перенос на другое устройство
 
-На устройстве нужен Docker с Compose v2 или новее; устанавливать Node.js отдельно не требуется. Из каталога проекта запустите:
+На устройстве нужен Docker с Compose 2.17 или новее; устанавливать Node.js и Python отдельно не требуется. Из каталога проекта запустите:
 
 ```sh
 ./scripts/start.sh
@@ -39,6 +39,12 @@ npm run dev:demo
 
 Скрипт создаёт `.env.docker` с случайными паролями PostgreSQL, администратора и ключом сессий, с правами `0600`. Существующий файл сохраняется. [.env.docker.example](.env.docker.example) описывает параметры; пустые секреты из примера не позволяют запустить систему. Первый запуск новой базы применяет миграции Alembic, создаёт администратора и пример каталога. Изменения затем хранятся на сервере и доступны с другого браузера.
 
+После создания администратора изменение `ADMIN_LOGIN`/`ADMIN_PASSWORD` в окружении не переименовывает его и не сбрасывает пароль. Отдельного менеджера можно создать, введя пароль в скрытом приглашении:
+
+```sh
+docker compose --env-file .env.docker exec backend python -m app.manage_staff manager --name 'Менеджер'
+```
+
 Compose запускает три сервиса:
 
 | Сервис | Образ | Назначение |
@@ -47,7 +53,7 @@ Compose запускает три сервиса:
 | `backend` | `lavr-crm-backend:local` | FastAPI, авторизация, каталог, заказы и контент |
 | `postgres` | `postgres:17-alpine` | Постоянная база данных |
 
-Frontend обращается к `/api` на origin сайта; Nginx пересылает запросы в `backend:8000`. Backend и PostgreSQL не публикуют порты на устройство. Backend работает под UID 1000; служебные проверки готовности учитывают доступность БД и API. Compose ждёт PostgreSQL, затем backend, затем frontend. [Порядок запуска Compose](https://docs.docker.com/compose/how-tos/startup-order/).
+Frontend обращается к `/api` на origin сайта; Nginx пересылает запросы в `backend:8000`. Backend и PostgreSQL не публикуют порты на устройство. Backend работает под UID 1000; служебные проверки готовности учитывают доступность БД и API. Compose ждёт PostgreSQL, затем backend, затем frontend. При штатном обновлении backend через Compose frontend перезапускается и заново получает адрес API. [Порядок запуска Compose](https://docs.docker.com/compose/how-tos/startup-order/).
 
 `postgres_data` хранит PostgreSQL, `media_data` — изображения. Обычная остановка и пересоздание контейнеров сохраняют оба тома:
 
