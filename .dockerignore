@@ -10,6 +10,7 @@ dist
 docs
 tests
 artifacts
+backend
 .superdesign
 test-results
 .DS_Store

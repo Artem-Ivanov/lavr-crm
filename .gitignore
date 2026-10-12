@@ -9,3 +9,7 @@ dist/
 .superdesign/tmp/
 .planning/
 test-results/
+backend/.venv/
+__pycache__/
+.pytest_cache/
+*.pyc

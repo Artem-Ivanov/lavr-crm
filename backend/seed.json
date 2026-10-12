@@ -1,0 +1,366 @@
+{
+  "source": "demo",
+  "media": [
+    {
+      "id": "demo-hero",
+      "file": "hero-car.jpg",
+      "alt": ""
+    },
+    {
+      "id": "demo-motor-oil",
+      "file": "motor-oil.jpg",
+      "alt": ""
+    },
+    {
+      "id": "demo-oil-filter",
+      "file": "oil-filter.jpg",
+      "alt": ""
+    },
+    {
+      "id": "demo-air-filter",
+      "file": "air-filter.jpg",
+      "alt": ""
+    },
+    {
+      "id": "demo-brake-disc",
+      "file": "brake-disc.jpg",
+      "alt": ""
+    },
+    {
+      "id": "demo-spark-plug",
+      "file": "spark-plug.jpg",
+      "alt": ""
+    }
+  ],
+  "categories": [
+    {
+      "id": "oils",
+      "name": "Масла и жидкости",
+      "position": 0,
+      "isVisible": true,
+      "showInMenu": true
+    },
+    {
+      "id": "filters",
+      "name": "Фильтры",
+      "position": 1,
+      "isVisible": true,
+      "showInMenu": true
+    },
+    {
+      "id": "brakes",
+      "name": "Тормозная система",
+      "position": 2,
+      "isVisible": true,
+      "showInMenu": true
+    },
+    {
+      "id": "ignition",
+      "name": "Свечи зажигания",
+      "position": 3,
+      "isVisible": true,
+      "showInMenu": true
+    },
+    {
+      "id": "suspension",
+      "name": "Подвеска",
+      "position": 4,
+      "isVisible": true,
+      "showInMenu": true
+    },
+    {
+      "id": "belts",
+      "name": "Ремни и ролики",
+      "position": 5,
+      "isVisible": true,
+      "showInMenu": true
+    }
+  ],
+  "products": [
+    {
+      "id": "oil-shell-5w30",
+      "externalId": "demo-1c-001",
+      "sku": "550046363",
+      "brand": "Shell",
+      "name": "Моторное масло Helix Ultra 5W-30, 4 л",
+      "category": "oils",
+      "priceKopecks": 389000,
+      "stock": 12,
+      "deliveryDays": 1,
+      "imageId": "demo-motor-oil",
+      "websiteDescription": "Синтетическое моторное масло для планового обслуживания. Изображение и данные демонстрационные."
+    },
+    {
+      "id": "filter-mann-oil",
+      "externalId": "demo-1c-004",
+      "sku": "W 914/2",
+      "brand": "MANN-FILTER",
+      "name": "Масляный фильтр W 914/2",
+      "category": "filters",
+      "priceKopecks": 89000,
+      "stock": 24,
+      "deliveryDays": 1,
+      "imageId": "demo-oil-filter",
+      "websiteDescription": "Сменный масляный фильтр. Перед заказом проверьте артикул и применяемость. Данные демонстрационные."
+    },
+    {
+      "id": "brake-brembo-disc",
+      "externalId": "demo-1c-007",
+      "sku": "09.9772.11",
+      "brand": "Brembo",
+      "name": "Тормозной диск передний",
+      "category": "brakes",
+      "priceKopecks": 459000,
+      "stock": 6,
+      "deliveryDays": 1,
+      "imageId": "demo-brake-disc",
+      "websiteDescription": "Передний тормозной диск. Цена за одну деталь; применяемость проверяется по артикулу. Данные демонстрационные."
+    },
+    {
+      "id": "spark-ngk",
+      "externalId": "demo-1c-010",
+      "sku": "BKR6E-11",
+      "brand": "NGK",
+      "name": "Свеча зажигания BKR6E-11",
+      "category": "ignition",
+      "priceKopecks": 69000,
+      "stock": 40,
+      "deliveryDays": 1,
+      "imageId": "demo-spark-plug",
+      "websiteDescription": "Свеча зажигания для бензинового двигателя. Изображение и данные демонстрационные."
+    },
+    {
+      "id": "oil-mobil-5w40",
+      "externalId": "demo-1c-002",
+      "sku": "153265",
+      "brand": "Mobil",
+      "name": "Моторное масло Super 3000 5W-40, 4 л",
+      "category": "oils",
+      "priceKopecks": 429000,
+      "stock": 8,
+      "deliveryDays": 1,
+      "imageId": "demo-motor-oil",
+      "websiteDescription": "Масло для регулярной замены по регламенту автомобиля. Изображение и данные демонстрационные."
+    },
+    {
+      "id": "oil-lukoil-5w30",
+      "externalId": "demo-1c-003",
+      "sku": "1539435",
+      "brand": "ЛУКОЙЛ",
+      "name": "Моторное масло Genesis 5W-30, 4 л",
+      "category": "oils",
+      "priceKopecks": 299000,
+      "stock": 15,
+      "deliveryDays": 1,
+      "imageId": "demo-motor-oil",
+      "websiteDescription": "Синтетическое масло для технического обслуживания. Изображение и данные демонстрационные."
+    },
+    {
+      "id": "filter-bosch-air",
+      "externalId": "demo-1c-005",
+      "sku": "1 457 433 700",
+      "brand": "Bosch",
+      "name": "Воздушный фильтр двигателя",
+      "category": "filters",
+      "priceKopecks": 149000,
+      "stock": 10,
+      "deliveryDays": 2,
+      "imageId": "demo-air-filter",
+      "websiteDescription": "Фильтрующий элемент системы впуска. Изображение и данные демонстрационные."
+    },
+    {
+      "id": "filter-mann-cabin",
+      "externalId": "demo-1c-006",
+      "sku": "CUK 2939",
+      "brand": "MANN-FILTER",
+      "name": "Угольный фильтр салона CUK 2939",
+      "category": "filters",
+      "priceKopecks": 179000,
+      "stock": 0,
+      "deliveryDays": 4,
+      "imageId": "demo-air-filter",
+      "websiteDescription": "Фильтр для системы вентиляции салона. Изображение и данные демонстрационные."
+    },
+    {
+      "id": "brake-bosch-disc",
+      "externalId": "demo-1c-008",
+      "sku": "0 986 479 486",
+      "brand": "Bosch",
+      "name": "Тормозной диск задний",
+      "category": "brakes",
+      "priceKopecks": 329000,
+      "stock": 4,
+      "deliveryDays": 2,
+      "imageId": "demo-brake-disc",
+      "websiteDescription": "Задний тормозной диск для замены при обслуживании. Изображение и данные демонстрационные."
+    },
+    {
+      "id": "brake-trw-disc",
+      "externalId": "demo-1c-009",
+      "sku": "DF2805",
+      "brand": "TRW",
+      "name": "Тормозной диск DF2805",
+      "category": "brakes",
+      "priceKopecks": 379000,
+      "stock": 8,
+      "deliveryDays": 2,
+      "imageId": "demo-brake-disc",
+      "websiteDescription": "Тормозной диск для сервисного обслуживания. Изображение и данные демонстрационные."
+    },
+    {
+      "id": "spark-denso",
+      "externalId": "demo-1c-011",
+      "sku": "K20TT",
+      "brand": "Denso",
+      "name": "Свеча зажигания TT K20TT",
+      "category": "ignition",
+      "priceKopecks": 79000,
+      "stock": 32,
+      "deliveryDays": 1,
+      "imageId": "demo-spark-plug",
+      "websiteDescription": "Свеча для планового обслуживания системы зажигания. Изображение и данные демонстрационные."
+    },
+    {
+      "id": "suspension-kyb",
+      "externalId": "demo-1c-012",
+      "sku": "339701",
+      "brand": "KYB",
+      "name": "Амортизатор передний Excel-G",
+      "category": "suspension",
+      "priceKopecks": 689000,
+      "stock": 4,
+      "deliveryDays": 3,
+      "imageId": "demo-hero",
+      "websiteDescription": "Передний амортизатор. Использована общая автомобильная иллюстрация; данные демонстрационные."
+    },
+    {
+      "id": "suspension-lemforder",
+      "externalId": "demo-1c-013",
+      "sku": "26774 01",
+      "brand": "Lemförder",
+      "name": "Стойка стабилизатора",
+      "category": "suspension",
+      "priceKopecks": 219000,
+      "stock": 0,
+      "deliveryDays": 5,
+      "imageId": "demo-hero",
+      "websiteDescription": "Деталь подвески для замены при обслуживании. Использована общая автомобильная иллюстрация; данные демонстрационные."
+    },
+    {
+      "id": "belt-gates",
+      "externalId": "demo-1c-014",
+      "sku": "6PK1053",
+      "brand": "Gates",
+      "name": "Поликлиновой ремень 6PK1053",
+      "category": "belts",
+      "priceKopecks": 139000,
+      "stock": 14,
+      "deliveryDays": 2,
+      "imageId": "demo-hero",
+      "websiteDescription": "Ремень привода навесного оборудования. Использована общая автомобильная иллюстрация; данные демонстрационные."
+    }
+  ],
+  "site": {
+    "hero": {
+      "title": "Всё для вашего\nавтомобиля.\nВ одном месте.",
+      "description": "Найдите запчасть по артикулу\nили начните с нужной категории.",
+      "imageId": "demo-hero",
+      "buttonText": "Найти свою запчасть",
+      "target": {
+        "type": "catalog"
+      }
+    },
+    "settings": {
+      "storeName": "LAVR",
+      "phone": "+79990000000",
+      "address": "Адрес магазина не указан",
+      "hours": "Уточняйте часы работы у менеджера",
+      "categoriesTitle": "Что нужно вашему авто?",
+      "promotionsTitle": "Акции и объявления",
+      "catalogTitle": "Каталог автозапчастей"
+    },
+    "menu": [
+      {
+        "label": "Масла и жидкости",
+        "target": {
+          "type": "category",
+          "categoryId": "oils"
+        },
+        "position": 0,
+        "isVisible": true
+      },
+      {
+        "label": "Фильтры",
+        "target": {
+          "type": "category",
+          "categoryId": "filters"
+        },
+        "position": 1,
+        "isVisible": true
+      },
+      {
+        "label": "Тормозная система",
+        "target": {
+          "type": "category",
+          "categoryId": "brakes"
+        },
+        "position": 2,
+        "isVisible": true
+      }
+    ]
+  },
+  "publications": [
+    {
+      "id": "demo-filters",
+      "kind": "offer",
+      "title": "Свежий фильтр.\nСпокойная дорога.",
+      "description": "Масляные и воздушные фильтры для очередного ТО. Подберите нужный артикул в каталоге.",
+      "imageIds": [
+        "demo-air-filter",
+        "demo-oil-filter"
+      ],
+      "target": {
+        "type": "category",
+        "categoryId": "filters"
+      },
+      "buttonText": "Посмотреть запчасти",
+      "position": 0,
+      "status": "published",
+      "startsAt": null,
+      "endsAt": null
+    },
+    {
+      "id": "demo-oils",
+      "kind": "offer",
+      "title": "Время заменить\nмасло?",
+      "description": "Начните с вязкости и допуска производителя автомобиля. Сравните позиции в каталоге.",
+      "imageIds": [
+        "demo-motor-oil"
+      ],
+      "target": {
+        "type": "category",
+        "categoryId": "oils"
+      },
+      "buttonText": "Посмотреть запчасти",
+      "position": 1,
+      "status": "published",
+      "startsAt": null,
+      "endsAt": null
+    },
+    {
+      "id": "demo-search",
+      "kind": "announcement",
+      "title": "Знаете артикул?\nНачните с него.",
+      "description": "Введите артикул в поиск над каталогом. При оформлении выберите самовывоз или доставку.",
+      "imageIds": [],
+      "target": {
+        "type": "catalog"
+      },
+      "buttonText": "Перейти в каталог",
+      "position": 2,
+      "status": "published",
+      "startsAt": null,
+      "endsAt": null
+    }
+  ]
+}
