@@ -11,6 +11,11 @@ class Settings:
     allowed_origins = tuple(value.strip() for value in os.environ.get('ALLOWED_ORIGINS', 'http://127.0.0.1:8080,http://localhost:8080').split(',') if value.strip())
     cookie_secure = os.environ.get('COOKIE_SECURE', 'true').lower() == 'true'
     seed_demo_catalog = os.environ.get('SEED_DEMO_CATALOG', 'false').lower() == 'true'
+    telegram_bot_token = os.environ.get('TELEGRAM_BOT_TOKEN', '')
+    telegram_chat_id = os.environ.get('TELEGRAM_CHAT_ID', '')
+    telegram_notifications_enabled = os.environ.get('TELEGRAM_NOTIFICATIONS_ENABLED', 'false').lower() == 'true'
+    public_site_url = os.environ.get('PUBLIC_SITE_URL', '')
+    trusted_proxy_hosts = tuple(value.strip() for value in os.environ.get('TRUSTED_PROXY_HOSTS', '').split(',') if value.strip())
     session_hours = 8
 
 

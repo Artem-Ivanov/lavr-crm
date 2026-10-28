@@ -32,11 +32,37 @@ services:
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://127.0.0.1:8080,http://localhost:8080}
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
       SEED_DEMO_CATALOG: ${SEED_DEMO_CATALOG:-true}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+      TELEGRAM_NOTIFICATIONS_ENABLED: ${TELEGRAM_NOTIFICATIONS_ENABLED:-false}
+      PUBLIC_SITE_URL: ${PUBLIC_SITE_URL:-}
+      TRUSTED_PROXY_HOSTS: ${TRUSTED_PROXY_HOSTS:-172.16.0.0/12}
     volumes:
       - media_data:/data/media
     depends_on:
       postgres:
         condition: service_healthy
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+  notifications:
+    image: lavr-crm-backend:local
+    user: "1000:1000"
+    command: ["python", "-m", "app.notification_worker"]
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-lavr}:${POSTGRES_PASSWORD:?Run scripts/start.sh first}@postgres:5432/${POSTGRES_DB:-lavr}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+      TELEGRAM_NOTIFICATIONS_ENABLED: ${TELEGRAM_NOTIFICATIONS_ENABLED:-false}
+      PUBLIC_SITE_URL: ${PUBLIC_SITE_URL:-}
+    depends_on:
+      backend:
+        condition: service_healthy
+        restart: true
+    healthcheck:
+      disable: true
     cap_drop:
       - ALL
     security_opt:

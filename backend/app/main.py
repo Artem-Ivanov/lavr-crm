@@ -44,10 +44,10 @@ class BodyLimitMiddleware:
 def create_app():
     if len(settings.session_secret) < 32:
         raise RuntimeError('SESSION_SECRET должен содержать минимум 32 символа.')
-    from . import auth, catalog, content, orders, integration
+    from . import auth, catalog, content, orders, integration, feedback
     app = FastAPI(title='LAVR CRM API', docs_url='/api/docs', openapi_url='/api/openapi.json')
     app.add_middleware(BodyLimitMiddleware)
-    for module in (auth, catalog, content, orders, integration):
+    for module in (auth, catalog, content, orders, integration, feedback):
         app.include_router(module.router)
 
     @app.middleware('http')

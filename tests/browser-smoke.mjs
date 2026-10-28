@@ -192,6 +192,7 @@ test('content publication lifecycle, dates and uploaded image bytes survive a mo
   assert.equal(await card.locator('img').evaluate(image => image.complete && image.naturalWidth === 870), true);
   await page.reload();
   await card.waitFor();
+  await card.scrollIntoViewIfNeeded();
   await page.waitForFunction(() => [...document.querySelectorAll('.promotion-card img')].some(image => image.naturalWidth === 870));
   await pageFits(page, 'Published upload at 390');
   await page.locator('.crm-nav').tap();
@@ -285,8 +286,8 @@ test('mobile menu remains reachable and returns focus; dialog close stays visibl
     await dialog.waitFor();
     assert.ok(await dialog.evaluate(element => element.scrollHeight > element.clientHeight), 'Mobile product dialog must exercise its scroll area');
     await dialog.evaluate(element => { element.scrollTop = element.scrollHeight; });
-    const close = page.locator('.dialog-close');
-    await mobileControls(page, ['.dialog-close']);
+    const close = page.locator('dialog[open] .dialog-close');
+    await mobileControls(page, ['dialog[open] .dialog-close']);
     assert.equal(await close.evaluate(element => {
       const rect = element.getBoundingClientRect();
       return rect.top >= 0 && rect.bottom <= innerHeight && document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2)?.closest('.dialog-close') === element;
@@ -330,7 +331,7 @@ test('true mobile SKU search, basket quantities, checkout and CRM use readable t
     await page.locator('[data-action="status"][data-status="confirmed"]').tap();
     await page.locator('[data-action="status"][data-status="ready"]').waitFor();
     assert.match(await page.locator('.order-detail-meta').textContent(), /Подтверждён/);
-    await page.locator('.dialog-close').tap();
+    await page.locator('dialog[open] .dialog-close').tap();
     await pageFits(page, `CRM ${viewport.width}`);
   }
 });
@@ -460,7 +461,7 @@ test('product dialog returns keyboard focus to its opener on Escape and close', 
   assert.equal(await page.evaluate(() => document.activeElement?.dataset.action), 'product');
   await page.keyboard.press('Enter');
   await page.locator('dialog[open]').waitFor();
-  await page.locator('.dialog-close').click();
+  await page.locator('dialog[open] .dialog-close').click();
   assert.equal(await page.evaluate(() => document.activeElement?.dataset.action), 'product');
 });
 
@@ -670,7 +671,7 @@ test('long valid catalog names and identifiers remain readable at desktop and mo
   await page.locator('dialog[open]').waitFor();
   await assertViewFits(['dialog', '.detail-grid', '#dialog-title', '.detail-grid .eyebrow'], 'product dialog');
   await page.locator(`dialog [data-action="add"][data-id="${product.id}"]`).click();
-  await page.locator('.dialog-close').click();
+  await page.locator('dialog[open] .dialog-close').click();
   await page.locator('.header-cart').click();
   await assertViewFits(['.cart-items', '.cart-item-info', '.cart-item h3', '.order-summary'], 'cart');
   await page.locator('[name="name"]').fill('Демо Покупатель');

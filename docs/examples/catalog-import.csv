@@ -1,0 +1,4 @@
+source_product_id;sku;brand;name;unit;price_rub;available_quantity;active
+FILE-0001;000123;DEMO;Демонстрационный масляный фильтр;шт;1250.00;8;1
+FILE-0002;000124;DEMO;Демонстрационный воздушный фильтр;шт;900.00;0;1
+FILE-0003;000125;DEMO;Номенклатура без цены и наличия;шт;;;1

@@ -1,4 +1,5 @@
 import { isSiteConfiguration, isPublication, isAdminMedia, validateSitePatch, validatePublicationInput, validateMediaUpload } from '../content.js';
+import { FEEDBACK_STATUSES, normalizeFeedbackInput, normalizeFeedbackStatus, normalizeFeedbackNote, isFeedbackReceipt, isFeedbackCase } from '../feedback.js';
 
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const text = (value, min = 0, max = 4000) => typeof value === 'string' && value.length >= min && value.length <= max;
@@ -70,6 +71,18 @@ function versionHeader(version) {
 function pathId(value) {
   if (!id(value)) throw new Error('Некорректный идентификатор.');
   return encodeURIComponent(value);
+}
+function feedbackAttemptHeader(key) {
+  if (typeof key !== 'string' || !/^[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}$/i.test(key)) throw new Error('Некорректный ключ повторной отправки обращения.');
+  return { 'Idempotency-Key': key };
+}
+function feedbackOrderBody(body) {
+  if (!object(body) || !customer(body.customer) || !fulfillment(body.fulfillment)
+    || !list(body.items, item => object(item) && id(item.productId) && integer(item.quantity, 1, 999) && integer(item.expectedUnitPriceKopecks), 100)
+    || body.items.length === 0) throw new Error('Некорректные данные заказа.');
+  const contact = normalizeFeedbackInput({ type: 'contact', name: body.customer.name, phone: body.customer.phone, email: body.customer.email });
+  if (!contact.name || !contact.phone) throw new Error('Укажите имя и российский телефон покупателя для заказа.');
+  return { customer: { name: contact.name, phone: contact.phone, email: contact.email }, fulfillment: body.fulfillment, items: body.items };
 }
 function pagination({ offset = 0, limit = 24 } = {}) {
   if (!integer(offset) || !integer(limit, 1, 100)) throw new Error('Некорректные параметры пагинации.');
@@ -206,6 +219,36 @@ export function createHttpApi({ baseUrl = '/api', fetchImpl = globalThis.fetch }
     },
     async getOrders({ query = '', status = '' } = {}, requested) {
       return getPage('/manager/orders', { q: query, status }, requested, managerOrder);
+    },
+    async submitFeedback(input, key) {
+      const body = normalizeFeedbackInput(input);
+      const headers = feedbackAttemptHeader(key);
+      return Object.freeze(checked((await request('/feedback', { method: 'POST', body, headers })).data, isFeedbackReceipt));
+    },
+    async getFeedback({ query = '', status = '' } = {}, requested) {
+      if (!text(query, 0, 120) || status !== '' && !Object.hasOwn(FEEDBACK_STATUSES, status)) throw new Error('Некорректные фильтры обращений.');
+      return getPage('/manager/feedback', { q: query, status }, requested, isFeedbackCase);
+    },
+    async getFeedbackDetail(feedbackId) {
+      return checkedVersion(await request(`/manager/feedback/${pathId(feedbackId)}`), isFeedbackCase);
+    },
+    async updateFeedbackStatus(feedback, input) {
+      const path = `/manager/feedback/${pathId(feedback?.id)}/status`;
+      const headers = { 'If-Match': versionHeader(feedback?.version) };
+      const body = normalizeFeedbackStatus(input);
+      return checkedVersion(await request(path, { method: 'PATCH', body, headers, protectedMutation: true }), isFeedbackCase);
+    },
+    async addFeedbackNote(feedback, input) {
+      const path = `/manager/feedback/${pathId(feedback?.id)}/notes`;
+      const headers = { 'If-Match': versionHeader(feedback?.version) };
+      const body = normalizeFeedbackNote(input);
+      return checkedVersion(await request(path, { method: 'POST', body, headers, protectedMutation: true }), isFeedbackCase);
+    },
+    async createFeedbackOrder(feedback, input, key) {
+      const path = `/manager/feedback/${pathId(feedback?.id)}/order`;
+      const headers = { ...feedbackAttemptHeader(key), 'If-Match': versionHeader(feedback?.version) };
+      const body = feedbackOrderBody(input);
+      return checkedVersion(await request(path, { method: 'POST', body, headers, protectedMutation: true }), isFeedbackCase);
     },
     async getOrder(orderId) {
       return checked((await request(`/manager/orders/${pathId(orderId)}`)).data, managerOrder);

@@ -10,11 +10,12 @@ info:
     медиа хранятся в PostgreSQL, файлы — на постоянном дисковом томе вне dist и
     эфемерного слоя контейнера. Формы и API-кеши браузера временные; локальная
     корзина может хранить только productId/quantity. Публичный режим не требует
-    входа. Manager работает с заказами; admin также управляет сайтом, каталогом,
+    входа. Manager работает с заказами и обращениями; admin также управляет сайтом, каталогом,
     медиа и интеграцией. Роль проверяется сервером для каждого запроса.
     Все PATCH проверяют текущую version атомарно через If-Match; 412 требует
-    перечитать объект. POST создаёт новый объект с version=1, если версия у него
-    предусмотрена, и не перезаписывает существующий. Закрытые ответы — no-store.
+    перечитать объект. POST создания объекта задаёт version=1, если версия у него
+    предусмотрена. POST заметки и конверсии обращения проверяют If-Match и увеличивают
+    версию существующего обращения. Закрытые ответы — no-store.
     Товар публично доступен только при isActive=true в учётной проекции
     (не удалён и не помечен к удалению в 1С) AND category.isVisible=true.
     isActive — внутреннее поле импорта, а не редактируемое поле сайта.
@@ -26,8 +27,10 @@ security: []
 tags:
   - name: Catalog
   - name: Orders
+  - name: Feedback
   - name: ManagerSession
   - name: ManagerOrders
+  - name: ManagerFeedback
   - name: Integration
   - name: Site
   - name: AdminSite
@@ -146,6 +149,49 @@ paths:
         '422': { $ref: '#/components/responses/ValidationError' }
         '429': { $ref: '#/components/responses/RateLimited' }
         '503': { $ref: '#/components/responses/Unavailable' }
+  /feedback:
+    post:
+      tags: [Feedback]
+      operationId: createFeedback
+      summary: Принять контакты или запрос без регистрации
+      description: >-
+        Проверяется разрешённый Origin; сессия и CSRF-токен не нужны, cookie не
+        дают привилегий. После нормализации требуется хотя бы один контакт;
+        каждый заполненный контакт проверяется независимо. Обращение и одно
+        событие feedback_telegram сохраняются одной транзакцией. Ответ 202
+        выдаётся после commit и не обещает доставку уведомления или срок ответа.
+        Повтор UUID с тем же нормализованным телом всегда возвращает исходную
+        неизменяемую квитанцию 202, даже после закрытия или конверсии. Контакты,
+        приватный статус, ответственный и заказ в публичный ответ не входят;
+        публичного чтения обращений нет. Другое тело с тем же ключом — 409
+        IDEMPOTENCY_CONFLICT; незавершённая параллельная попытка — 409
+        IDEMPOTENCY_IN_PROGRESS и Retry-After. Ключ хранится с обращением и
+        независим от ключей оформления и конверсии.
+        Новые обращения ограничены PostgreSQL-счётчиком: 10 с IP и 3 на каждый
+        указанный контакт за 10 минут; сохранённый повтор лимит не расходует.
+        X-Real-IP учитывается только от TRUSTED_PROXY_HOSTS; произвольный
+        X-Forwarded-For не используется. Ключи контактов в счётчике — HMAC.
+        Без Telegram и 1С приём работает, уведомление ждёт настройки.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateFeedbackRequest' }
+      responses:
+        '202':
+          description: Сохранённая неизменяемая квитанция, включая успешный повтор
+          headers:
+            Cache-Control: { schema: { type: string, const: no-store } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FeedbackReceipt' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '429': { $ref: '#/components/responses/RateLimited' }
   /manager/session:
     post:
       tags: [ManagerSession]
@@ -330,6 +376,208 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
         '422': { $ref: '#/components/responses/ValidationError' }
+  /manager/feedback:
+    get:
+      tags: [ManagerFeedback]
+      operationId: listManagerFeedback
+      summary: Закрытый список обращений с контактами
+      description: >-
+        Любой действующий manager/admin читает все обращения. Фильтры объединяются
+        AND; без status возвращаются все статусы, включая терминальные. Поиск без
+        учёта регистра по номеру, имени, телефону, email и сервису/адресу мессенджера;
+        пробелы по краям q обрезаются, %, _ и обратная косая черта ищутся буквально.
+        Сортировка createdAt DESC, id DESC. Чтение не назначает ответственного и
+        не меняет статус. Контакты и текст поиска не попадают в журналы.
+      security: [{ ManagerCookie: [] }]
+      x-required-roles: [manager, admin]
+      parameters:
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/FeedbackStatus' }
+        - name: q
+          in: query
+          schema: { type: string, maxLength: 120, default: '', pattern: '^[^\x00-\x1f\x7f]*$' }
+        - $ref: '#/components/parameters/Offset'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Страница полных карточек, no-store
+          headers:
+            Cache-Control: { schema: { type: string, const: no-store } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FeedbackPage' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /manager/feedback/{feedbackId}:
+    get:
+      tags: [ManagerFeedback]
+      operationId: getManagerFeedback
+      summary: Карточка обращения, история и состояние уведомления
+      description: >-
+        Читается напрямую по ID независимо от страницы списка. Требует сессию
+        manager/admin, но не владение обращением. Открытие не меняет данные.
+      security: [{ ManagerCookie: [] }]
+      x-required-roles: [manager, admin]
+      parameters:
+        - $ref: '#/components/parameters/FeedbackId'
+      responses:
+        '200':
+          description: Карточка с текущей версией и безопасным состоянием Telegram
+          headers:
+            ETag: { $ref: '#/components/headers/ResourceETag' }
+            Cache-Control: { schema: { type: string, const: no-store } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ManagerFeedback' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /manager/feedback/{feedbackId}/status:
+    patch:
+      tags: [ManagerFeedback]
+      operationId: changeFeedbackStatus
+      summary: Взять обращение в работу или закрыть с результатом
+      description: >-
+        Проверяются сессия manager/admin, Origin, CSRF, блокировка строки и If-Match.
+        new -> in_progress назначает текущего сотрудника ответственным; new ->
+        closed и in_progress -> closed требуют непустой resolution. Назначенное
+        обращение меняет только ответственный либо admin. Два одновременных
+        взятия не создают двух владельцев: устаревшая версия — 412. converted и
+        closed терминальны; повторный переход и установка converted вручную
+        недопустимы. Изменение, увеличение версии и аудит — одна транзакция.
+        Отсутствующий/некорректный If-Match — 400, чужой владелец — 403,
+        запрещённый переход — 409. Переназначения и повторного открытия нет.
+      security: [{ ManagerCookie: [] }]
+      x-required-roles: [manager, admin]
+      parameters:
+        - $ref: '#/components/parameters/FeedbackId'
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ChangeFeedbackStatusRequest' }
+      responses:
+        '200':
+          description: Полная карточка с увеличенной версией и сохранённым аудитом
+          headers:
+            ETag: { $ref: '#/components/headers/ResourceETag' }
+            Cache-Control: { schema: { type: string, const: no-store } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ManagerFeedback' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '412': { $ref: '#/components/responses/VersionConflict' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /manager/feedback/{feedbackId}/notes:
+    post:
+      tags: [ManagerFeedback]
+      operationId: addFeedbackNote
+      summary: Сохранить заметку и необязательный способ связи
+      description: >-
+        Только для in_progress, ответственным либо admin. Проверяются сессия,
+        Origin, CSRF и If-Match под блокировкой строки. Заметка с автором и
+        временем, увеличение версии и updatedAt сохраняются одной транзакцией.
+        contactMethod фиксирует использованный канал, но не отправляет сообщение.
+        Чужой владелец — 403, другой статус — 409, старая версия — 412,
+        отсутствующий/неверный If-Match — 400. Ключа идемпотентности нет;
+        повтор после успеха со старой версией не добавляет вторую заметку.
+      security: [{ ManagerCookie: [] }]
+      x-required-roles: [manager, admin]
+      parameters:
+        - $ref: '#/components/parameters/FeedbackId'
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AddFeedbackNoteRequest' }
+      responses:
+        '200':
+          description: Полная карточка с новой заметкой и увеличенной версией
+          headers:
+            ETag: { $ref: '#/components/headers/ResourceETag' }
+            Cache-Control: { schema: { type: string, const: no-store } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ManagerFeedback' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '412': { $ref: '#/components/responses/VersionConflict' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /manager/feedback/{feedbackId}/order:
+    post:
+      tags: [ManagerFeedback]
+      operationId: createFeedbackOrder
+      summary: Создать обычный заказ и атомарно связать его с обращением
+      description: >-
+        Сессия manager/admin, разрешённый Origin и CSRF обязательны. Менять
+        назначенное обращение может ответственный либо admin. Новая конверсия
+        требует in_progress и текущий If-Match. Используется общая логика
+        CreateOrderRequest: нужны имя, российский телефон, товары, актуальные
+        цены/остатки и адрес доставки при необходимости. В одной транзакции
+        проверяются товары и цены, резервируются остатки, создаются Order и
+        order_export, связь, статус converted, увеличенная версия и аудит.
+        Любая ошибка откатывает всё; без адаптера 1С — 503 ERP_NOT_CONFIGURED,
+        обращение остаётся в работе. converted означает локальное создание
+        заказа и задания обмена, а не подтверждённую выгрузку или продажу.
+        Отдельный UUID Idempotency-Key действует в рамках этого обращения и
+        хранится вместе с нормализованным отпечатком и исходной карточкой ответа.
+        После проверки сессии, CSRF и владельца успешный повтор возвращает
+        исходные карточку и ETag с 200 до проверки If-Match, статуса и ERP;
+        устаревший If-Match не мешает этому повтору. Другое тело с тем же ключом —
+        409 IDEMPOTENCY_CONFLICT. Другой ключ после успеха — 409
+        FEEDBACK_ALREADY_CONVERTED с details[].orderId. Параллельная одинаковая
+        попытка — 409 IDEMPOTENCY_IN_PROGRESS и Retry-After. Второй заказ из
+        одного обращения не создаётся. Ключ независим от публичного приёма и
+        покупательского оформления; исходная форма обращения не изменяется.
+      security: [{ ManagerCookie: [] }]
+      x-required-roles: [manager, admin]
+      parameters:
+        - $ref: '#/components/parameters/FeedbackId'
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateOrderRequest' }
+      responses:
+        '201':
+          description: Заказ, резерв, событие обмена и связь сохранены; полная карточка обращения
+          headers:
+            ETag: { $ref: '#/components/headers/ResourceETag' }
+            Cache-Control: { schema: { type: string, const: no-store } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ManagerFeedback' }
+        '200':
+          description: Исходная карточка и ETag успешной конверсии без второго заказа
+          headers:
+            ETag: { $ref: '#/components/headers/ResourceETag' }
+            Cache-Control: { schema: { type: string, const: no-store } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ManagerFeedback' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '412': { $ref: '#/components/responses/VersionConflict' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '503': { $ref: '#/components/responses/Unavailable' }
   /manager/integration/health:
     get:
       tags: [Integration]
@@ -972,7 +1220,7 @@ components:
       description: >-
         Серверная сессия сотрудника. Роль проверяется backend на каждом запросе;
         наличие вкладки CRM в frontend не даёт доступа. Cookie Path=/api;
-        /admin/* и /manager/integration/* требуют admin, /manager/orders/* —
+        /admin/* и /manager/integration/* требуют admin, /manager/orders/* и /manager/feedback/* —
         manager/admin. Публичные запросы никогда не расширяют доступ по cookie.
   parameters:
     ProductId:
@@ -985,6 +1233,11 @@ components:
       in: path
       required: true
       schema: { $ref: '#/components/schemas/Id' }
+    FeedbackId:
+      name: feedbackId
+      in: path
+      required: true
+      schema: { $ref: '#/components/schemas/Id', pattern: '^[^\x00-\x1f\x7f]+$' }
     CategoryId:
       name: categoryId
       in: path
@@ -1018,6 +1271,8 @@ components:
         сохраняет ключ и тело. Ключ оформления хранится до удаления заказа;
         ключи административного импорта/повтора — не менее 24 часов. Повтор
         другой задачи не возвращает задачу другого заказа. Неверный/отсутствующий ключ — 400.
+        Публичный приём feedback и конверсия имеют независимые области ключей;
+        ключ конверсии относится к обращению, а не сотруднику, и сохраняется с ним.
       schema: { type: string, format: uuid }
     CsrfToken:
       name: X-CSRF-Token
@@ -1417,6 +1672,222 @@ components:
         expectedUnitPriceKopecks:
           $ref: '#/components/schemas/MoneyKopecks'
           description: Показанная клиенту цена для обнаружения конфликта, не источник расчёта
+    FeedbackType:
+      type: string
+      enum: [contact, request]
+      description: contact — свяжитесь со мной; request — оставить запрос с обязательным текстом
+    FeedbackStatus:
+      type: string
+      enum: [new, in_progress, converted, closed]
+      description: converted и closed терминальны; converted устанавливается только созданием заказа
+    FeedbackContactMethod:
+      type: string
+      enum: ['', phone, email, messenger]
+      default: ''
+      description: Необязательный канал связи в заметке; пустая строка — не указан
+    FeedbackMessenger:
+      type: object
+      additionalProperties: false
+      description: >-
+        Сервис и контакт обрезаются по краям; нужны оба непустых значения либо
+        оба пустых. Контрольные символы запрещены. Контакт — обычный текст;
+        существование аккаунта и владение им не подтверждаются.
+      properties:
+        service: { type: string, maxLength: 40, default: '', pattern: '^[^\x00-\x1f\x7f-\x9f]*$' }
+        address: { type: string, maxLength: 254, default: '', pattern: '^[^\x00-\x1f\x7f-\x9f]*$' }
+      oneOf:
+        - properties:
+            service: { const: '' }
+            address: { const: '' }
+        - required: [service, address]
+          properties:
+            service: { minLength: 1 }
+            address: { minLength: 1 }
+    CreateFeedbackRequest:
+      type: object
+      additionalProperties: false
+      required: [type]
+      description: >-
+        Значения строк обрезаются по краям; хотя бы один контакт обязателен после
+        нормализации. Проверяется каждый заполненный контакт. Имя и контакты
+        однострочные, контрольные символы U+0000–001F и U+007F–009F запрещены;
+        в message допустимы CR/LF. Лишние поля, роли, статусы, сотрудники и null
+        не принимаются. Для request нужен непустой message. Браузер не сохраняет
+        тело формы или контакты в localStorage/sessionStorage; допустимы только
+        UUID и SHA-256 отпечаток попытки в отдельном техническом ключе.
+      properties:
+        type: { $ref: '#/components/schemas/FeedbackType' }
+        name: { type: string, maxLength: 100, default: '', pattern: '^[^\x00-\x1f\x7f-\x9f]*$' }
+        phone:
+          type: string
+          maxLength: 30
+          default: ''
+          pattern: '^[^\x00-\x1f\x7f-\x9f]*$'
+          description: >-
+            Пустая строка либо российский номер: +7/7/8 и 10 цифр;
+            пробелы, скобки и дефисы удаляются. Результат — +7XXXXXXXXXX.
+        email:
+          type: string
+          maxLength: 254
+          default: ''
+          description: Пустая строка либо адрес вида user@host.tld без пробелов, ?, # и контрольных символов
+        messenger:
+          $ref: '#/components/schemas/FeedbackMessenger'
+          default: { service: '', address: '' }
+        message: { type: string, maxLength: 2000, default: '', pattern: '^[^\x00-\x09\x0b\x0c\x0e-\x1f\x7f-\x9f]*$' }
+      anyOf:
+        - required: [phone]
+          properties:
+            phone: { minLength: 1 }
+        - required: [email]
+          properties:
+            email: { minLength: 1 }
+        - required: [messenger]
+          properties:
+            messenger:
+              required: [address]
+              properties:
+                address: { minLength: 1 }
+      allOf:
+        - if:
+            properties:
+              type: { const: request }
+            required: [type]
+          then:
+            required: [message]
+            properties:
+              message: { minLength: 1 }
+    FeedbackReceipt:
+      type: object
+      additionalProperties: false
+      required: [id, number, createdAt, state]
+      description: Неизменяемая публичная квитанция без контактов, приватного статуса и связи с заказом
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        number: { type: string, minLength: 1, maxLength: 80 }
+        createdAt: { type: string, format: date-time }
+        state: { type: string, const: accepted }
+    ChangeFeedbackStatusRequest:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status: { type: string, enum: [in_progress, closed] }
+        resolution:
+          type: string
+          maxLength: 2000
+          default: ''
+          pattern: '^[^\x00-\x09\x0b\x0c\x0e-\x1f\x7f-\x9f]*$'
+          description: Текст обрезается по краям; для closed обязателен непустой результат, для in_progress — пустой
+      allOf:
+        - if:
+            properties:
+              status: { const: closed }
+            required: [status]
+          then:
+            required: [resolution]
+            properties:
+              resolution: { minLength: 1 }
+          else:
+            properties:
+              resolution: { const: '' }
+    AddFeedbackNoteRequest:
+      type: object
+      additionalProperties: false
+      required: [text]
+      properties:
+        text:
+          type: string
+          minLength: 1
+          maxLength: 2000
+          pattern: '^[^\x00-\x09\x0b\x0c\x0e-\x1f\x7f-\x9f]*$'
+          description: Непустой после trim текст; CR/LF допустимы, прочие контрольные символы запрещены
+        contactMethod: { $ref: '#/components/schemas/FeedbackContactMethod' }
+    FeedbackStaff:
+      type: object
+      additionalProperties: false
+      required: [id, name]
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        name: { type: string, maxLength: 240 }
+    FeedbackHistoryEntry:
+      type: object
+      additionalProperties: false
+      required: [id, createdAt, staff, action, text, contactMethod]
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        createdAt: { type: string, format: date-time }
+        staff:
+          anyOf:
+            - $ref: '#/components/schemas/FeedbackStaff'
+            - type: 'null'
+        action:
+          type: string
+          enum: [feedback.created, feedback.claimed, feedback.closed, feedback.converted, feedback.note_added]
+        text: { type: string, maxLength: 2000 }
+        contactMethod: { $ref: '#/components/schemas/FeedbackContactMethod' }
+    FeedbackNotification:
+      type: object
+      additionalProperties: false
+      required: [state, code]
+      description: Безопасное состояние Telegram без токена, контактов и необработанного ответа провайдера
+      properties:
+        state:
+          type: string
+          enum: [not_configured, queued, running, done, error, uncertain]
+          description: not_configured — ждёт настройки; done — отправлено; uncertain допускает повтор уведомления
+        code: { type: [string, 'null'], pattern: '^[A-Z][A-Z0-9_]{0,79}$' }
+    ManagerFeedback:
+      type: object
+      additionalProperties: false
+      required: [id, number, createdAt, updatedAt, type, name, phone, email, messenger, message, status, assignedTo, version, resolution, order, history, notification]
+      description: >-
+        Полная закрытая карточка. Исходные контакты/запрос сохраняются независимо
+        от реквизитов созданного заказа. assignedTo=null до взятия в работу;
+        при in_progress ответственный обязателен. order заполнен только при
+        converted и содержит квитанцию заказа. История объединяет создание,
+        аудит статусов/конверсии и заметки, сортируется createdAt ASC, id ASC;
+        staff=null только для публичного создания.
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        number: { type: string, minLength: 1, maxLength: 80 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        type: { $ref: '#/components/schemas/FeedbackType' }
+        name: { type: string, maxLength: 100 }
+        phone: { type: string, pattern: '^(\+7[0-9]{10})?$' }
+        email: { type: string, maxLength: 254 }
+        messenger:
+          $ref: '#/components/schemas/FeedbackMessenger'
+          required: [service, address]
+        message: { type: string, maxLength: 2000 }
+        status: { $ref: '#/components/schemas/FeedbackStatus' }
+        assignedTo:
+          anyOf:
+            - $ref: '#/components/schemas/FeedbackStaff'
+            - type: 'null'
+        version: { type: integer, minimum: 1, maximum: 9007199254740991 }
+        resolution: { type: string, maxLength: 2000 }
+        order:
+          anyOf:
+            - $ref: '#/components/schemas/OrderReceipt'
+            - type: 'null'
+        history:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/FeedbackHistoryEntry' }
+        notification: { $ref: '#/components/schemas/FeedbackNotification' }
+    FeedbackPage:
+      type: object
+      additionalProperties: false
+      required: [items, total, offset, limit]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/ManagerFeedback' }
+        total: { type: integer, minimum: 0 }
+        offset: { type: integer, minimum: 0, maximum: 9007199254740991 }
+        limit: { type: integer, minimum: 1, maximum: 100 }
     Customer:
       type: object
       additionalProperties: false
@@ -1588,6 +2059,7 @@ components:
             properties:
               field: { type: string }
               productId: { $ref: '#/components/schemas/Id' }
+              orderId: { $ref: '#/components/schemas/Id', description: Уже созданный заказ при FEEDBACK_ALREADY_CONVERTED }
               code: { type: string }
               currentPriceKopecks: { $ref: '#/components/schemas/MoneyKopecks' }
               availableStock: { type: integer, minimum: 0 }

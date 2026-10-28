@@ -5,6 +5,7 @@ import {
 } from '../catalog-admin.js';
 import { createOrder as buildOrder, changeOrderStatus, sanitizeOrders } from '../orders.js';
 import { createDemoContentApi } from './demo-content-api.js';
+import { createDemoFeedbackApi } from './demo-feedback-api.js';
 
 const CATALOG_KEY = 'lavr.catalog.v1';
 const ORDERS_KEY = 'lavr.orders.v1';
@@ -64,7 +65,7 @@ export function createDemoApi({ localStorage = globalThis.localStorage, sessionS
     };
   }
 
-  return {
+  const api = {
     mode: 'demo',
     canCreateProduct: true,
     ...createDemoContentApi({ localStorage, getCatalog: () => readCatalog(true).catalog }),
@@ -146,4 +147,5 @@ export function createDemoApi({ localStorage = globalThis.localStorage, sessionS
     async login() { return structuredClone(session); },
     async logout() {},
   };
+  return { ...api, ...createDemoFeedbackApi({ getSession: api.getSession, createOrder: api.createOrder }) };
 }

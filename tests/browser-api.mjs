@@ -277,8 +277,8 @@ test('mobile staff sign-in, CRM tables and category assignment stay touch and ke
     await page.locator('.table-action').scrollIntoViewIfNeeded();
     await page.locator('.table-action').tap();
     await page.locator('dialog[open] #dialog-title').waitFor();
-    await mobileControls(page, ['.dialog-close', '.order-status-actions button']);
-    await page.locator('.dialog-close').tap();
+    await mobileControls(page, ['dialog[open] .dialog-close', '.order-status-actions button']);
+    await page.locator('dialog[open] .dialog-close').tap();
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), `CRM table scroll remains local at ${viewport.width}px`);
     await page.locator('.crm-tabs a[href="#crm-catalog"]').tap();
     await page.locator('[data-testid="product-category-api-part-1"]').waitFor();
@@ -608,7 +608,7 @@ test('a late status 401 from the previous session cannot invalidate a newer logi
   const sent = page.waitForRequest(request => request.method() === 'PATCH' && request.url().endsWith('/status'));
   await page.locator('[data-action="status"][data-status="cancelled"]').click();
   await sent;
-  await page.locator('.dialog-close').click();
+  await page.locator('dialog[open] .dialog-close').click();
   await page.locator('.staff-session').getByRole('button', { name: 'Выйти', exact: true }).click();
   await page.locator('.staff-login').waitFor();
   await page.locator('[name="login"]').fill('admin');
@@ -663,7 +663,7 @@ test('a delayed conflict refresh cannot replace a different order dialog', async
   const refresh = page.waitForRequest(request => request.method() === 'GET' && request.url().endsWith('/manager/orders/api-order'));
   await page.locator('[data-action="status"][data-status="cancelled"]').click();
   await refresh;
-  await page.locator('.dialog-close').click();
+  await page.locator('dialog[open] .dialog-close').click();
   await page.locator('.order-number[data-id="api-order-2"]').click();
   await page.waitForFunction(() => document.querySelector('dialog #dialog-title')?.textContent.includes('SERVER-ORDER-2'));
   const response = page.waitForResponse(item => item.request().method() === 'GET' && item.url().endsWith('/manager/orders/api-order'));
