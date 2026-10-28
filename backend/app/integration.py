@@ -23,6 +23,13 @@ class IntegrationState(Base):
     error_code: Mapped[str | None] = mapped_column(String(80), nullable=True)
 
 
+class TelegramDeliveryState(Base):
+    __tablename__ = 'telegram_delivery_state'
+
+    destination_key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    blocked_until: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class Outbox(Base):
     __tablename__ = 'outbox'
     __table_args__ = (
@@ -38,6 +45,8 @@ class Outbox(Base):
     state: Mapped[str] = mapped_column(String(30), default='queued', index=True)
     attempts: Mapped[int] = mapped_column(Integer, default=0)
     lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    last_error_code: Mapped[str | None] = mapped_column(String(80), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 

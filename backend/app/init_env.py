@@ -11,6 +11,8 @@ def generate_env():
         'SESSION_SECRET': secrets.token_urlsafe(48),
         'ALLOWED_ORIGINS': 'http://127.0.0.1:8080,http://localhost:8080',
         'COOKIE_SECURE': 'false', 'SEED_DEMO_CATALOG': 'true',
+        'TELEGRAM_NOTIFICATIONS_ENABLED': 'false',
+        'TELEGRAM_BOT_TOKEN': '', 'TELEGRAM_CHAT_ID': '', 'PUBLIC_SITE_URL': '',
     }
     return '# Generated locally; keep this file private and outside image archives.\n' + ''.join(f'{key}={value}\n' for key, value in values.items())
 

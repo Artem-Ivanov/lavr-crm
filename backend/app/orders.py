@@ -175,20 +175,9 @@ def manager_order(db, order):
 router = APIRouter(prefix='/api')
 
 
-@router.post('/orders')
-def create_order(body: CreateOrderRequest, response: Response, idempotency_key: str | None = Header(default=None), db: Session = Depends(get_db)):
+def build_order(db: Session, body: CreateOrderRequest) -> Order:
     from .catalog import Category, Product, ProductPresentation, catalog_metadata
 
-    key = parse_idempotency_key(idempotency_key)
-    digest = hashlib.sha256(json.dumps(body.model_dump(), ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
-    lock_attempt(db, 'order:' + key)
-    previous = db.get(OrderAttempt, key)
-    response.headers['Cache-Control'] = 'no-store'
-    if previous:
-        if previous.digest != digest:
-            raise ApiError(409, 'IDEMPOTENCY_CONFLICT', 'С этим ключом уже принят другой запрос.')
-        response.status_code = 200
-        return previous.receipt
     integration.require_erp()
     if catalog_metadata(db)['stale']:
         raise ApiError(503, 'CATALOG_STALE', 'Каталог требует обновления из 1С. Приём заказов временно недоступен.')
@@ -217,13 +206,29 @@ def create_order(body: CreateOrderRequest, response: Response, idempotency_key: 
     created_at = utcnow()
     order_id = new_id()
     order = Order(id=order_id, number=f'L-{created_at:%Y%m%d}-{order_id.upper()}', created_at=created_at, customer=body.customer.model_dump(), fulfillment=body.fulfillment.model_dump(), items=snapshots, total_kopecks=total, status='new', integration_status='pending_sync', version=1)
-    receipt = order_receipt(order)
     db.add(order)
     db.flush()
     for item in body.items:
         products[item.productId].reserved += item.quantity
-    db.add(OrderAttempt(idempotency_key=key, digest=digest, order_id=order.id, receipt=receipt))
     db.add(integration.Outbox(id=new_id(), order_id=order.id, event_type='order_export', payload={'externalOrderId': order.id, 'customer': order.customer, 'fulfillment': order.fulfillment, 'items': order.items, 'totalKopecks': total}, state='queued', attempts=0))
+    return order
+
+
+@router.post('/orders')
+def create_order(body: CreateOrderRequest, response: Response, idempotency_key: str | None = Header(default=None), db: Session = Depends(get_db)):
+    key = parse_idempotency_key(idempotency_key)
+    digest = hashlib.sha256(json.dumps(body.model_dump(), ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+    lock_attempt(db, 'order:' + key)
+    previous = db.get(OrderAttempt, key)
+    response.headers['Cache-Control'] = 'no-store'
+    if previous:
+        if previous.digest != digest:
+            raise ApiError(409, 'IDEMPOTENCY_CONFLICT', 'С этим ключом уже принят другой запрос.')
+        response.status_code = 200
+        return previous.receipt
+    order = build_order(db, body)
+    receipt = order_receipt(order)
+    db.add(OrderAttempt(idempotency_key=key, digest=digest, order_id=order.id, receipt=receipt))
     db.commit()
     response.status_code = 201
     return receipt

@@ -15,7 +15,7 @@ os.environ.setdefault('COOKIE_SECURE', 'false')
 @pytest.fixture
 def db_engine():
     from app.db import Base
-    from app import auth, catalog, content, orders  # Register every model before DDL.
+    from app import auth, catalog, content, orders, feedback  # Register every model before DDL.
     url = os.environ.get('TEST_DATABASE_URL')
     if not url or not make_url(url).database.endswith('_test'):
         pytest.fail('TEST_DATABASE_URL must reference a dedicated PostgreSQL *_test database')

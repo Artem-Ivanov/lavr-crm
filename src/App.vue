@@ -5,6 +5,8 @@ import ProductCard from './components/ProductCard.vue';
 import CatalogManager from './components/CatalogManager.vue';
 import LandingPage from './components/LandingPage.vue';
 import ContentManager from './components/ContentManager.vue';
+import FeedbackForm from './components/FeedbackForm.vue';
+import FeedbackManager from './components/FeedbackManager.vue';
 import { parseCartDraft, setDraftQuantity } from './cart-draft.js';
 import { ORDER_STATUSES, orderActions } from './order-labels.js';
 import { checkoutKey, clearCheckoutKey } from './checkout-attempt.js';
@@ -61,6 +63,8 @@ const modalError = ref('');
 const detailDialog = ref(null);
 const mobileMenu = ref(null);
 const contentDirty = ref(false);
+const feedbackDirty = ref(false);
+const feedbackForm = ref(null);
 const receipt = ref(null);
 const submitting = ref(false);
 const checkoutError = ref('');
@@ -80,9 +84,18 @@ const date = value => new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 
 const categoryName = id => categories.value.find(category => category.id === id)?.name || id;
 const categoryCount = id => categories.value.find(category => category.id === id)?.productCount ?? null;
 const brands = computed(() => [...new Set([...productCache.value.values()].map(product => product.brand))].sort());
-const readPage = () => ['catalog', 'cart', 'crm', 'crm-catalog', 'crm-content'].includes(location.hash.slice(1)) ? location.hash.slice(1) : 'home';
-const page = ref(readPage());
-const isCrm = computed(() => ['crm', 'crm-catalog', 'crm-content'].includes(page.value));
+const readRoute = () => {
+  const [name, search = ''] = location.hash.slice(1).split('?');
+  const page = ['catalog', 'cart', 'crm', 'crm-catalog', 'crm-content', 'crm-feedback'].includes(name) ? name : 'home';
+  const params = new URLSearchParams(search);
+  return { page, caseId: page === 'crm-feedback' ? params.get('case') || '' : '', orderId: page === 'crm' ? params.get('order') || '' : '' };
+};
+const initialRoute = readRoute();
+const page = ref(initialRoute.page);
+const caseId = ref(initialRoute.caseId);
+const orderId = ref(initialRoute.orderId);
+let acceptedHash = location.hash;
+const isCrm = computed(() => ['crm', 'crm-catalog', 'crm-content', 'crm-feedback'].includes(page.value));
 const isAdmin = computed(() => session.value?.user.role === 'admin');
 const activeFilters = computed(() => filters.query || filters.category || filters.brand || filters.inStock);
 const count = computed(() => cart.value.reduce((sum, item) => sum + item.quantity, 0));
@@ -102,10 +115,13 @@ const storeName = computed(() => site.value?.settings.storeName || 'LAVR');
 const menuItems = computed(() => site.value && (!isDemo || site.value.menuConfigured || site.value.menu.length) ? site.value.menu : categories.value.slice(0, 3).map(category => ({ label: category.name, target: { type: 'category', categoryId: category.id } })));
 
 watch(page, current => {
-  document.title = `${{ home: 'Автозапчасти для вашего автомобиля', catalog: 'Каталог автозапчастей', cart: 'Корзина', crm: 'CRM · заказы', 'crm-catalog': 'CRM · каталог', 'crm-content': 'CRM · контент сайта' }[current]} — ${storeName.value}`;
-  if (['crm', 'crm-catalog', 'crm-content'].includes(current)) enterCrm();
+  document.title = `${{ home: 'Автозапчасти для вашего автомобиля', catalog: 'Каталог автозапчастей', cart: 'Корзина', crm: 'CRM · заказы', 'crm-catalog': 'CRM · каталог', 'crm-content': 'CRM · контент сайта', 'crm-feedback': 'CRM · обращения' }[current]} — ${storeName.value}`;
+  if (['crm', 'crm-catalog', 'crm-content', 'crm-feedback'].includes(current)) enterCrm();
   if (current === 'cart') loadCartProducts();
 }, { immediate: true });
+watch([() => session.value?.user.id, page, orderId], ([staffId, current, id]) => {
+  if (staffId && current === 'crm' && id) openModal('order', id);
+});
 watch(filters, () => { catalogOffset.value = 0; loadCatalog(); });
 watch([orderQuery, orderFilter], () => { ordersOffset.value = 0; if (session.value) loadOrders(); });
 
@@ -161,7 +177,7 @@ async function refreshData() {
 }
 function handleStaffError(error) {
   if (error.status === 401) {
-    contentDirty.value = false;
+    contentDirty.value = false; feedbackDirty.value = false;
     authRequest++; authLoading.value = false; ordersRequest++; session.value = null; orders.value = []; ordersTotal.value = 0;
     closeModal(false);
     authError.value = 'Сессия завершена. Войдите снова.';
@@ -192,10 +208,10 @@ async function login() {
 }
 async function logout() {
   if (logoutBusy.value || loginBusy.value) return;
-  if (contentDirty.value && !window.confirm('Есть несохранённые изменения или незавершённое сохранение. Выйти из кабинета?')) return;
+  if ((contentDirty.value || feedbackDirty.value) && !window.confirm('Есть несохранённые изменения или незавершённое сохранение. Выйти из кабинета?')) return;
   const request = ++authRequest;
   logoutBusy.value = true; ordersRequest++;
-  try { await api.logout(); if (request === authRequest) { contentDirty.value = false; session.value = null; orders.value = []; ordersTotal.value = 0; closeModal(false); } }
+  try { await api.logout(); if (request === authRequest) { contentDirty.value = false; feedbackDirty.value = false; session.value = null; orders.value = []; ordersTotal.value = 0; closeModal(false); } }
   catch (error) { authError.value = error.message; handleStaffError(error); }
   finally { logoutBusy.value = false; }
 }
@@ -228,7 +244,9 @@ function changeQuantity(id, quantity) {
   try { requireCatalog(); saveCart(setDraftQuantity(cart.value, id, quantity, productCache.value.get(id)?.stock || 0)); }
   catch (error) { notify(error.message); }
 }
-function go(target) { if (page.value !== target) location.hash = target; }
+function go(target) { if (location.hash !== `#${target}`) location.hash = target; }
+function openFeedback(type, event) { feedbackForm.value?.open(type, event); }
+function openFeedbackCase(id) { go(id ? `crm-feedback?case=${encodeURIComponent(id)}` : 'crm-feedback'); }
 function resetFilters() { Object.assign(filters, defaultFilters()); searchQuery.value = ''; }
 function selectCategory(id) {
   Object.assign(filters, { category: id, query: '', brand: '' }); searchQuery.value = ''; go('catalog'); window.scrollTo({ top: 0, behavior: 'instant' });
@@ -321,13 +339,17 @@ function closeMobileMenu() {
 }
 function navigateFromMenu(target) { closeMobileMenu(); navigateTarget(target); }
 function onHashChange() {
-  const target = readPage();
-  if (page.value === 'crm-content' && target !== page.value && contentDirty.value
-    && !window.confirm('Есть несохранённые изменения или незавершённое сохранение. Покинуть редактор?')) {
-    history.replaceState(null, '', '#crm-content'); return;
+  const target = readRoute();
+  if ((contentDirty.value || feedbackDirty.value) && location.hash !== acceptedHash
+    && !window.confirm('Есть несохранённые изменения или незавершённое сохранение. Покинуть страницу?')) {
+    history.replaceState(null, '', acceptedHash || '#home'); return;
   }
-  if (target !== page.value) contentDirty.value = false;
-  closeMobileMenu(); closeModal(false); page.value = target; window.scrollTo({ top: 0, behavior: 'instant' });
+  contentDirty.value = false; feedbackDirty.value = false;
+  if (page.value === 'crm' && target.page !== 'crm') { ordersRequest++; ordersLoading.value = false; }
+  acceptedHash = location.hash;
+  closeMobileMenu(); closeModal(false); feedbackForm.value?.close(false);
+  page.value = target.page; caseId.value = target.caseId; orderId.value = target.orderId;
+  window.scrollTo({ top: 0, behavior: 'instant' });
 }
 async function onStorage(event) {
   if (event.key === CART_KEY || event.key === null) { cart.value = readCart(); if (cart.value.length) receipt.value = null; await loadCartProducts(); }
@@ -366,7 +388,7 @@ onUnmounted(() => {
     <template v-if="page === 'home'">
       <p v-if="siteLoading" class="container api-feedback" role="status">Загружаем главную страницу…</p>
       <div v-else-if="siteError" class="container api-feedback" role="alert"><p>{{ siteError }}</p><button type="button" class="btn outline" @click="loadSite">Повторить загрузку страницы</button></div>
-      <LandingPage v-else-if="site" :categories="categories" :site="site" :demo="isDemo" @category="selectCategory" @navigate="navigateTarget" />
+      <LandingPage v-else-if="site" :categories="categories" :site="site" :demo="isDemo" @category="selectCategory" @navigate="navigateTarget" @feedback="openFeedback" />
     </template>
 
     <section v-if="page === 'home' || page === 'catalog'" id="catalog-results" class="catalog-section container" aria-labelledby="catalog-title">
@@ -418,14 +440,14 @@ onUnmounted(() => {
     </template>
 
     <section v-else class="container crm-page">
-      <div class="breadcrumbs"><a href="#home">Витрина</a><span>/</span> Кабинет менеджера</div><div class="section-heading"><div><span class="eyebrow">LAVR / CRM</span><h1>{{ page === 'crm-catalog' ? 'Каталог магазина' : page === 'crm-content' ? 'Содержимое сайта' : 'Заказы под контролем' }}<span class="red-period">.</span></h1><p class="section-subtitle">{{ page === 'crm-catalog' ? 'Категории и номенклатура для вашей витрины.' : page === 'crm-content' ? 'Главная, меню, публикации и изображения.' : 'От первого обращения до выдачи запчастей.' }}</p></div><div class="integration-label"><AppIcon name="link" /><span><strong>{{ isDemo ? '1С не подключена' : 'Серверный режим' }}</strong><small>{{ isDemo ? 'Предусмотрен отдельный адаптер' : 'Данные через API' }}</small></span><i></i></div></div>
+      <div class="breadcrumbs"><a href="#home">Витрина</a><span>/</span> Кабинет менеджера</div><div class="section-heading"><div><span class="eyebrow">LAVR / CRM</span><h1>{{ page === 'crm-catalog' ? 'Каталог магазина' : page === 'crm-content' ? 'Содержимое сайта' : page === 'crm-feedback' ? 'Обращения покупателей' : 'Заказы под контролем' }}<span class="red-period">.</span></h1><p class="section-subtitle">{{ page === 'crm-catalog' ? 'Категории и номенклатура для вашей витрины.' : page === 'crm-content' ? 'Главная, меню, публикации и изображения.' : page === 'crm-feedback' ? 'Контакты, запросы и результаты работы с клиентом.' : 'От первого обращения до выдачи запчастей.' }}</p></div><div class="integration-label"><AppIcon name="link" /><span><strong>{{ isDemo ? '1С не подключена' : 'Серверный режим' }}</strong><small>{{ isDemo ? 'Предусмотрен отдельный адаптер' : 'Данные через API' }}</small></span><i></i></div></div>
       <div v-if="isDemo && page === 'crm'" class="demo-notice crm-notice"><AppIcon name="shield" /><div><strong>Демонстрационный кабинет менеджера</strong><p>Показаны заказы текущей вкладки. Авторизация и серверное хранение предусмотрены в архитектуре; сейчас реальные клиенты не обслуживаются.</p></div></div>
       <p v-if="authLoading" class="api-feedback" role="status">Проверяем сессию сотрудника…</p>
       <form v-else-if="!session" class="staff-login" @submit.prevent="login"><h2>Вход для сотрудников</h2><label>Логин<input v-model="loginDraft.login" name="login" autocomplete="username" required maxlength="120"></label><label>Пароль<input v-model="loginDraft.password" name="password" type="password" autocomplete="current-password" required maxlength="256"></label><p v-if="authError" class="form-error" role="alert">{{ authError }}</p><button type="submit" class="btn red" :disabled="loginBusy">{{ loginBusy ? 'Входим…' : 'Войти' }}</button><button type="button" class="btn outline" :disabled="loginBusy" @click="enterCrm">Проверить сессию</button></form>
       <template v-else>
       <div v-if="!isDemo" class="staff-session"><span>{{ session.user.name }} · {{ isAdmin ? 'Администратор' : 'Менеджер' }}</span><button type="button" class="text-link" :disabled="logoutBusy" @click="logout">Выйти</button><p v-if="authError" class="form-error" role="alert">{{ authError }}</p></div>
-      <nav class="crm-tabs" aria-label="Разделы CRM"><a href="#crm" :class="{ selected: page === 'crm' }" :aria-current="page === 'crm' ? 'page' : undefined"><AppIcon name="box" /> Заказы</a><a v-if="isAdmin" href="#crm-catalog" :class="{ selected: page === 'crm-catalog' }" :aria-current="page === 'crm-catalog' ? 'page' : undefined"><AppIcon name="grid" /> Каталог</a><a v-if="isAdmin" href="#crm-content" :class="{ selected: page === 'crm-content' }" :aria-current="page === 'crm-content' ? 'page' : undefined"><AppIcon name="grid" /> Контент сайта</a></nav>
-      <ContentManager v-if="page === 'crm-content' && isAdmin" :api="api" :categories="categories" @changed="loadSite" @staff-error="handleStaffError" @dirty="contentDirty = $event" /><p v-else-if="page === 'crm-content'" class="api-feedback" role="alert">Редактор сайта доступен администратору.</p><CatalogManager v-else-if="page === 'crm-catalog' && isAdmin" :api="api" @changed="refreshData" @staff-error="handleStaffError" /><p v-else-if="page === 'crm-catalog'" class="api-feedback" role="alert">Управление каталогом доступно администратору.</p>
+      <nav class="crm-tabs" aria-label="Разделы CRM"><a href="#crm" :class="{ selected: page === 'crm' }" :aria-current="page === 'crm' ? 'page' : undefined"><AppIcon name="box" /> Заказы</a><a href="#crm-feedback" :class="{ selected: page === 'crm-feedback' }" :aria-current="page === 'crm-feedback' ? 'page' : undefined"><AppIcon name="user" /> Обращения</a><a v-if="isAdmin" href="#crm-catalog" :class="{ selected: page === 'crm-catalog' }" :aria-current="page === 'crm-catalog' ? 'page' : undefined"><AppIcon name="grid" /> Каталог</a><a v-if="isAdmin" href="#crm-content" :class="{ selected: page === 'crm-content' }" :aria-current="page === 'crm-content' ? 'page' : undefined"><AppIcon name="grid" /> Контент сайта</a></nav>
+      <FeedbackManager v-if="page === 'crm-feedback'" :key="session.user.id" :api="api" :session="session" :case-id="caseId" @staff-error="handleStaffError" @dirty="feedbackDirty = $event" @open-case="openFeedbackCase" /><ContentManager v-else-if="page === 'crm-content' && isAdmin" :api="api" :categories="categories" @changed="loadSite" @staff-error="handleStaffError" @dirty="contentDirty = $event" /><p v-else-if="page === 'crm-content'" class="api-feedback" role="alert">Редактор сайта доступен администратору.</p><CatalogManager v-else-if="page === 'crm-catalog' && isAdmin" :api="api" @changed="refreshData" @staff-error="handleStaffError" /><p v-else-if="page === 'crm-catalog'" class="api-feedback" role="alert">Управление каталогом доступно администратору.</p>
       <template v-else>
       <div v-if="!ordersLoading && !ordersError" class="metric-grid"><article><span>Заказов в выборке</span><strong>{{ orders.length }}<small>{{ isDemo ? 'в текущей вкладке' : 'на этой странице' }}</small></strong><AppIcon name="box" /></article><article><span>В работе</span><strong>{{ activeOrders.length }}<small>в текущей выборке</small></strong><AppIcon name="clock" /></article><article><span>Сумма заказов</span><strong>{{ money(orderTotal) }}<small>в выборке, без отменённых</small></strong><AppIcon name="cart" /></article></div>
       <div class="crm-orders">
@@ -442,7 +464,9 @@ onUnmounted(() => {
     </section>
   </main>
 
-  <footer class="footer"><div class="container footer-top"><a class="logo" href="#home">{{ storeName }}<span class="logo-square"></span><small>АВТОЗАПЧАСТИ</small></a><p>Детали для дороги.<br>Внимание к вашему автомобилю.</p><div><strong>На сайте</strong><a href="#catalog">Каталог запчастей</a><a href="#cart">Корзина</a><a href="#crm">Кабинет менеджера</a></div><div v-if="isDemo"><strong>Об этом MVP</strong><span>Тестовые цены и остатки</span><span>Оформление без оплаты</span><span>Интеграция 1С: спроектирована</span></div><div v-if="site && (!isDemo || site.settings.phone)"><strong>Контакты</strong><span>{{ site.settings.phone }}</span><span>{{ site.settings.address }}</span><span>{{ site.settings.hours }}</span></div></div><div class="container footer-bottom"><span>© 2026 LAVR · концепт магазина автозапчастей</span><span>Фото иллюстративные · <button type="button" class="footer-link" data-action="credits" data-focus-key="credits" @click="openModal('credits', null, $event)">Источники изображений</button></span></div></footer>
+  <footer class="footer"><div class="container footer-top"><a class="logo" href="#home">{{ storeName }}<span class="logo-square"></span><small>АВТОЗАПЧАСТИ</small></a><p>Детали для дороги.<br>Внимание к вашему автомобилю.</p><div><strong>На сайте</strong><a href="#catalog">Каталог запчастей</a><a href="#cart">Корзина</a><a href="#crm">Кабинет менеджера</a></div><div v-if="isDemo"><strong>Об этом MVP</strong><span>Тестовые цены и остатки</span><span>Оформление без оплаты</span><span>Интеграция 1С: спроектирована</span></div><div><strong>Контакты</strong><template v-if="site"><span>{{ site.settings.phone }}</span><span>{{ site.settings.address }}</span><span>{{ site.settings.hours }}</span></template><button type="button" class="feedback-footer-link" data-testid="footer-feedback-contact" @click="openFeedback('contact', $event)">Свяжитесь со мной</button><button type="button" class="feedback-footer-link" data-testid="footer-feedback-request" @click="openFeedback('request', $event)">Оставить запрос</button></div></div><div class="container footer-bottom"><span>© 2026 LAVR · концепт магазина автозапчастей</span><span>Фото иллюстративные · <button type="button" class="footer-link" data-action="credits" data-focus-key="credits" @click="openModal('credits', null, $event)">Источники изображений</button></span></div></footer>
+
+  <FeedbackForm ref="feedbackForm" :api="api" />
 
   <dialog v-if="modal" ref="detailDialog" class="detail-dialog" :class="{ wide: modalProduct }" aria-labelledby="dialog-title" @cancel.prevent="closeModal()">
     <button type="button" class="dialog-close" data-action="close" aria-label="Закрыть" @click="closeModal()"><AppIcon name="close" /></button>

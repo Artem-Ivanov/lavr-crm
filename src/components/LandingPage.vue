@@ -2,7 +2,7 @@
 import { computed } from 'vue';
 import AppIcon from './AppIcon.vue';
 const props = defineProps({ categories: { type: Array, required: true }, site: { type: Object, required: true }, demo: Boolean });
-const emit = defineEmits(['category', 'navigate']);
+const emit = defineEmits(['category', 'navigate', 'feedback']);
 const categoryIcons = { __proto__: null, oils: 'oil', filters: 'filter', brakes: 'brake', ignition: 'spark', suspension: 'spring', belts: 'belt' };
 const heroLines = computed(() => props.site.hero.title.split('\n'));
 const publicationStyle = publication => publication.style || (publication.kind === 'announcement' ? 'notice' : publication.images.length === 1 ? 'oil' : 'service');
@@ -26,6 +26,11 @@ const publicationLabel = publication => publication.label || ({ offer: 'Акци
     <div><AppIcon name="search" /><span><strong>Поиск по артикулу</strong><small>А также по бренду и названию</small></span></div>
     <div><AppIcon name="truck" /><span><strong>Самовывоз или доставка</strong><small>Выберите при оформлении</small></span></div>
     <div><AppIcon name="shield" /><span><strong>Заказ без онлайн-оплаты</strong><small>Условия уточняются отдельно</small></span></div>
+  </section>
+
+  <section class="container feedback-help-block" aria-labelledby="feedback-help-title">
+    <div><span class="eyebrow">ПОМОЖЕМ С ВЫБОРОМ</span><h2 id="feedback-help-title">Нужна помощь с запчастями?</h2><p>Оставьте удобный способ связи или опишите, что ищете. Менеджер уточнит детали.</p></div>
+    <div class="feedback-actions"><button type="button" class="btn red" data-testid="home-feedback-contact" @click="emit('feedback', 'contact', $event)">Свяжитесь со мной</button><button type="button" class="btn outline" data-testid="home-feedback-request" @click="emit('feedback', 'request', $event)">Оставить запрос</button></div>
   </section>
 
   <section class="categories container landing-categories" aria-labelledby="categories-title">
