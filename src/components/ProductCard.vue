@@ -22,7 +22,7 @@ defineEmits(['open', 'add']);
         <img v-if="product.image" :src="product.image" :alt="`Иллюстрация категории ${category}`" loading="lazy">
         <span v-else class="product-placeholder"><AppIcon name="box" /><small>Фото пока нет</small></span>
       </a>
-      <span v-if="index < 2" class="product-tag">ВЫБОР ДЛЯ ТО</span>
+      <span v-if="demo && index < 2" class="product-tag">ВЫБОР ДЛЯ ТО</span>
     </div>
     <div class="product-info">
       <div class="product-brand">{{ product.brand }}<span v-if="product.sku">Арт. {{ product.sku }}</span></div>

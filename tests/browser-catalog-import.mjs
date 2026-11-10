@@ -18,7 +18,6 @@ test('local real API: PDF upload, preview, units/category, atomic apply, repeate
   const failures = [];
   const page = await context.newPage();
   page.on('pageerror', error => failures.push(error.message));
-  const stamp = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Moscow', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).format(new Date(Date.now() - 60000)).replace(' ', 'T');
   let packageId;
   page.on('response', async response => {
     if (response.url().includes('/api/admin/catalog/imports/') && response.request().method() === 'GET' && response.ok()) {
@@ -33,7 +32,6 @@ test('local real API: PDF upload, preview, units/category, atomic apply, repeate
   }
   async function upload() {
     await page.getByTestId('catalog-import-file').setInputFiles(pdf);
-    await page.getByTestId('catalog-import-observed').fill(stamp);
     await page.getByTestId('catalog-import-price-confirmed').check();
     await page.getByTestId('catalog-import-upload').click();
     await page.getByTestId('catalog-import-table').waitFor({ timeout: 90000 });

@@ -79,3 +79,17 @@ test('merged domain carts stay inside the per-line limit and zero-priced fractio
 test('adding an existing stale domain cart line requires unit review', () => {
   assert.throws(() => addCartItem([{ productId: 'bulk', quantity: 1 }], 'bulk', [product]), /единиц/i);
 });
+
+test('fractional piece stock never turns whole cart quantities into fractional orders', async () => {
+  const { sanitizeCart } = await import('../src/cart.js');
+  const { canAddQuantity, quantityMatchesProduct } = await import('../src/quantity.js');
+  const piece = { ...product, unit: 'шт', stock: 9.785 };
+  assert.deepEqual(sanitizeCart([{ productId: 'bulk', quantity: 10 }], [piece]), [{ productId: 'bulk', quantity: 9 }]);
+  assert.deepEqual(sanitizeCart([{ productId: 'bulk', quantity: 1 }], [{ ...piece, stock: 0.955 }]), []);
+  assert.equal(quantityMatchesProduct({ productId: 'bulk', quantity: 9 }, piece), true);
+  assert.equal(canAddQuantity(piece, 8), true);
+  assert.equal(canAddQuantity(piece, 9), false);
+  assert.throws(() => setDraftQuantity([], 'bulk', 0.5, piece.stock, 'шт'));
+  assert.throws(() => createOrder([{ productId: 'bulk', quantity: 0.5 }], customer, fulfillment, [piece]));
+  assert.equal(createOrder([{ productId: 'bulk', quantity: 9 }], customer, fulfillment, [piece]).totalKopecks, 909);
+});

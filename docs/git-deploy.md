@@ -98,7 +98,7 @@ status/SHA/путь receipt либо короткую причину ошибк�
 
 ## Границы
 
-- Это code-only путь. Нужна существующая revision `0008` и bootstrap sentinels;
+- Это code-only путь. Нужна существующая revision `0009` и bootstrap sentinels;
   стандартные Alembic/bootstrap при запуске допускаются только как no-op.
   Изменения схемы/startup/deployment требуют отдельной проверенной процедуры.
 - Перезапуск import worker сохраняет обычную retention policy: он может удалять
@@ -122,3 +122,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -p test_deploy.p
 Тесты используют настоящий временный Git repository, а Docker/Caddy/БД заменяют
 на границе процесса. Они проверяют SHA/master/scope, ENV, maintenance, первый
 build/повторный no-op и отказ health с возвратом Git и прежних image IDs.
+
+Однократный переход с `0008` для начального PDF-каталога описан в
+[catalog-data-release.md](catalog-data-release.md). Он использует отдельный
+проверенный оператор; обычный deploy по-прежнему отклоняет изменения миграций.

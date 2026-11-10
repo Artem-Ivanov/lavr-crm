@@ -8,8 +8,10 @@ export function sanitizeCart(raw, products = PRODUCTS) {
   for (const item of raw) {
     const product = products.find(product => product.id === item?.productId);
     if (!product || !isQuantity(item.quantity, productUnit(product)) || (item.expectedUnit ?? 'шт') !== productUnit(product) || product.stock <= 0) continue;
-    const milli = Math.min(quantityMilli(product.stock), 999000, quantityMilli(entries.get(product.id)?.quantity || 0) + quantityMilli(item.quantity));
-    entries.set(product.id, { productId: product.id, quantity: fromMilli(milli), ...expectedUnitFields(productUnit(product)) });
+    const stockMilli = quantityMilli(product.stock);
+    const availableMilli = productUnit(product) === 'шт' ? Math.floor(stockMilli / 1000) * 1000 : stockMilli;
+    const milli = Math.min(availableMilli, 999000, quantityMilli(entries.get(product.id)?.quantity || 0) + quantityMilli(item.quantity));
+    if (milli) entries.set(product.id, { productId: product.id, quantity: fromMilli(milli), ...expectedUnitFields(productUnit(product)) });
   }
   return [...entries.values()];
 }

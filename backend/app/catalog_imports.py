@@ -18,6 +18,7 @@ from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from .auth import record_audit, require_admin, require_admin_mutation
 from .catalog import Category, Product, ProductPresentation, Id, normalize_search, set_version_headers
+from .catalog_classification import category_key, infer_sale_unit, resolve_category_ids
 from .catalog_sources import CatalogSnapshot, CatalogSourceRow, DisabledCatalogAdapter, FILE_NAMESPACE, UNITS, row_signature, validate_snapshot
 from .common import ApiError, check_version, new_id, page_response, utcnow
 from .db import Base, get_db
@@ -141,9 +142,7 @@ def _evaluate(row, p, products):
     if data['kind'] != 'ordinary' and not row.acknowledge_standalone:
         issues.append(_issue('STANDALONE_REQUIRED', 'Подтвердите самостоятельную продаваемую позицию с собственным остатком.'))
     if row.unit is None:
-        row.unit = (product.unit if product else None) or 'шт'
-    if row.unit == 'шт' and data['stock'] is not None and Decimal(data['stock']) % 1:
-        issues.append(_issue('FRACTIONAL_PIECES', 'Дробный остаток несовместим с единицей «шт».'))
+        row.unit = (product.unit if product else None) or (infer_sale_unit(data['name']) if p.mode == 'file' else None) or 'шт'
     if row.resolution == 'link' and product is None:
         issues.append(_issue('TARGET_REQUIRED', 'Выберите существующую карточку.'))
     if product:
@@ -190,7 +189,9 @@ def prepare_import(db, p, snapshot):
     mappings = {m.identity: m.product_id for m in db.scalars(select(CatalogSourceMapping).where(CatalogSourceMapping.namespace == p.namespace))}
     products = {product.id: product for product in db.scalars(select(Product).where(Product.id.in_(set(mappings.values()))))} if mappings else {}
     candidates_by_sku, candidates_by_name = defaultdict(list), defaultdict(list)
+    category_ids = {}
     if snapshot.mode == 'file':
+        category_ids = resolve_category_ids(db.execute(select(Category.id, Category.name)))
         for item in db.execute(select(Product.id, Product.sku, Product.name)):
             if item.sku:
                 candidates_by_sku[item.sku].append(item.id)
@@ -204,6 +205,7 @@ def prepare_import(db, p, snapshot):
         review = counts[identity] > 1 or source.kind != 'ordinary' or bool(data['candidateProductIds'])
         row = CatalogImportRow(id=new_id(), import_id=p.id, position=source.position, source_data=data, identity=identity,
                                duplicate=counts[identity] > 1, selected=not review, unit=source.unit if source.unit is not None else (product.unit if product else None),
+                               category_id=category_ids.get(category_key(source.name)) if not product and snapshot.mode == 'file' else None,
                                resolution=None if review else ('link' if product else 'new'), target_product_id=target,
                                mapping_product_id=mappings.get(identity), baseline=accounting_snapshot(product) if product else None,
                                acknowledge_standalone=False, search_text=' '.join([source.sku, source.brand, source.name]).casefold())

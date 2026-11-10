@@ -127,7 +127,10 @@ test('a slow first-user response is discarded after logout and second-user login
  let release; let held;
  const { page } = await open(t, { initial: session('partner', 'first'), hash: 'account', handle: async ({ path, route }) => { if (path === '/customer/orders' && !held) { held = true; await new Promise(resolve => { release = resolve; }); await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ items: [order('first')], total: 1, offset: 0, limit: 24 }) }); return true; } } });
  await page.locator('.crm-tabs a[href="#account-orders"]').click(); await page.getByText('Загружаем ваши данные…').waitFor();
- await page.getByRole('button', { name: 'Выйти', exact: true }).click(); await page.getByRole('heading', { name: 'Войти в личный кабинет' }).waitFor(); await signIn(page, 'second@example.test'); release();
+ await page.getByRole('button', { name: 'Выйти', exact: true }).click();
+ await page.waitForURL(url => url.hash === '#login');
+ await page.locator('.account-section').getByRole('heading', { name: 'Войти в личный кабинет' }).waitFor();
+ await signIn(page, 'second@example.test'); release();
  await page.locator('.crm-tabs a[href="#account-orders"]').click(); await page.getByText('№ PRIVATE-second', { exact: true }).waitFor(); assert.equal(await page.getByText('PRIVATE-first', { exact: false }).count(), 0);
 });
 test('expired signed-in checkout requires re-login and never falls back to guest', async t => {

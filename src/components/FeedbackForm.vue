@@ -9,14 +9,14 @@ const emit = defineEmits(['staff-error']);
 let generation = 0;
 const dialog = ref(null);
 const type = ref('contact');
-const draft = reactive({ name: '', phone: '', email: '', messenger: { service: '', address: '' }, message: '' });
+const draft = reactive({ name: '', phone: '', email: '', message: '' });
 const busy = ref(false);
 const error = ref('');
 const receipt = ref(null);
 let opener;
 let cleanupPending = false;
 let previousActor = props.session?.user.id || null;
-function clearDraft() { Object.assign(draft, { name: '', phone: '', email: '', messenger: { service: '', address: '' }, message: '' }); }
+function clearDraft() { Object.assign(draft, { name: '', phone: '', email: '', message: '' }); }
 watch([() => props.session?.user.id, () => props.needsRelogin], ([actor, reauth]) => {
   generation++; receipt.value = null; error.value = ''; busy.value = false;
   if (actor ? actor !== previousActor : !reauth) { clearDraft(); cleanupPending = false; }
@@ -45,14 +45,15 @@ async function submit() {
   try {
     if (props.authLoading || props.needsRelogin) throw new Error('Войдите снова перед отправкой обращения.');
     if (props.session && !props.session.user.profileComplete) throw new Error('Подтвердите контакты в личном кабинете.');
-    const body = props.session ? { type: type.value, message: draft.message } : normalizeFeedbackInput({ type: type.value, ...draft, messenger: { ...draft.messenger } });
+    if (!props.session && !draft.phone.trim() && !draft.email.trim()) throw new Error('Укажите телефон или email.');
+    const body = props.session ? { type: type.value, message: draft.message } : normalizeFeedbackInput({ type: type.value, ...draft });
     if (cleanupPending) { clearFeedbackKey(scope); cleanupPending = false; }
     const key = await feedbackKey(body, scope);
     if (current !== generation) return;
     const result = await (props.session ? props.api.createOwnFeedback(body, key) : props.api.submitFeedback(body, key));
     if (current !== generation) return;
     receipt.value = result;
-    Object.assign(draft, { name: '', phone: '', email: '', messenger: { service: '', address: '' }, message: '' });
+    clearDraft();
     try { clearFeedbackKey(scope); } catch { cleanupPending = true; }
     await nextTick();
     dialog.value?.querySelector('[data-testid="feedback-receipt"]')?.focus();
@@ -80,7 +81,7 @@ defineExpose({ open, close });
       <p v-if="session">Контакты из профиля: {{ session.user.email }} · {{ session.user.phone }}. Телефон не подтверждён.</p>
       <p v-if="session && !session.user.profileComplete" class="form-error">Заполните и подтвердите <a href="#account" @click="close">профиль</a> перед отправкой.</p>
       <p v-if="needsRelogin" class="form-error">Сессия завершена. <a href="#login" @click="close">Войти снова</a></p>
-      <p v-if="!session" id="feedback-contact-help">Укажите хотя бы один способ связи: телефон, email или мессенджер.</p>
+      <p v-if="!session" id="feedback-contact-help">Укажите телефон или email. Достаточно одного способа связи.</p>
       <p v-if="api.mode === 'demo'" class="feedback-demo">Демонстрация: используйте тестовые контакты. Данные исчезнут при перезагрузке.</p>
       <form class="feedback-form" novalidate :aria-busy="busy" @submit.prevent="submit">
         <fieldset :disabled="busy"><legend class="sr-only">Контакты и текст обращения</legend>
@@ -88,9 +89,7 @@ defineExpose({ open, close });
             <template v-if="!session"><label class="full">Ваше имя<input v-model="draft.name" data-feedback-first name="feedbackName" autocomplete="name" maxlength="100"></label>
             <label>Телефон<input v-model="draft.phone" name="feedbackPhone" type="tel" autocomplete="tel" maxlength="30" aria-describedby="feedback-contact-help" placeholder="+7 (999) 123-45-67"></label>
             <label>Email<input v-model="draft.email" name="feedbackEmail" type="email" autocomplete="email" maxlength="254" aria-describedby="feedback-contact-help"></label>
-            <label>Мессенджер<input v-model="draft.messenger.service" name="feedbackMessengerService" maxlength="40" placeholder="Telegram, MAX…" aria-describedby="feedback-messenger-help"></label>
-            <label>Контакт в мессенджере<input v-model="draft.messenger.address" name="feedbackMessengerAddress" maxlength="254" placeholder="@имя, телефон или ссылка" aria-describedby="feedback-messenger-help"></label>
-            <p id="feedback-messenger-help" class="full feedback-help">Для мессенджера заполните оба поля: сервис и контакт.</p></template>
+            </template>
             <label class="full">{{ type === 'request' ? 'Ваш запрос' : 'Комментарий' }}<textarea v-model="draft.message" name="feedbackMessage" maxlength="2000" rows="4" :required="type === 'request'"></textarea></label>
           </div>
         </fieldset>

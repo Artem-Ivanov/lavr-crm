@@ -59,11 +59,11 @@ test('product prices convert ruble strings into exact bounded integer kopecks', 
   }
 });
 
-test('product stock accepts bounded nonnegative integers and integer strings', () => {
-  for (const [stock, expected] of [[0, 0], [' 3 ', 3], [100000, 100000]]) {
+test('product stock preserves bounded thousandths even for pieces', () => {
+  for (const [stock, expected] of [[0, 0], [' 3 ', 3], [100000, 100000], [1.5, 1.5], ['9,785', 9.785]]) {
     assert.equal(createProduct(initialCatalog(), { ...draft, stock }).products.at(-1).stock, expected);
   }
-  for (const stock of ['', ' ', '-1', -1, 1.5, '1.5', '1e2', 2147483648, Infinity, NaN, null, true]) {
+  for (const stock of ['', ' ', '-1', -1, 0.0001, '1.0001', '1e2', 2147483648, Infinity, NaN, null, true]) {
     assert.throws(() => createProduct(initialCatalog(), { ...draft, stock }));
   }
 });
@@ -152,7 +152,7 @@ test('restoration rejects invalid money, inventory, metadata and untrusted image
   const original = initialCatalog();
   for (const invalid of [
     { priceKopecks: '389000' }, { priceKopecks: 0 }, { priceKopecks: 1.5 }, { priceKopecks: 1000000001 },
-    { stock: '12' }, { stock: -1 }, { stock: 1.5 }, { stock: 2147483648 },
+    { stock: '12' }, { stock: -1 }, { stock: 1.0001 }, { stock: 2147483648 },
     { name: null }, { name: 'А'.repeat(161) }, { externalId: 123 },
     { image: 'https://example.com/track.jpg' }, { image: '//example.com/track.jpg' }, { image: '/images/untrusted.svg' },
     { image: '/images/../private.jpg' }, { image: 'data:image/svg+xml,broken' },

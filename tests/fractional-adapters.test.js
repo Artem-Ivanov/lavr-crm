@@ -46,6 +46,20 @@ test('HTTP unit conflict preserves validated current units for explicit review',
   await assert.rejects(api.createOrder(body, key), error => error.code === 'UNIT_CHANGED' && error.status === 409 && JSON.stringify(error.details) === JSON.stringify(details));
 });
 
+test('HTTP catalog accepts fractional piece stock while reservations and ordered pieces stay whole', async () => {
+  const piece = { ...product, unit: 'шт', stock: 9.785 };
+  const responses = [json({ ...page(piece), catalogUpdatedAt: '2026-11-02T00:00:00Z', stale: false }),
+    json(page({ ...piece, isVisible: true, physicalStock: 10.785, reservedStock: 1 })),
+    json(page({ ...piece, isVisible: true, physicalStock: 10.785, reservedStock: 1.5 }))];
+  const calls = [];
+  const api = createHttpApi({ fetchImpl: async (...args) => { calls.push(args); return responses.shift(); } });
+  assert.equal((await api.getCatalog()).items[0].stock, 9.785);
+  assert.equal((await api.getAdminProducts()).items[0].physicalStock, 10.785);
+  await assert.rejects(api.getAdminProducts(), { code: 'INVALID_RESPONSE' });
+  await assert.rejects(api.createOrder({ ...body, items: [{ productId: 'bulk', quantity: 0.5, expectedUnitPriceKopecks: 101 }] }, key));
+  assert.equal(calls.length, 3);
+});
+
 test('demo guest/customer/conversion orders share fractional line rounding and retry signatures', async () => {
   const { api } = demo();
   const first = await api.createOrder(body, key);

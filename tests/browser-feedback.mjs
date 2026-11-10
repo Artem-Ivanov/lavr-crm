@@ -65,6 +65,13 @@ test('public form validates every contact, preserves draft and accepts an email-
   const { page, state } = await open(t);
   await page.getByTestId('home-feedback-contact').click();
   const dialog = page.getByRole('dialog');
+  assert.deepEqual(await dialog.locator('input').evaluateAll(nodes => nodes.map(node => node.name)), ['feedbackName', 'feedbackPhone', 'feedbackEmail']);
+  assert.equal(await dialog.locator('textarea[name="feedbackMessage"]').count(), 1);
+  assert.equal(await dialog.getByLabel('Ваше имя', { exact: true }).evaluate(node => document.activeElement === node), true);
+  await dialog.getByLabel('Ваше имя', { exact: true }).fill('Иван');
+  await dialog.getByTestId('feedback-submit').click();
+  await dialog.getByRole('alert').filter({ hasText: 'Укажите телефон или email.' }).waitFor();
+  assert.equal(state.submissions.length, 0);
   await dialog.getByLabel('Email', { exact: true }).fill('buyer@example.com');
   await dialog.getByLabel('Телефон', { exact: true }).fill('invalid');
   await dialog.getByTestId('feedback-submit').click();
@@ -79,7 +86,7 @@ test('public form validates every contact, preserves draft and accepts an email-
   assert.ok(!(await dialog.getByTestId('feedback-receipt').textContent()).includes('Номер обращения'));
   assert.ok(!(await dialog.getByTestId('feedback-receipt').textContent()).includes('№1 от'));
   assert.equal(state.submissions.length, 1);
-  assert.equal(state.submissions[0].body.type, 'request');
+  assert.deepEqual(state.submissions[0].body, { type: 'request', name: 'Иван', phone: '', email: 'buyer@example.com', messenger: { service: '', address: '' }, message: 'Нужен фильтр' });
   assert.ok(state.submissions[0].key);
   const stored = await page.evaluate(() => JSON.stringify({ ...localStorage, ...sessionStorage }));
   assert.ok(!stored.includes('buyer@example.com') && !stored.includes('Нужен фильтр'));
@@ -199,7 +206,7 @@ for (const width of [320, 390]) test(`public and CRM form controls fit ${width}p
   for (const item of controls) { assert.ok(item.height >= 44 && item.width >= 44, JSON.stringify(item)); if (item.tag !== 'BUTTON') assert.ok(item.font >= 16, JSON.stringify(item)); }
 });
 
-test('failed public delivery keeps phone draft and key; messenger-only contact is accepted', async t => {
+test('failed public delivery keeps phone draft and key; a fresh email-only contact is accepted', async t => {
   const attempts = [];
   const { page, state } = await open(t, { handle: async ({ route, path, method, body }) => {
     if (path === '/feedback' && method === 'POST') {
@@ -221,15 +228,13 @@ test('failed public delivery keeps phone draft and key; messenger-only contact i
   assert.equal(attempts[0].key, attempts[1].key);
   assert.equal(attempts[1].body.phone, '+79991234567');
   await dialog.getByRole('button', { name: 'Отправить ещё обращение', exact: true }).click();
-  await dialog.getByLabel('Мессенджер', { exact: true }).fill('MAX');
   await dialog.getByTestId('feedback-submit').click();
-  await dialog.getByRole('alert').waitFor();
+  await dialog.getByRole('alert').filter({ hasText: 'Укажите телефон или email.' }).waitFor();
   assert.equal(state.submissions.length, 1);
-  await dialog.getByLabel('Контакт в мессенджере', { exact: true }).fill('test-user');
+  await dialog.getByLabel('Email', { exact: true }).fill('second@example.com');
   await dialog.getByTestId('feedback-submit').click();
   await dialog.getByTestId('feedback-receipt').waitFor();
-  assert.deepEqual(state.submissions[1].body.messenger, { service: 'MAX', address: 'test-user' });
-  assert.equal(state.submissions[1].body.message, '');
+  assert.deepEqual(state.submissions[1].body, { type: 'contact', name: '', phone: '', email: 'second@example.com', messenger: { service: '', address: '' }, message: '' });
 });
 
 test('a version conflict and rejected navigation preserve a manager note', async t => {

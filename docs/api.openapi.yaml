@@ -1851,11 +1851,12 @@ components:
           $ref: '#/components/schemas/MoneyKopecks'
           readOnly: true
         stock:
-          type: integer
+          type: number
+          multipleOf: 0.001
           readOnly: true
           minimum: 0
           maximum: 2147483647
-          description: Доступность проекции с учётом ещё не учтённых в 1С локальных резервов
+          description: Доступный остаток с учётом локальных резервов, до трёх знаков после запятой для любой единицы
         image:
           type: string
           format: uri-reference
@@ -2100,7 +2101,7 @@ components:
         name: { type: string, minLength: 1, maxLength: 240, readOnly: true }
         category: { $ref: '#/components/schemas/Category' }
         priceKopecks: { $ref: '#/components/schemas/MoneyKopecks', readOnly: true }
-        stock: { type: integer, minimum: 0, maximum: 2147483647, readOnly: true }
+        stock: { type: number, multipleOf: 0.001, minimum: 0, maximum: 2147483647, readOnly: true }
         isVisible:
           type: boolean
           readOnly: true

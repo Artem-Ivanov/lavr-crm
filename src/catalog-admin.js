@@ -1,4 +1,4 @@
-import { isQuantity, parseQuantity, productUnit, MAX_STOCK } from './quantity.js';
+import { isStock, isUnit, quantityMilli, fromMilli, productUnit } from './quantity.js';
 import { CATEGORIES, PRODUCTS } from './catalog.js';
 
 const imagePaths = new Set(PRODUCTS.map(product => product.image));
@@ -39,7 +39,7 @@ function readProduct(raw, categories) {
     throw new Error('Цена должна быть больше нуля и не превышать 10 000 000 ₽.');
   }
   const unit = productUnit(raw);
-  if (!isQuantity(raw.stock, unit === null ? 'кг' : unit, { max: MAX_STOCK, zero: true })) throw new Error('Проверьте остаток и единицу измерения.');
+  if (!isStock(raw.stock) || unit !== null && !isUnit(unit)) throw new Error('Проверьте остаток и единицу измерения.');
   if (typeof raw.externalId !== 'string' || typeof raw.description !== 'string' ||
       !Number.isSafeInteger(raw.deliveryDays) || raw.deliveryDays < 0 ||
       (raw.image !== '' && !imagePaths.has(raw.image)) || !isRecord(raw.specs) ||
@@ -96,7 +96,7 @@ export function createCategory(catalog, input) {
 export function createProduct(catalog, input) {
   const product = readProduct({
     id: crypto.randomUUID(), externalId: '', name: input?.name, sku: input?.sku, brand: input?.brand,
-    category: input?.category, priceKopecks: parsePrice(input?.price), stock: parseQuantity(input?.stock, input?.unit === null ? 'кг' : input?.unit ?? 'шт', { max: MAX_STOCK }), unit: input?.unit,
+    category: input?.category, priceKopecks: parsePrice(input?.price), stock: fromMilli(quantityMilli(input?.stock, { input: true })), unit: input?.unit,
     image: '', deliveryDays: 0, description: '', specs: {},
   }, catalog.categories);
   if (product.sku && product.brand && catalog.products.some(existing => productKey(existing) === productKey(product))) {

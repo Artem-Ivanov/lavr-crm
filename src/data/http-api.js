@@ -1,5 +1,5 @@
 import { createCatalogImportMethods } from './http-catalog-import-api.js';
-import { isUnit, isQuantity, productUnit, MAX_STOCK, validRequestQuantity, validSnapshotQuantity } from '../quantity.js';
+import { isUnit, isStock, isQuantity, productUnit, MAX_STOCK, validRequestQuantity, validSnapshotQuantity } from '../quantity.js';
 import { isAdminUser, USER_ROLES, isUserSession, isAccountFlow, isOwnOrder, isOwnFeedback, normalizeAccountInput, normalizeOwnFeedback, validateOwnOrder } from '../accounts.js';
 import { isSiteConfiguration, isPublication, isAdminMedia, validateSitePatch, validatePublicationInput, validateMediaUpload } from '../content.js';
 import { FEEDBACK_STATUSES, normalizeFeedbackInput, normalizeFeedbackStatus, normalizeFeedbackNote, isFeedbackReceipt, isFeedbackCase } from '../feedback.js';
@@ -15,14 +15,15 @@ const media = value => object(value) && id(value.id) && /^\/api\/media\/[A-Za-z0
   && text(value.alt, 0, 240) && integer(value.width, 1, 4096) && integer(value.height, 1, 4096);
 const nullableText = (value, min, max) => value === null || text(value, min, max);
 const productCore = value => object(value) && id(value.id) && id(value.category) && text(value.sku, 0, 80)
-  && text(value.brand, 0, 80) && text(value.name, 1, 240) && integer(value.priceKopecks) && isQuantity(value.stock, value.unit === null ? 'кг' : productUnit(value), { max: MAX_STOCK, zero: true });
+  && text(value.brand, 0, 80) && text(value.name, 1, 240) && integer(value.priceKopecks)
+  && (value.unit === null || isUnit(productUnit(value))) && isStock(value.stock);
 const presentationProduct = value => productCore(value) && id(value.externalId) && imagePath(value.image) && integer(value.deliveryDays, 0, 365)
   && (value.images === undefined || list(value.images, media, 8))
   && (value.websiteTitle === undefined || nullableText(value.websiteTitle, 1, 240))
   && (value.websiteDescription === undefined || nullableText(value.websiteDescription, 0, 4000));
 const product = value => presentationProduct(value) && value.unit !== null;
 const adminProduct = value => productCore(value) && typeof value.isVisible === 'boolean'
-  && (value.physicalStock === undefined || isQuantity(value.physicalStock, value.unit === null ? 'кг' : productUnit(value), { max: MAX_STOCK, zero: true }))
+  && (value.physicalStock === undefined || isStock(value.physicalStock))
   && (value.reservedStock === undefined || isQuantity(value.reservedStock, value.unit === null ? 'кг' : productUnit(value), { max: MAX_STOCK, zero: true }));
 const category = value => object(value) && id(value.id) && text(value.name, 1, 80) && integer(value.position, 0, 1000000) && typeof value.showInMenu === 'boolean';
 const adminCategory = value => category(value) && typeof value.isVisible === 'boolean' && integer(value.version, 1);

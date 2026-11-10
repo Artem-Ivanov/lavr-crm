@@ -166,28 +166,21 @@ def test_ready_package_without_unit_defaults_when_refreshed_or_applied(db, refre
     assert final['summary']['conflict'] == 0
 
 
-def test_fractional_missing_unit_requires_manual_unit_before_apply(db):
+def test_fractional_stock_defaults_to_pieces_without_rounding(db):
     from app.catalog import Product, ProductPresentation, Category
-    from app.catalog_imports import package_dto, save_decisions, apply_import, DecisionPatch
+    from app.catalog_imports import package_dto, apply_import
     p = package(db)
     dto = package_dto(db, p)
     assert dto['summary']['missingUnit'] == 0
     assert db.scalar(select(func.count()).select_from(Product)) == 0
     row = dto['rows']['items'][0]
     assert row['proposedStock'] == '9.785'
-    assert row['unit'] == 'шт' and row['action'] == 'review'
-    assert any(issue['code'] == 'FRACTIONAL_PIECES' for issue in row['issues'])
-    with pytest.raises(ApiError) as failure:
-        apply_import(db, p.id, '"1"', str(uuid4()), True, 'admin-test')
-    assert failure.value.code == 'UNRESOLVED_ROWS'
-    assert any(issue['code'] == 'FRACTIONAL_PIECES' for issue in failure.value.details['issues'])
-    db.rollback()
-    assert db.scalar(select(func.count()).select_from(Product)) == 0
-    save_decisions(db, p.id, DecisionPatch(rowIds=[row['id']], unit='кг'), '"1"')
-    report = apply_import(db, p.id, '"2"', str(uuid4()), True, 'admin-test')
+    assert row['unit'] == 'шт' and row['action'] == 'new'
+    assert row['issues'] == []
+    report = apply_import(db, p.id, '"1"', str(uuid4()), True, 'admin-test')
     assert report['createdCount'] == 1
     product = db.scalar(select(Product))
-    assert product.stock == Decimal('9.785') and product.unit == 'кг'
+    assert product.stock == Decimal('9.785') and product.unit == 'шт'
     assert product.reserved == 0 and product.accounting_source == 'file:main-stock:retail'
     assert not db.get(Category, db.get(ProductPresentation, product.id).category_id).is_visible
 

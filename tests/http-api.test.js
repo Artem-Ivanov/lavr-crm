@@ -172,7 +172,7 @@ test('non-JSON and broken success responses reject instead of falling back to de
 test('malformed products, money and page metadata never reach the UI', async () => {
   for (const change of [
     { id: '' }, { externalId: null }, { category: null }, { name: {} }, { priceKopecks: '389000' }, { priceKopecks: -1 },
-    { priceKopecks: Number.MAX_SAFE_INTEGER + 1 }, { stock: 1.5 }, { stock: -1 }, { stock: 2147483648 },
+    { priceKopecks: Number.MAX_SAFE_INTEGER + 1 }, { stock: 1.0001 }, { stock: -1 }, { stock: 2147483648 },
     { image: 'https://tracker.example/pixel.jpg' }, { image: '//tracker.example/pixel.jpg' }, { image: '/images/../private.jpg' },
     { image: '/images/untrusted.svg' }, { image: '/api/admin/media/private/file' }, { deliveryDays: -1 },
     { images: [{ ...media, path: 'data:image/svg+xml,broken' }] },

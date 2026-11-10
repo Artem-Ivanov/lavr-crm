@@ -51,6 +51,38 @@ async function setup(t, overrides = {}) {
   return { state, root, calls, find: predicate => walk(root, predicate) };
 }
 
+test('import offers kilograms and metres in both bulk and individual unit choices', async t => {
+  const { find } = await setup(t);
+  const choices = el => el.children.filter(child => child.tag === 'option').map(child => child.props.value);
+  assert.deepEqual(choices(find(el => el.props?.['data-testid'] === 'catalog-import-bulk-unit')), ['', 'шт', 'кг', 'л', 'м']);
+  assert.deepEqual(choices(find(el => el.props?.['aria-label'] === 'Единица Товар 1')), ['', 'шт', 'кг', 'л', 'м']);
+});
+
+test('file observation uses upload time and keeps the same timestamp and key on retry', async t => {
+  const uploads = [];
+  const { state, find } = await setup(t, { uploadCatalogImport: async (body, key) => {
+    uploads.push({ body, key });
+    if (uploads.length < 3) throw new Error('Connection interrupted');
+    return batch();
+  } });
+  state.resetView();
+  state.chooseFile({ target: { files: [{ name: 'first.pdf' }] } });
+  state.priceConfirmed = true;
+  const before = Date.now();
+  await state.upload();
+  await state.upload();
+  assert.ok(Date.parse(uploads[0].body.observedAt) >= before);
+  assert.ok(Date.parse(uploads[0].body.observedAt) <= Date.now());
+  assert.equal(uploads[1].body.observedAt, uploads[0].body.observedAt);
+  assert.equal(uploads[1].key, uploads[0].key);
+  await nextTick();
+  assert.equal(find(el => el.props?.type === 'datetime-local'), undefined);
+  state.chooseFile({ target: { files: [{ name: 'second.pdf' }] } });
+  await state.upload();
+  assert.notEqual(uploads[2].key, uploads[0].key);
+  assert.ok(Date.parse(uploads[2].body.observedAt) >= Date.parse(uploads[0].body.observedAt));
+});
+
 test('unsent search and an in-flight preview cannot mutate the displayed filter result', async t => {
   const preview = deferred(); let delay = false;
   const { state, calls, find } = await setup(t, { getCatalogImport: async (id, options) => delay ? preview.promise : batch(id) });

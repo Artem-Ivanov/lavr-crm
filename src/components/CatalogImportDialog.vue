@@ -56,7 +56,7 @@ function setError(issue) {
   if ([401, 403].includes(issue?.status)) emit('staff-error', issue);
   nextTick(() => dialog.value?.querySelector('[role="alert"]')?.focus());
 }
-function changedUpload() { uploadKey = undefined; }
+function changedUpload() { uploadKey = undefined; observedAt.value = ''; }
 function chooseFile(event) { file.value = event.target.files?.[0] || null; changedUpload(); }
 function options(nextOffset = offset.value, view = appliedView.value || { filter: 'all', query: '' }) { return { offset: nextOffset, limit: 50, ...view }; }
 function markRow(row, checked) { markedRows.value = checked ? [...markedRows.value, row.id] : markedRows.value.filter(id => id !== row.id); }
@@ -120,9 +120,10 @@ async function upload() {
   busy.value = true; error.value = '';
   try {
     uploadKey ||= crypto.randomUUID();
-    const result = await props.api.uploadCatalogImport({ file: file.value, observedAt: observedAt.value ? `${observedAt.value}:00+03:00` : '', priceConfirmed: priceConfirmed.value }, uploadKey);
+    observedAt.value ||= new Date().toISOString();
+    const result = await props.api.uploadCatalogImport({ file: file.value, observedAt: observedAt.value, priceConfirmed: priceConfirmed.value }, uploadKey);
     if (current !== generation) return;
-    resetView(); batch.value = result; uploadKey = undefined;
+    resetView(); batch.value = result; changedUpload();
     await loadHistory();
     if (current !== generation) return;
     await loadBatch(result.id, 0);
@@ -209,7 +210,7 @@ defineExpose({ open, close });
     <form v-if="!batch" class="import-upload" :aria-busy="busy" @submit.prevent="upload">
       <label>Отчёт номенклатуры, PDF<input data-testid="catalog-import-file" type="file" accept=".pdf,application/pdf" required :disabled="busy || !capabilities?.file.enabled" @change="chooseFile"></label>
       <p>До 5 МиБ, 400 страниц и 50 000 строк. Нужен текстовый PDF с колонками «Артикул», «Номенклатура», «Цена», «Остаток».</p>
-      <label>Состояние склада на дату и время, Москва<input v-model="observedAt" data-testid="catalog-import-observed" type="datetime-local" required :disabled="busy" @input="changedUpload"></label>
+      <p>Дата состояния склада — время загрузки файла. В отчёте время отображается по Москве.</p>
       <label class="import-check"><input v-model="priceConfirmed" data-testid="catalog-import-price-confirmed" type="checkbox" :disabled="busy" @change="changedUpload"><span>Цена указана в рублях за единицу учёта. Если единица не задана, для нового товара применяется «шт».</span></label>
       <button type="submit" class="btn red" data-testid="catalog-import-upload" :disabled="busy || !capabilities?.file.enabled">{{ busy ? 'Загружаем…' : 'Загрузить и сверить' }}</button>
     </form>
@@ -240,7 +241,7 @@ defineExpose({ open, close });
           <button type="button" class="btn outline" :disabled="!bulkCategory || !bulkCount" @click="bulk('categoryId', bulkCategory)">Назначить категорию</button>
           <label v-if="scope === 'filter'" class="import-check import-wide"><input v-model="bulkConfirmed" type="checkbox"><span>Применить назначение ко всем {{ total }} строкам текущего фильтра, включая другие страницы.</span></label>
           <p class="import-wide">Отметки для назначения действуют только на текущей странице и сбрасываются после загрузки сверки. Они не меняют включение строк в импорт.</p>
-          <p class="import-wide">При обновлении сверки и применении для строк без единицы сохраняется единица существующего товара, для новых применяется «шт». Для дробного остатка выберите «кг», «л» или «м» по фактической единице учёта. Фасовка в названии её не определяет.</p>
+          <p class="import-wide">При обновлении сверки и применении для строк без единицы сохраняется единица существующего товара, для новых применяется «шт». Физический остаток может быть дробным для любой единицы; заказ и резерв в штуках остаются целыми. Фасовка в названии не определяет единицу учёта.</p>
         </fieldset>
         <p id="catalog-import-scroll-help" class="import-scroll-help">Прокрутите таблицу по горизонтали, чтобы увидеть сверку и действия.</p>
         <div class="import-table-wrap" tabindex="0" role="region" aria-label="Сверка номенклатуры" aria-describedby="catalog-import-scroll-help" :aria-busy="loading || busy">

@@ -87,6 +87,8 @@ def maintenance_runtime(original):
 
 
 class Deploy:
+    expected_revisions = ('0009',)
+
     def __init__(self, root=Path('/home/deploy/lavr-crm'), control=Path('/home/deploy/lavr-crm-deploy'),
                  releases=Path('/home/deploy/lavr-crm-releases')):
         os.umask(0o077)
@@ -131,11 +133,14 @@ class Deploy:
                         or any(part.startswith('.env') and not part.endswith('.example')
                                for part in Path(name).parts) for name in files), 'private_file_in_git')
         changed = self.git('diff', '--name-only', old, sha).splitlines()
+        self.validate_changes(changed)
+        return old
+
+    def validate_changes(self, changed):
         # shortcut: code-only releases; schema/startup/deployment changes need a separately reviewed operator.
         forbidden = ('backend/alembic/', 'backend/alembic.ini', 'backend/app/bootstrap.py',
                      'backend/entrypoint.sh', 'compose.', 'docker/Caddyfile')
         require(not any(name.startswith(forbidden) for name in changed), 'non_code_release')
-        return old
 
     def protected(self):
         result = {}
@@ -198,7 +203,7 @@ SELECT json_build_object('revision',(SELECT version_num FROM alembic_version),
  'bytes',pg_database_size(current_database()),
  'busy',count(*) FILTER(WHERE status IN ('queued','parsing','preparing'))) FROM catalog_imports;
 ROLLBACK;"""))
-        require(value['revision'] == '0008' and value['site'] and value['integration'] and value['users'], 'startup_not_noop')
+        require(value['revision'] in self.expected_revisions and value['site'] and value['integration'] and value['users'], 'startup_not_noop')
         require(value['busy'] == 0, 'imports_busy')
         return value
 
@@ -296,6 +301,9 @@ ROLLBACK;"""))
                                                  'data_verified': status == 'success' or receipt.get('previous_verified', False),
                                                  'protected': receipt['protected']})
 
+    def rollback_database(self, receipt):
+        """Code-only releases never change or restore database contents."""
+
     def apply(self, receipt):
         applying, maintenance = False, False
         try:
@@ -334,6 +342,7 @@ ROLLBACK;"""))
                     progress('rollback')
                     self.set_runtime(maintenance_runtime(receipt['caddy']))
                     self.stop()
+                    self.rollback_database(receipt)
                     self.git('checkout', '--detach', receipt['old_commit'])
                     self.start(receipt['old_images'])
                     self.verify(receipt['old_images'], receipt['baseline'], receipt['protected'])

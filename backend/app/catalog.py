@@ -40,7 +40,7 @@ class Product(Base):
         CheckConstraint('reserved BETWEEN 0 AND 2147483647'),
         CheckConstraint('accounting_version BETWEEN 1 AND 9007199254740991', name='products_accounting_version'),
         CheckConstraint("unit IS NULL OR unit IN ('шт', 'кг', 'л', 'м')", name='product_unit'),
-        CheckConstraint("unit IS DISTINCT FROM 'шт' OR (stock = trunc(stock) AND reserved = trunc(reserved))", name='product_piece_quantities'),
+        CheckConstraint("unit IS DISTINCT FROM 'шт' OR reserved = trunc(reserved)", name='product_piece_quantities'),
         CheckConstraint('delivery_days BETWEEN 0 AND 365'),
     )
 
@@ -87,11 +87,12 @@ def update_search_index(mapper, connection, product):
     unit_history = inspect(product).attrs.unit.history
     if unit_history.has_changes() and unit_history.deleted and product.reserved:
         raise ApiError(409, 'UNIT_RESERVED', 'Нельзя изменить единицу товара с действующим резервом.')
-    for value in (product.stock, product.reserved if product.reserved is not None else 0):
-        if product.unit is None:
-            quantity_decimal(value)
-        else:
-            validate_unit_quantity(value, product.unit)
+    quantity_decimal(product.stock)
+    reserved = product.reserved if product.reserved is not None else 0
+    if product.unit is None:
+        quantity_decimal(reserved)
+    else:
+        validate_unit_quantity(reserved, product.unit)
     product.search_normalized = ' '.join(normalize_search(value) for value in [product.sku, product.name, product.brand])
 
 
@@ -201,11 +202,16 @@ def admin_product(product, presentation, category):
 
 
 def catalog_metadata(db):
+    from .catalog_imports import CatalogAccountingOwner
     from .integration import IntegrationState
 
     state = db.get(IntegrationState, 1)
+    owner = db.get(CatalogAccountingOwner, 'main-stock')
     observation = case((Product.accounting_source.is_not(None), Product.stock_observed_at), else_=func.coalesce(Product.stock_observed_at, Product.updated_at))
-    updated_at = state.catalog_updated_at if state and state.catalog_updated_at else db.scalar(select(func.max(observation)))
+    if owner and owner.namespace:
+        updated_at = db.scalar(select(func.max(Product.stock_observed_at)).where(Product.accounting_source == owner.namespace))
+    else:
+        updated_at = state.catalog_updated_at if state and state.catalog_updated_at else db.scalar(select(func.max(observation)))
     stale = updated_at is None or utcnow() - updated_at > timedelta(days=1)
     return {'catalogUpdatedAt': (updated_at or datetime(1970, 1, 1, tzinfo=timezone.utc)).isoformat(), 'stale': stale}
 

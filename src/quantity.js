@@ -13,6 +13,10 @@ export function quantityMilli(value, { max = MAX_STOCK, input = false } = {}) {
   return Number(milli);
 }
 export const fromMilli = value => value / 1000;
+export function isStock(value) {
+  try { quantityMilli(value); return true; }
+  catch { return false; }
+}
 export function isQuantity(value, unit = 'шт', { max = MAX_QUANTITY, zero = false } = {}) {
   try { const milli = quantityMilli(value, { max }); return isUnit(unit) && (zero || milli > 0) && (unit !== 'шт' || milli % 1000 === 0); }
   catch { return false; }

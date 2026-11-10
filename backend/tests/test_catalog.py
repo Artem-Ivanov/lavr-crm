@@ -254,6 +254,25 @@ def test_import_catalog_freshness_uses_observation_not_last_product_write(client
     assert response['catalogUpdatedAt'] == observed.isoformat()
 
 
+@pytest.mark.parametrize('file_age, integration_age', [(0, 3), (3, 0)])
+@pytest.mark.parametrize('namespace', ['file:main-stock:retail', 'adapter:test'])
+def test_source_owner_freshness_uses_observed_stock_even_with_integration_timestamp(client, catalog_rows, db, file_age, integration_age, namespace):
+    from datetime import timedelta
+    from app.catalog_imports import CatalogAccountingOwner
+    from app.common import utcnow
+    from app.integration import IntegrationState
+
+    observed = utcnow() - timedelta(days=file_age)
+    db.add(IntegrationState(id=1, state='not_connected', catalog_updated_at=utcnow() - timedelta(days=integration_age)))
+    db.add(CatalogAccountingOwner(stock_scope='main-stock', namespace=namespace))
+    for product in catalog_rows:
+        product.accounting_source, product.stock_observed_at = namespace, observed
+    db.commit()
+    response = client.get('/api/catalog').json()
+    assert response['catalogUpdatedAt'] == observed.isoformat()
+    assert response['stale'] is (file_age > 1)
+
+
 def test_explicit_unknown_unit_is_preserved_instead_of_defaulting_to_pieces(db):
     from decimal import Decimal
     from app.catalog import Product
