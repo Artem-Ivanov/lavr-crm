@@ -1,0 +1,2847 @@
+{
+  "schemaVersion": 1,
+  "id": "open-catalog-2026-11-10",
+  "checkedOn": "2026-11-10",
+  "sourceSha256": "16378dad72ce7a04f73a57e71d6907347b7c79a9577ca792ef04462e69e1d97d",
+  "sourceRowCount": 24689,
+  "manufacturerMeaning": "legalEntity — изготовитель в официальном документе; brand — подтверждена только марка собственного продукта, юридическое лицо и завод не установлены.",
+  "coverage": {
+    "reviewed": 111,
+    "confirmed": 70,
+    "needsReview": 41,
+    "countriesConfirmed": 6,
+    "notReviewed": 24578
+  },
+  "rows": [
+    {
+      "position": 17,
+      "expected": {
+        "name": "Автошампунь для бесконт.мойки INTENSIVE повышенная пенность Lavr",
+        "sku": "LN2306",
+        "brand": ""
+      },
+      "brand": "LAVR",
+      "manufacturer": "ООО НПО «Полихимтехнологии»",
+      "manufacturerKind": "legalEntity",
+      "countryOfManufacture": "Россия",
+      "sources": [
+        {
+          "url": "https://lavr.ru/production/kuzov-i-vneshniy-vid/avtoshampuni-dlya-beskontaktnoy-moyki/avtoshampun-dlya-beskontaktnoy-moyki-intensive-povyshennaya-pennost-1-30-1-50-1-l/",
+          "fields": [
+            "manufacturer",
+            "sku",
+            "productIdentity"
+          ],
+          "evidence": "Официальная карточка LAVR: Intensive, артикул Ln2306, автошампунь повышенной пенности, фасовка 1 л."
+        },
+        {
+          "url": "https://lavr.ru/l/web/docs/doc_2751.pdf",
+          "fields": [
+            "manufacturer",
+            "countryOfManufacture",
+            "legalManufacturer"
+          ],
+          "evidence": "Свидетельство RU.66.01.40.015.E.000059.06.20 от 05.06.2020 прямо включает Intensive LAVR и называет изготовителя ООО НПО «Полихимтехнологии» с фактическим адресом производства в Российской Федерации."
+        }
+      ],
+      "status": "confirmed",
+      "reason": "Товар точно сопоставлен по артикулу и фасовке; страна подтверждена фактическим адресом производства в приложенном к его карточке свидетельстве.",
+      "expectedDescription": "Изображение — иллюстрация типа товара, не фотография конкретного артикула.",
+      "websiteDescription": "Производитель: ООО НПО «Полихимтехнологии». Марка: LAVR. Страна производства: Россия. Изображение — иллюстрация типа товара, не фотография конкретного артикула."
+    },
+    {
+      "position": 139,
+      "expected": {
+        "name": "Антифриз Sintec EURO (зеленый) 1кг",
+        "sku": "БР1085,М",
+        "brand": ""
+      },
+      "brand": "SINTEC",
+      "manufacturer": "SINTEC",
+      "manufacturerKind": "brand",
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://sinteclubricants.ru/catalog/antifrizy/sintec_antifreeze_euro_g11_40/",
+          "fields": [
+            "manufacturer"
+          ],
+          "evidence": "Официальная карточка EURO G11 green -40: зеленый антифриз, фасовка 1 кг."
+        }
+      ],
+      "status": "confirmed",
+      "reason": "Совпали линейка, цвет и масса. Складской БР1085 не подтвержден как заводской номер. Подтверждена марка SINTEC; юрлицо изготовителя и страна данной партии не установлены.",
+      "expectedDescription": "Изображение — иллюстрация типа товара, не фотография конкретного артикула.",
+      "websiteDescription": "Марка производителя: SINTEC. Изображение — иллюстрация типа товара, не фотография конкретного артикула."
+    },
+    {
+      "position": 140,
+      "expected": {
+        "name": "Антифриз Sintec EURO (зеленый) 5л",
+        "sku": "БР4248,ТР",
+        "brand": ""
+      },
+      "brand": null,
+      "manufacturer": null,
+      "manufacturerKind": null,
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://sinteclubricants.ru/catalog/antifrizy/sintec_antifreeze_euro_g11_40/",
+          "fields": [],
+          "evidence": "Официальная карточка EURO G11 указывает фасовку 5 кг."
+        }
+      ],
+      "status": "review",
+      "reason": "В исходнике 5 л, в первичном источнике 5 кг; точное совпадение фасовки не подтверждено. Изготовитель и страна остаются неподтвержденными."
+    },
+    {
+      "position": 141,
+      "expected": {
+        "name": "Антифриз Sintec LUXE G-12+ (красный) 1кг",
+        "sku": "БР4253",
+        "brand": ""
+      },
+      "brand": null,
+      "manufacturer": null,
+      "manufacturerKind": null,
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://sinteclubricants.ru/catalog/antifrizy/sintec_antifreeze_luxe_g12_40/",
+          "fields": [],
+          "evidence": "У LUXE G12+ red -40 есть фасовка 1 кг и отдельная версия -45."
+        },
+        {
+          "url": "https://sinteclubricants.ru/catalog/antifrizy/sintec_antifreeze_luxe_g12plus_45/",
+          "fields": [],
+          "evidence": "Отдельная красная LUXE G12+ -45 также выпускается по 1, 5 и 10 кг; название без температуры не различает версии."
+        }
+      ],
+      "status": "review",
+      "reason": "В исходнике нет температуры и указан общий складской БР4253; вариант -40/-45 не различен. Изготовитель и страна остаются неподтвержденными."
+    },
+    {
+      "position": 142,
+      "expected": {
+        "name": "Антифриз Sintec LUXE G-12+ (красный) 5кг",
+        "sku": "БР4253",
+        "brand": ""
+      },
+      "brand": null,
+      "manufacturer": null,
+      "manufacturerKind": null,
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://sinteclubricants.ru/catalog/antifrizy/sintec_antifreeze_luxe_g12_40/",
+          "fields": [],
+          "evidence": "У LUXE G12+ red -40 есть фасовка 5 кг и отдельная версия -45."
+        },
+        {
+          "url": "https://sinteclubricants.ru/catalog/antifrizy/sintec_antifreeze_luxe_g12plus_45/",
+          "fields": [],
+          "evidence": "Отдельная красная LUXE G12+ -45 также выпускается по 1, 5 и 10 кг; название без температуры не различает версии."
+        }
+      ],
+      "status": "review",
+      "reason": "В исходнике нет температуры и указан общий складской БР4253; вариант -40/-45 не различен. Изготовитель и страна остаются неподтвержденными."
+    },
+    {
+      "position": 143,
+      "expected": {
+        "name": "Антифриз Sintec LUXE G-12+ (красный) 10кг",
+        "sku": "БР4253",
+        "brand": ""
+      },
+      "brand": null,
+      "manufacturer": null,
+      "manufacturerKind": null,
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://sinteclubricants.ru/catalog/antifrizy/sintec_antifreeze_luxe_g12_40/",
+          "fields": [],
+          "evidence": "У LUXE G12+ red -40 есть фасовка 10 кг и отдельная версия -45."
+        },
+        {
+          "url": "https://sinteclubricants.ru/catalog/antifrizy/sintec_antifreeze_luxe_g12plus_45/",
+          "fields": [],
+          "evidence": "Отдельная красная LUXE G12+ -45 также выпускается по 1, 5 и 10 кг; название без температуры не различает версии."
+        }
+      ],
+      "status": "review",
+      "reason": "В исходнике нет температуры и указан общий складской БР4253; вариант -40/-45 не различен. Изготовитель и страна остаются неподтвержденными."
+    },
+    {
+      "position": 144,
+      "expected": {
+        "name": "Антифриз Sintec MULTIFREEZE универс. 1кг",
+        "sku": "800533",
+        "brand": ""
+      },
+      "brand": "SINTEC",
+      "manufacturer": "SINTEC",
+      "manufacturerKind": "brand",
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://sinteclubricants.ru/catalog/antifrizy/sintec_multifreeze/",
+          "fields": [
+            "manufacturer"
+          ],
+          "evidence": "Собственный универсальный антифриз MULTIFREEZE, фасовка 1 кг; текущий артикул 990561."
+        }
+      ],
+      "status": "confirmed",
+      "reason": "Совпали точное название и фасовка. Связь старого артикула 800533 с текущим не подтверждена, характеристики рецептуры не переносятся. Подтверждена марка SINTEC; юрлицо изготовителя и страна данной партии не установлены.",
+      "expectedDescription": "Изображение — иллюстрация типа товара, не фотография конкретного артикула.",
+      "websiteDescription": "Марка производителя: SINTEC. Изображение — иллюстрация типа товара, не фотография конкретного артикула."
+    },
+    {
+      "position": 145,
+      "expected": {
+        "name": "Антифриз Sintec MULTIFREEZE универс. 5кг",
+        "sku": "800535,990562",
+        "brand": ""
+      },
+      "brand": "SINTEC",
+      "manufacturer": "SINTEC",
+      "manufacturerKind": "brand",
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://sinteclubricants.ru/catalog/antifrizy/sintec_multifreeze/",
+          "fields": [
+            "manufacturer"
+          ],
+          "evidence": "Собственный антифриз MULTIFREEZE: артикул 990562, фасовка 5 кг."
+        }
+      ],
+      "status": "confirmed",
+      "reason": "Совпали название, масса и присутствующий в составном SKU номер 990562. Подтверждена марка SINTEC; юрлицо изготовителя и страна данной партии не установлены.",
+      "expectedDescription": "Изображение — иллюстрация типа товара, не фотография конкретного артикула.",
+      "websiteDescription": "Марка производителя: SINTEC. Изображение — иллюстрация типа товара, не фотография конкретного артикула."
+    },
+    {
+      "position": 146,
+      "expected": {
+        "name": "Антифриз Sintec UNLIMITED G-12 ++ (красный) 1кг",
+        "sku": "БР16389,М40479",
+        "brand": ""
+      },
+      "brand": null,
+      "manufacturer": null,
+      "manufacturerKind": null,
+      "countryOfManufacture": null,
+      "sources": [],
+      "status": "review",
+      "reason": "Официальная линейка UNLIMITED G12++ известна, но точный товар 1 кг и складские БР16389/М40479 в доступных официальных карточках не подтверждены. Изготовитель и страна остаются неподтвержденными."
+    },
+    {
+      "position": 3809,
+      "expected": {
+        "name": "Жидкость ГУР 1л. Sintec",
+        "sku": "",
+        "brand": ""
+      },
+      "brand": null,
+      "manufacturer": null,
+      "manufacturerKind": null,
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://sinteclubricants.ru/catalog/spetsialnye_zhidkosti/",
+          "fields": [],
+          "evidence": "В каталоге есть собственная жидкость для ГУР PSF, фасовка 1 л."
+        }
+      ],
+      "status": "review",
+      "reason": "Исходная строка без артикула и обозначения PSF; нельзя исключить другое масло для гидросистем/ГУР. Изготовитель и страна остаются неподтвержденными."
+    },
+    {
+      "position": 7177,
+      "expected": {
+        "name": "Литол-24 9,5кг Sintec, Oil Right",
+        "sku": "БР3987",
+        "brand": ""
+      },
+      "brand": null,
+      "manufacturer": null,
+      "manufacturerKind": null,
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://sinteclubricants.ru/catalog/plastichnye_smazki/sintec_smazka_litol_24/",
+          "fields": [],
+          "evidence": "Официальная карточка SINTEC Литол-24 подтверждает фасовку 9,5 кг."
+        }
+      ],
+      "status": "review",
+      "reason": "В одной импортной строке два бренда SINTEC и Oil Right; БР3987 не идентифицирует выбранного производителя. Изготовитель и страна остаются неподтвержденными."
+    },
+    {
+      "position": 7560,
+      "expected": {
+        "name": "Масло Sintec 2-т SAE30 (мин для 2х такт дв.) 1л.",
+        "sku": "801950",
+        "brand": ""
+      },
+      "brand": null,
+      "manufacturer": null,
+      "manufacturerKind": null,
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://sinteclubricants.ru/catalog/masla_dlya_dvukhtaktnykh_dvigateley/sintec_moto_2t/",
+          "fields": [],
+          "evidence": "Текущая карточка Moto 2T TC FC: минеральное масло 1 л, артикул 324719."
+        }
+      ],
+      "status": "review",
+      "reason": "В исходнике нет Moto/Garden и есть SAE30/801950; первичной связи старого артикула с конкретным продуктом не найдено. Изготовитель и страна остаются неподтвержденными."
+    },
+    {
+      "position": 7587,
+      "expected": {
+        "name": "Масло гидравлич.Sintec Hydraulica HVLP 32 20л",
+        "sku": "999807",
+        "brand": ""
+      },
+      "brand": "SINTEC",
+      "manufacturer": "SINTEC",
+      "manufacturerKind": "brand",
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://sinteclubricants.ru/catalog/gidravlicheskie_masla/sintec_hvlp_32_hydraulic_oil/",
+          "fields": [
+            "manufacturer"
+          ],
+          "evidence": "Собственное гидравлическое масло Hydraulic HVLP 32, артикул 999807, фасовка 20 л."
+        }
+      ],
+      "status": "confirmed",
+      "reason": "Точный заводской артикул, вязкость и фасовка совпали; написание Hydraulica в исходнике не используется как отдельная подтвержденная линейка. Подтверждена марка SINTEC; юрлицо изготовителя и страна данной партии не установлены.",
+      "expectedDescription": "Изображение — иллюстрация типа товара, не фотография конкретного артикула.",
+      "websiteDescription": "Марка производителя: SINTEC. Изображение — иллюстрация типа товара, не фотография конкретного артикула."
+    },
+    {
+      "position": 7588,
+      "expected": {
+        "name": "Масло гидравлич.Sintec Hydraulica HVLP 46 20л",
+        "sku": "999909",
+        "brand": ""
+      },
+      "brand": "SINTEC",
+      "manufacturer": "SINTEC",
+      "manufacturerKind": "brand",
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://sinteclubricants.ru/catalog/gidravlicheskie_masla/sintec_hvlp_46_hydraulic_oil/",
+          "fields": [
+            "manufacturer"
+          ],
+          "evidence": "Собственное гидравлическое масло Hydraulic HVLP 46, артикул 999909, фасовка 20 л."
+        }
+      ],
+      "status": "confirmed",
+      "reason": "Точный заводской артикул, вязкость и фасовка совпали; написание Hydraulica в исходнике не используется как отдельная подтвержденная линейка. Подтверждена марка SINTEC; юрлицо изготовителя и страна данной партии не установлены.",
+      "expectedDescription": "Изображение — иллюстрация типа товара, не фотография конкретного артикула.",
+      "websiteDescription": "Марка производителя: SINTEC. Изображение — иллюстрация типа товара, не фотография конкретного артикула."
+    },
+    {
+      "position": 7593,
+      "expected": {
+        "name": "Масло Лукойл Мото 2T минеральное 1л",
+        "sku": "19556",
+        "brand": ""
+      },
+      "brand": "ЛУКОЙЛ",
+      "manufacturer": "ЛУКОЙЛ",
+      "manufacturerKind": "brand",
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://lukoil-masla.ru/FileSystem/9/544218.pdf",
+          "fields": [
+            "manufacturer",
+            "sku",
+            "name",
+            "volume"
+          ],
+          "evidence": "Перечень собственной продукции связывает код 19556 с минеральным МОТО 2Т, канистра 1 л."
+        },
+        {
+          "url": "https://lukoil-masla.ru/ru/products/ProductCard/lukoil-moto-2t",
+          "fields": [
+            "manufacturer",
+            "name"
+          ],
+          "evidence": "Официальная карточка описывает собственное минеральное двухтактное масло МОТО 2Т."
+        }
+      ],
+      "status": "confirmed",
+      "reason": "Подтверждён только изготовитель-марка собственного продукта, без назначения юридического лица. Прямого указания страны изготовления точной позиции/партии в проверенных первичных источниках нет; страна остаётся null.",
+      "expectedDescription": "Изображение — иллюстрация типа товара, не фотография конкретного артикула.",
+      "websiteDescription": "Марка производителя: ЛУКОЙЛ. Изображение — иллюстрация типа товара, не фотография конкретного артикула."
+    },
+    {
+      "position": 7687,
+      "expected": {
+        "name": "Масло мотор.Sintec Platinum SAE 5W30 SL/CF синт 4л.",
+        "sku": "801961",
+        "brand": ""
+      },
+      "brand": "SINTEC",
+      "manufacturer": "SINTEC",
+      "manufacturerKind": "brand",
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://sinteclubricants.ru/catalog/masla_dlya_legkovykh_avtomobiley/motornoe_maslo_sintec_platinum_7000_5w_30_a3_b4_sl_cf/",
+          "fields": [
+            "manufacturer"
+          ],
+          "evidence": "Собственное синтетическое Platinum 7000 5W-30 API SL/CF, фасовка 4 л."
+        }
+      ],
+      "status": "confirmed",
+      "reason": "Совпали линейка, вязкость, API и объем. Старый 801961 не найден в текущей карточке; подтверждена только марка производителя, не актуальная рецептура. Подтверждена марка SINTEC; юрлицо изготовителя и страна данной партии не установлены.",
+      "expectedDescription": "Изображение — иллюстрация типа товара, не фотография конкретного артикула.",
+      "websiteDescription": "Марка производителя: SINTEC. Изображение — иллюстрация типа товара, не фотография конкретного артикула."
+    },
+    {
+      "position": 7688,
+      "expected": {
+        "name": "Масло мотор.Sintec Platinum SAE 5W30 SN/CF синт 1л.",
+        "sku": "801938",
+        "brand": ""
+      },
+      "brand": null,
+      "manufacturer": null,
+      "manufacturerKind": null,
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://sinteclubricants.ru/articles/5w30_sae_tekhnicheskie_harakteristiki/",
+          "fields": [],
+          "evidence": "Официальная статья описывает Platinum 5W-30 API SN/CF."
+        }
+      ],
+      "status": "review",
+      "reason": "Статья не подтверждает SKU 801938 и фасовку 1 л; текущие Platinum 5W-30 имеют несколько других API/ACEA, точный вариант требует проверки. Изготовитель и страна остаются неподтвержденными."
+    },
+    {
+      "position": 7689,
+      "expected": {
+        "name": "Масло мотор.Sintec Platinum SAE 5W40 SN/CF синт 1л.",
+        "sku": "00-01-01323",
+        "brand": ""
+      },
+      "brand": "SINTEC",
+      "manufacturer": "SINTEC",
+      "manufacturerKind": "brand",
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://sinteclubricants.ru/catalog/masla_dlya_legkovykh_avtomobiley/motornoe_maslo_sintec_platinum_7000_5w_40_a3_b4_sn_cf/",
+          "fields": [
+            "manufacturer"
+          ],
+          "evidence": "Собственное синтетическое Platinum 7000 5W-40 API SN/CF, фасовка 1 л."
+        }
+      ],
+      "status": "confirmed",
+      "reason": "Совпали линейка, вязкость, API и объем. Внутренний 00-01-01323 не подтвержден как заводской номер; рецептура старой партии не переносится. Подтверждена марка SINTEC; юрлицо изготовителя и страна данной партии не установлены.",
+      "expectedDescription": "Изображение — иллюстрация типа товара, не фотография конкретного артикула.",
+      "websiteDescription": "Марка производителя: SINTEC. Изображение — иллюстрация типа товара, не фотография конкретного артикула."
+    },
+    {
+      "position": 7690,
+      "expected": {
+        "name": "Масло мотор.Sintec Platinum SAE 5W40 SN/CF синт 4л",
+        "sku": "",
+        "brand": ""
+      },
+      "brand": "SINTEC",
+      "manufacturer": "SINTEC",
+      "manufacturerKind": "brand",
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://sinteclubricants.ru/catalog/masla_dlya_legkovykh_avtomobiley/motornoe_maslo_sintec_platinum_7000_5w_40_a3_b4_sn_cf/",
+          "fields": [
+            "manufacturer"
+          ],
+          "evidence": "Собственное синтетическое Platinum 7000 5W-40 API SN/CF, фасовка 4 л."
+        }
+      ],
+      "status": "confirmed",
+      "reason": "Совпали линейка, вязкость, API и объем. Заводской артикул в импорте отсутствует; подтверждена только марка производителя. Подтверждена марка SINTEC; юрлицо изготовителя и страна данной партии не установлены.",
+      "expectedDescription": "Изображение — иллюстрация типа товара, не фотография конкретного артикула.",
+      "websiteDescription": "Марка производителя: SINTEC. Изображение — иллюстрация типа товара, не фотография конкретного артикула."
+    },
+    {
+      "position": 7691,
+      "expected": {
+        "name": "Масло мотор.Sintec Premium SAE 5W30 A3/B4 синт 1л.",
+        "sku": "600102",
+        "brand": ""
+      },
+      "brand": "SINTEC",
+      "manufacturer": "SINTEC",
+      "manufacturerKind": "brand",
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://sinteclubricants.ru/catalog/masla_dlya_legkovykh_avtomobiley/sintec_premium_sae_5w_30_acea_a3_b4/",
+          "fields": [
+            "manufacturer"
+          ],
+          "evidence": "Premium 9000 5W-30 ACEA A3/B4 API SL/CF: 600102, 1 л."
+        }
+      ],
+      "status": "confirmed",
+      "reason": "Совпали точный артикул, линейка, вязкость и фасовка. Подтверждена марка SINTEC; юрлицо изготовителя и страна данной партии не установлены.",
+      "expectedDescription": "Изображение — иллюстрация типа товара, не фотография конкретного артикула.",
+      "websiteDescription": "Марка производителя: SINTEC. Изображение — иллюстрация типа товара, не фотография конкретного артикула."
+    },
+    {
+      "position": 7692,
+      "expected": {
+        "name": "Масло мотор.Sintec Premium SAE 5W30 A3/B4 синт 4л.",
+        "sku": "600103",
+        "brand": ""
+      },
+      "brand": "SINTEC",
+      "manufacturer": "SINTEC",
+      "manufacturerKind": "brand",
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://sinteclubricants.ru/catalog/masla_dlya_legkovykh_avtomobiley/sintec_premium_sae_5w_30_acea_a3_b4/",
+          "fields": [
+            "manufacturer"
+          ],
+          "evidence": "Premium 9000 5W-30 ACEA A3/B4 API SL/CF: 600103, 4 л."
+        }
+      ],
+      "status": "confirmed",
+      "reason": "Совпали точный артикул, линейка, вязкость и фасовка. Подтверждена марка SINTEC; юрлицо изготовителя и страна данной партии не установлены.",
+      "expectedDescription": "Изображение — иллюстрация типа товара, не фотография конкретного артикула.",
+      "websiteDescription": "Марка производителя: SINTEC. Изображение — иллюстрация типа товара, не фотография конкретного артикула."
+    },
+    {
+      "position": 7693,
+      "expected": {
+        "name": "Масло мотор.Sintec Premium SAE 5W40 A3/B4 синт 1л.",
+        "sku": "600106",
+        "brand": ""
+      },
+      "brand": "SINTEC",
+      "manufacturer": "SINTEC",
+      "manufacturerKind": "brand",
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://sinteclubricants.ru/catalog/masla_dlya_legkovykh_avtomobiley/sintec_premium_9000_sae_5w_40_api_sn_acea_a3_b4/",
+          "fields": [
+            "manufacturer"
+          ],
+          "evidence": "Premium 9000 5W-40 ACEA A3/B4 API SN/CF: 600106, 1 л."
+        }
+      ],
+      "status": "confirmed",
+      "reason": "Совпали точный артикул, линейка, вязкость и фасовка. Подтверждена марка SINTEC; юрлицо изготовителя и страна данной партии не установлены.",
+      "expectedDescription": "Изображение — иллюстрация типа товара, не фотография конкретного артикула.",
+      "websiteDescription": "Марка производителя: SINTEC. Изображение — иллюстрация типа товара, не фотография конкретного артикула."
+    },
+    {
+      "position": 7694,
+      "expected": {
+        "name": "Масло мотор.Sintec Premium SAE 5W40 A3/B4 синт 4л.",
+        "sku": "600107",
+        "brand": ""
+      },
+      "brand": "SINTEC",
+      "manufacturer": "SINTEC",
+      "manufacturerKind": "brand",
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://sinteclubricants.ru/catalog/masla_dlya_legkovykh_avtomobiley/sintec_premium_9000_sae_5w_40_api_sn_acea_a3_b4/",
+          "fields": [
+            "manufacturer"
+          ],
+          "evidence": "Premium 9000 5W-40 ACEA A3/B4 API SN/CF: 600107, 4 л."
+        }
+      ],
+      "status": "confirmed",
+      "reason": "Совпали точный артикул, линейка, вязкость и фасовка. Подтверждена марка SINTEC; юрлицо изготовителя и страна данной партии не установлены.",
+      "expectedDescription": "Изображение — иллюстрация типа товара, не фотография конкретного артикула.",
+      "websiteDescription": "Марка производителя: SINTEC. Изображение — иллюстрация типа товара, не фотография конкретного артикула."
+    },
+    {
+      "position": 7695,
+      "expected": {
+        "name": "Масло мотор.Sintec Люкс SAE 10W40 SL/CF п.синт 1л.",
+        "sku": "00-01-01336",
+        "brand": ""
+      },
+      "brand": "SINTEC",
+      "manufacturer": "SINTEC",
+      "manufacturerKind": "brand",
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://sinteclubricants.ru/catalog/masla_dlya_legkovykh_avtomobiley/sintec_luxe_sae_10w_40_api_sl_cf/",
+          "fields": [
+            "manufacturer"
+          ],
+          "evidence": "Официальная карточка Luxe 5000 10W-40 API SL/CF содержит фасовку 1 л."
+        }
+      ],
+      "status": "confirmed",
+      "reason": "Совпали линейка, вязкость, API и объем. Внутренний 00-01-01336 не подтвержден как заводской номер; тип основы и рецептура не дополняются. Подтверждена марка SINTEC; юрлицо изготовителя и страна данной партии не установлены.",
+      "expectedDescription": "Изображение — иллюстрация типа товара, не фотография конкретного артикула.",
+      "websiteDescription": "Марка производителя: SINTEC. Изображение — иллюстрация типа товара, не фотография конкретного артикула."
+    },
+    {
+      "position": 7696,
+      "expected": {
+        "name": "Масло мотор.Sintec Люкс SAE 10W40 SL/CF п.синт 4л.",
+        "sku": "00-01-01337",
+        "brand": ""
+      },
+      "brand": "SINTEC",
+      "manufacturer": "SINTEC",
+      "manufacturerKind": "brand",
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://sinteclubricants.ru/catalog/masla_dlya_legkovykh_avtomobiley/sintec_luxe_sae_10w_40_api_sl_cf/",
+          "fields": [
+            "manufacturer"
+          ],
+          "evidence": "Официальная карточка Luxe 5000 10W-40 API SL/CF содержит фасовку 4 л."
+        }
+      ],
+      "status": "confirmed",
+      "reason": "Совпали линейка, вязкость, API и объем. Внутренний 00-01-01337 не подтвержден как заводской номер; тип основы и рецептура не дополняются. Подтверждена марка SINTEC; юрлицо изготовителя и страна данной партии не установлены.",
+      "expectedDescription": "Изображение — иллюстрация типа товара, не фотография конкретного артикула.",
+      "websiteDescription": "Марка производителя: SINTEC. Изображение — иллюстрация типа товара, не фотография конкретного артикула."
+    },
+    {
+      "position": 7697,
+      "expected": {
+        "name": "Масло мотор.Sintec Люкс SAE 10W40 SL/CF п.синт 5л.",
+        "sku": "801997",
+        "brand": ""
+      },
+      "brand": "SINTEC",
+      "manufacturer": "SINTEC",
+      "manufacturerKind": "brand",
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://sinteclubricants.ru/catalog/masla_dlya_legkovykh_avtomobiley/sintec_luxe_sae_10w_40_api_sl_cf/",
+          "fields": [
+            "manufacturer"
+          ],
+          "evidence": "Официальная карточка Luxe 5000 10W-40 API SL/CF содержит фасовку 5 л."
+        }
+      ],
+      "status": "confirmed",
+      "reason": "Совпали линейка, вязкость, API и объем. Старый 801997 не указан в текущей карточке; тип основы и рецептура не дополняются. Подтверждена марка SINTEC; юрлицо изготовителя и страна данной партии не установлены.",
+      "expectedDescription": "Изображение — иллюстрация типа товара, не фотография конкретного артикула.",
+      "websiteDescription": "Марка производителя: SINTEC. Изображение — иллюстрация типа товара, не фотография конкретного артикула."
+    },
+    {
+      "position": 7698,
+      "expected": {
+        "name": "Масло мотор.Sintec Супер SAE 10W40 SG/CD п.синт 1л.",
+        "sku": "00-01-01089",
+        "brand": ""
+      },
+      "brand": "SINTEC",
+      "manufacturer": "SINTEC",
+      "manufacturerKind": "brand",
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://sinteclubricants.ru/catalog/masla_dlya_legkovykh_avtomobiley/sintec_super_sae_10w_40_api_sg_cd/",
+          "fields": [
+            "manufacturer"
+          ],
+          "evidence": "Собственное полусинтетическое Super 3000 10W-40 API SG/CD, фасовка 1 л."
+        }
+      ],
+      "status": "confirmed",
+      "reason": "Совпали линейка, вязкость, API, тип и объем. Внутренний 00-01-01089 не подтвержден как заводской номер. Подтверждена марка SINTEC; юрлицо изготовителя и страна данной партии не установлены.",
+      "expectedDescription": "Изображение — иллюстрация типа товара, не фотография конкретного артикула.",
+      "websiteDescription": "Марка производителя: SINTEC. Изображение — иллюстрация типа товара, не фотография конкретного артикула."
+    },
+    {
+      "position": 7699,
+      "expected": {
+        "name": "Масло мотор.Sintec Супер SAE 10W40 SG/CD п.синт 5л.",
+        "sku": "801895",
+        "brand": ""
+      },
+      "brand": "SINTEC",
+      "manufacturer": "SINTEC",
+      "manufacturerKind": "brand",
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://sinteclubricants.ru/catalog/masla_dlya_legkovykh_avtomobiley/sintec_super_sae_10w_40_api_sg_cd/",
+          "fields": [
+            "manufacturer"
+          ],
+          "evidence": "Собственное полусинтетическое Super 3000 10W-40 API SG/CD, фасовка 5 л."
+        }
+      ],
+      "status": "confirmed",
+      "reason": "Совпали линейка, вязкость, API, тип и объем. Старый 801895 не указан в текущей карточке; рецептура не дополняется. Подтверждена марка SINTEC; юрлицо изготовителя и страна данной партии не установлены.",
+      "expectedDescription": "Изображение — иллюстрация типа товара, не фотография конкретного артикула.",
+      "websiteDescription": "Марка производителя: SINTEC. Изображение — иллюстрация типа товара, не фотография конкретного артикула."
+    },
+    {
+      "position": 7732,
+      "expected": {
+        "name": "Масло мотор.ЛУКОЙЛ GENESIS ARMORTECH FD SAE 5W30 ( 4л) A5/B5 синт.",
+        "sku": "3149287",
+        "brand": ""
+      },
+      "brand": null,
+      "manufacturer": null,
+      "manufacturerKind": null,
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://lukoil-masla.ru/FileSystem/9/502366.pdf",
+          "fields": [
+            "sku",
+            "name",
+            "viscosity",
+            "volume"
+          ],
+          "evidence": "Код 3149287 отнесён к ARMORTECH HK/НК 5W-30, 4 л; для FD указан другой код — 3149878."
+        }
+      ],
+      "status": "review",
+      "reason": "Конфликт линейки и артикула: в исходнике FD, в официальном перечне по этому коду HK/НК. Производитель и страна не присваиваются до уточнения позиции."
+    },
+    {
+      "position": 7733,
+      "expected": {
+        "name": "Масло мотор.ЛУКОЙЛ GENESIS ARMORTECH JP 5W-30 синт. 4л",
+        "sku": "3149902",
+        "brand": ""
+      },
+      "brand": "ЛУКОЙЛ",
+      "manufacturer": "ЛУКОЙЛ",
+      "manufacturerKind": "brand",
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://lukoil-masla.ru/FileSystem/9/502366.pdf",
+          "fields": [
+            "manufacturer",
+            "sku",
+            "name",
+            "viscosity",
+            "volume"
+          ],
+          "evidence": "В перечне коду 3149902 соответствует собственное GENESIS ARMORTECH JP, 5W-30, 4 л."
+        },
+        {
+          "url": "https://lukoil-masla.ru/ru/products/ProductCard/lukoil-genesis-armortech-jp-5w-30",
+          "fields": [
+            "manufacturer",
+            "name",
+            "viscosity"
+          ],
+          "evidence": "Официальная карточка подтверждает синтетическую линейку JP и вязкость 5W-30; страну не указывает."
+        }
+      ],
+      "status": "confirmed",
+      "reason": "Подтверждён только изготовитель-марка собственного продукта, без назначения юридического лица. Прямого указания страны изготовления точной позиции/партии в проверенных первичных источниках нет; страна остаётся null.",
+      "expectedDescription": "Изображение — иллюстрация типа товара, не фотография конкретного артикула.",
+      "websiteDescription": "Марка производителя: ЛУКОЙЛ. Изображение — иллюстрация типа товара, не фотография конкретного артикула."
+    },
+    {
+      "position": 7734,
+      "expected": {
+        "name": "Масло мотор.ЛУКОЙЛ GENESIS ARMORTECH SAE 5W40 ( 1л) SQ синт.",
+        "sku": "2255947",
+        "brand": ""
+      },
+      "brand": "ЛУКОЙЛ",
+      "manufacturer": "ЛУКОЙЛ",
+      "manufacturerKind": "brand",
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://lukoil-masla.ru/ru/products/ProductCard/lukoil-genesis-armortech-5w-40",
+          "fields": [
+            "manufacturer",
+            "name",
+            "viscosity"
+          ],
+          "evidence": "В официальной карточке ARMORTECH 5W-40 указан актуальный уровень API SQ/CF."
+        },
+        {
+          "url": "https://b2b.lukoil-shop.ru/product/lukoil_genesis_armortech_5w_40/?offerId=1639",
+          "fields": [
+            "manufacturer",
+            "sku",
+            "name",
+            "viscosity",
+            "volume"
+          ],
+          "evidence": "Связанный официальный магазин показывает в теле карточки код 2255947, ARMORTECH 5W-40, 1 л и API SQ; это совпадает с исходной строкой."
+        }
+      ],
+      "status": "confirmed",
+      "reason": "Подтверждён только изготовитель-марка собственного продукта, без назначения юридического лица. Прямого указания страны изготовления точной позиции/партии в проверенных первичных источниках нет; страна остаётся null.",
+      "expectedDescription": "Изображение — иллюстрация типа товара, не фотография конкретного артикула.",
+      "websiteDescription": "Марка производителя: ЛУКОЙЛ. Изображение — иллюстрация типа товара, не фотография конкретного артикула."
+    },
+    {
+      "position": 7735,
+      "expected": {
+        "name": "Масло мотор.ЛУКОЙЛ GENESIS ARMORTECH SAE 5W40 4л (3148675)",
+        "sku": "3148675",
+        "brand": ""
+      },
+      "brand": "ЛУКОЙЛ",
+      "manufacturer": "ЛУКОЙЛ",
+      "manufacturerKind": "brand",
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://lukoil-masla.ru/FileSystem/9/502366.pdf",
+          "fields": [
+            "manufacturer",
+            "sku",
+            "name",
+            "viscosity",
+            "volume"
+          ],
+          "evidence": "Исторический официальный перечень связывает код 3148675 с ARMORTECH 5W-40 в канистре 4 л; новая спецификация из современной карточки ему не приписывается."
+        }
+      ],
+      "status": "confirmed",
+      "reason": "Подтверждён только изготовитель-марка собственного продукта, без назначения юридического лица. Прямого указания страны изготовления точной позиции/партии в проверенных первичных источниках нет; страна остаётся null.",
+      "expectedDescription": "Изображение — иллюстрация типа товара, не фотография конкретного артикула.",
+      "websiteDescription": "Марка производителя: ЛУКОЙЛ. Изображение — иллюстрация типа товара, не фотография конкретного артикула."
+    },
+    {
+      "position": 7736,
+      "expected": {
+        "name": "Масло мотор.ЛУКОЙЛ Авангард 10W40 ( 5л) CF-4/SG п/синт.",
+        "sku": "М39157 / 19306 / 2311607",
+        "brand": ""
+      },
+      "brand": null,
+      "manufacturer": null,
+      "manufacturerKind": null,
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://lukoil-masla.ru/FileSystem/9/502366.pdf",
+          "fields": [
+            "sku",
+            "name",
+            "viscosity",
+            "volume"
+          ],
+          "evidence": "Компонент 19306 совпадает с АВАНГАРД 10W-40 CF-4/SG, 5 л; остальные коды исходного составного артикула не установлены."
+        }
+      ],
+      "status": "review",
+      "reason": "В поле sku три разных кода. Нельзя выбрать один из них или объявить их взаимозаменяемыми без подтверждения."
+    },
+    {
+      "position": 7737,
+      "expected": {
+        "name": "Масло мотор.ЛУКОЙЛ Авангард 10W40 (20л) CF-4/SG п/синт.",
+        "sku": "19492/3608719",
+        "brand": ""
+      },
+      "brand": null,
+      "manufacturer": null,
+      "manufacturerKind": null,
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://lukoil-masla.ru/FileSystem/9/586957.pdf",
+          "fields": [
+            "sku",
+            "name",
+            "viscosity",
+            "volume"
+          ],
+          "evidence": "Индекс официального перечня связывает компонент 19492 с АВАНГАРД 10W-40 CF-4/SG, 20 л; связь второго кода не установлена."
+        }
+      ],
+      "status": "review",
+      "reason": "Составной sku 19492/3608719 требует проверки; точная связь старого и нового артикула первичным источником не подтверждена."
+    },
+    {
+      "position": 7738,
+      "expected": {
+        "name": "Масло мотор.ЛУКОЙЛ Авангард 15W40 (20л) CF-4/SG минер.",
+        "sku": "19496 / 3629005",
+        "brand": ""
+      },
+      "brand": null,
+      "manufacturer": null,
+      "manufacturerKind": null,
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://lukoil-masla.ru/FileSystem/9/586957.pdf",
+          "fields": [
+            "sku",
+            "name",
+            "viscosity",
+            "volume"
+          ],
+          "evidence": "В индексируемом официальном перечне компонент 19496 обозначает АВАНГАРД 15W-40 CF-4/SG, 20 л; второй код не подтверждён."
+        }
+      ],
+      "status": "review",
+      "reason": "Составной sku 19496/3629005: не подтверждена принадлежность обоих кодов одной точной позиции."
+    },
+    {
+      "position": 7739,
+      "expected": {
+        "name": "Масло мотор.ЛУКОЙЛ Авангард 15W40 (5л) CF-4/SG минер.",
+        "sku": "19309/3636301",
+        "brand": ""
+      },
+      "brand": null,
+      "manufacturer": null,
+      "manufacturerKind": null,
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://lukoil-masla.ru/FileSystem/9/502366.pdf",
+          "fields": [
+            "sku",
+            "name",
+            "viscosity",
+            "volume"
+          ],
+          "evidence": "Компонент 19309 соответствует АВАНГАРД 15W-40 CF-4/SG, 5 л; связь второго кода не подтверждена."
+        }
+      ],
+      "status": "review",
+      "reason": "Составной sku 19309/3636301 требует уточнения; название семейства не заменяет проверку артикула."
+    },
+    {
+      "position": 7740,
+      "expected": {
+        "name": "Масло мотор.ЛУКОЙЛ Авангард Ультра 10W40 (20л) п/синт.",
+        "sku": "3052073",
+        "brand": ""
+      },
+      "brand": "ЛУКОЙЛ",
+      "manufacturer": "ЛУКОЙЛ",
+      "manufacturerKind": "brand",
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://lukoil-masla.ru/FileSystem/9/586957.pdf",
+          "fields": [
+            "manufacturer",
+            "sku",
+            "name",
+            "viscosity",
+            "volume"
+          ],
+          "evidence": "Индексируемая таблица официального документа связывает 3052073 с АВАНГАРД УЛЬТРА 10W-40, 20 л; прямое открытие PDF завершалось тайм-аутом."
+        },
+        {
+          "url": "https://catalog.lukoil-masla.ru/u/product_document_file/5865/tds_304_l_rus_lukoil_avantgarde_ultra_10w-40_05.05.2022.pdf",
+          "fields": [
+            "manufacturer",
+            "name",
+            "viscosity"
+          ],
+          "evidence": "Официальный технический лист подтверждает собственное полусинтетическое АВАНГАРД УЛЬТРА 10W-40; фасовку и страну этот лист не устанавливает."
+        }
+      ],
+      "status": "confirmed",
+      "reason": "Подтверждён только изготовитель-марка собственного продукта, без назначения юридического лица. Прямого указания страны изготовления точной позиции/партии в проверенных первичных источниках нет; страна остаётся null.",
+      "expectedDescription": "Изображение — иллюстрация типа товара, не фотография конкретного артикула.",
+      "websiteDescription": "Марка производителя: ЛУКОЙЛ. Изображение — иллюстрация типа товара, не фотография конкретного артикула."
+    },
+    {
+      "position": 7741,
+      "expected": {
+        "name": "Масло мотор.ЛУКОЙЛ Авангард Ультра 10W40 (5л) п/синт.",
+        "sku": "1553213/3655654",
+        "brand": ""
+      },
+      "brand": null,
+      "manufacturer": null,
+      "manufacturerKind": null,
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://lukoil-masla.ru/FileSystem/9/502366.pdf",
+          "fields": [
+            "sku",
+            "name",
+            "viscosity",
+            "volume"
+          ],
+          "evidence": "В перечне компонент 1553213 соответствует АВАНГАРД УЛЬТРА 10W-40, 5 л."
+        }
+      ],
+      "status": "review",
+      "reason": "Составной sku 1553213/3655654: по условию исследования такая строка остаётся на ручной проверке, без автоматического выбора артикула."
+    },
+    {
+      "position": 7742,
+      "expected": {
+        "name": "Масло мотор.ЛУКОЙЛ Авангард экстра 10W40 (20л) п/синт.",
+        "sku": "3636295",
+        "brand": ""
+      },
+      "brand": null,
+      "manufacturer": null,
+      "manufacturerKind": null,
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://lukoil-masla.ru/FileSystem/9/586957.pdf",
+          "fields": [
+            "name",
+            "viscosity",
+            "volume"
+          ],
+          "evidence": "Официальный перечень содержит АВАНГАРД ЭКСТРА 10W-40, 20 л, но под другим кодом 3051178; код 3636295 в найденных первичных материалах не подтверждён."
+        }
+      ],
+      "status": "review",
+      "reason": "Найдена линейка и фасовка, но точный артикул 3636295 не подтверждён официальным источником; аналог или замену не подставлять."
+    },
+    {
+      "position": 7743,
+      "expected": {
+        "name": "Масло мотор.ЛУКОЙЛ Лукойл Стандарт SF/CC 10W40 мин. 5л.",
+        "sku": "19184",
+        "brand": ""
+      },
+      "brand": null,
+      "manufacturer": null,
+      "manufacturerKind": null,
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://lukoil-masla.ru/FileSystem/9/544218.pdf",
+          "fields": [
+            "sku",
+            "name",
+            "viscosity",
+            "volume"
+          ],
+          "evidence": "По официальному перечню 19184 — СТАНДАРТ 10W-40 SF/CC, 1 л; фасовке 5 л соответствует 19186."
+        }
+      ],
+      "status": "review",
+      "reason": "Конфликт объёма: исходное название указывает 5 л, официальный код — 1 л. До уточнения обе характеристики происхождения остаются пустыми."
+    },
+    {
+      "position": 7744,
+      "expected": {
+        "name": "Масло мотор.ЛУКОЙЛ Супер 10W40 API SG/CD п/синт.(1л)",
+        "sku": "М37640 / 19191",
+        "brand": ""
+      },
+      "brand": null,
+      "manufacturer": null,
+      "manufacturerKind": null,
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://lukoil-masla.ru/FileSystem/9/544218.pdf",
+          "fields": [
+            "sku",
+            "name",
+            "viscosity",
+            "volume"
+          ],
+          "evidence": "Компонент 19191 соответствует СУПЕР 10W-40 SG/CD, полусинтетика, 1 л; код М37640 не установлен."
+        }
+      ],
+      "status": "review",
+      "reason": "В sku два кода, один с буквенным префиксом. Нет основания автоматически выбирать 19191 или считать второй код его эквивалентом."
+    },
+    {
+      "position": 7745,
+      "expected": {
+        "name": "Масло мотор.ЛУКОЙЛ Супер 10W40 API SG/CD п/синт.(4л)",
+        "sku": "19192",
+        "brand": ""
+      },
+      "brand": "ЛУКОЙЛ",
+      "manufacturer": "ЛУКОЙЛ",
+      "manufacturerKind": "brand",
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://lukoil-masla.ru/FileSystem/9/502366.pdf",
+          "fields": [
+            "manufacturer",
+            "sku",
+            "name",
+            "viscosity",
+            "volume"
+          ],
+          "evidence": "Перечень собственной продукции связывает 19192 с СУПЕР 10W-40 SG/CD, полусинтетика, канистра 4 л."
+        }
+      ],
+      "status": "confirmed",
+      "reason": "Подтверждён только изготовитель-марка собственного продукта, без назначения юридического лица. Прямого указания страны изготовления точной позиции/партии в проверенных первичных источниках нет; страна остаётся null.",
+      "expectedDescription": "Изображение — иллюстрация типа товара, не фотография конкретного артикула.",
+      "websiteDescription": "Марка производителя: ЛУКОЙЛ. Изображение — иллюстрация типа товара, не фотография конкретного артикула."
+    },
+    {
+      "position": 9087,
+      "expected": {
+        "name": "Омыватель стекол OIL RIGHT, Sintec Летний, AvtoRen",
+        "sku": "М39474",
+        "brand": ""
+      },
+      "brand": null,
+      "manufacturer": null,
+      "manufacturerKind": null,
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://sinteclubricants.ru/catalog/spetsialnye_zhidkosti/",
+          "fields": [],
+          "evidence": "В официальном каталоге есть стеклоомывающая жидкость SINTEC «ЛЕТНИЙ» 4 л."
+        }
+      ],
+      "status": "review",
+      "reason": "Исходная строка перечисляет Oil Right, SINTEC и AvtoRen, не задает объем; складской М39474 не различает товары. Изготовитель и страна остаются неподтвержденными."
+    },
+    {
+      "position": 11853,
+      "expected": {
+        "name": "Промывка системы охлаждения LAVR 0,430л 8-10л (ln1107)",
+        "sku": "ln1107",
+        "brand": ""
+      },
+      "brand": "LAVR",
+      "manufacturer": "LAVR",
+      "manufacturerKind": "brand",
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://lavr.ru/473_2.pdf",
+          "fields": [
+            "manufacturer",
+            "sku",
+            "productIdentity"
+          ],
+          "evidence": "Официальный англоязычный каталог: Cooling System Express-Flush, Ln1107, 430 мл, на 8–10 л антифриза."
+        }
+      ],
+      "status": "confirmed",
+      "reason": "Официальный экспортный каталог подтверждает LAVR, Ln1107, 430 мл и 8–10 л антифриза. Подходящее прямое подтверждение страны и юридического изготовителя не найдено; документы классической промывки Ln1104 на синтетическую Ln1107 не переносили.",
+      "expectedDescription": "Изображение — иллюстрация типа товара, не фотография конкретного артикула.",
+      "websiteDescription": "Марка производителя: LAVR. Изображение — иллюстрация типа товара, не фотография конкретного артикула."
+    },
+    {
+      "position": 11854,
+      "expected": {
+        "name": "Промывка системы охлаждения LAVR 0,98л 30л (ln1104)",
+        "sku": "ln1104",
+        "brand": ""
+      },
+      "brand": "LAVR",
+      "manufacturer": "ООО НПО «Полихимтехнологии»",
+      "manufacturerKind": "legalEntity",
+      "countryOfManufacture": "Россия",
+      "sources": [
+        {
+          "url": "https://lavr.ru/473_2.pdf",
+          "fields": [
+            "manufacturer",
+            "sku",
+            "productIdentity"
+          ],
+          "evidence": "Официальный англоязычный каталог: Cooling System Flush for Commercial Transport Classic++, Ln1104, 980 мл, на 25–35 л; тип и исходная фасовка совпадают."
+        },
+        {
+          "url": "https://lavr.ru/production/dvigatel-i-sistemy-avtomobilya/sistema-okhlazhdeniya/ochistka-sistemy-okhlazhdeniya/klassicheskaya-promyvka-sistemy-okhlazhdeniya-dlya-kommercheskogo-transporta-klassicheskaya-lavr-980/",
+          "fields": [
+            "manufacturer",
+            "sku",
+            "productIdentity"
+          ],
+          "evidence": "Карточка того же артикула Ln1104 сейчас называет фасовку 1 л, а название изображений сохраняет 980 мл; прежние 980 мл подтверждены официальным каталогом."
+        },
+        {
+          "url": "https://lavr.ru/l/web/docs/doc_2761.pdf",
+          "fields": [
+            "manufacturer",
+            "countryOfManufacture",
+            "legalManufacturer"
+          ],
+          "evidence": "Свидетельство RU.66.01.40.015.E.000111.03.23 от 03.03.2023 включает классическую промывку для коммерческого транспорта LAVR и называет ООО НПО «Полихимтехнологии» с фактическим адресом производства в Российской Федерации."
+        }
+      ],
+      "status": "confirmed",
+      "reason": "Товар точно сопоставлен по артикулу и фасовке; страна подтверждена фактическим адресом производства в приложенном к его карточке свидетельстве. В исходной строке 980 мл, в текущей карточке 1 л; официальный экспортный каталог подтверждает прежнюю фасовку 980 мл. Фасовку исходной строки не изменять.",
+      "expectedDescription": "Изображение — иллюстрация типа товара, не фотография конкретного артикула.",
+      "websiteDescription": "Производитель: ООО НПО «Полихимтехнологии». Марка: LAVR. Страна производства: Россия. Изображение — иллюстрация типа товара, не фотография конкретного артикула."
+    },
+    {
+      "position": 12777,
+      "expected": {
+        "name": "Размораживатель замков с силиконовой смазкой 30мл Lavr (LN1305)",
+        "sku": "LN1305",
+        "brand": ""
+      },
+      "brand": "LAVR",
+      "manufacturer": "ООО НПО «Полихимтехнологии»",
+      "manufacturerKind": "legalEntity",
+      "countryOfManufacture": "Россия",
+      "sources": [
+        {
+          "url": "https://lavr.ru/production/zimnyaya-produktsiya/razmorazhivateli-zamkov/razmorazhivatel-zamkov-s-silikonovoy-smazkoy-30-ml/",
+          "fields": [
+            "manufacturer",
+            "sku",
+            "productIdentity"
+          ],
+          "evidence": "Официальная карточка LAVR: размораживатель замков с силиконовой смазкой, Ln1305, 30 мл."
+        },
+        {
+          "url": "https://lavr.ru/l/web/docs/doc_2774.pdf",
+          "fields": [
+            "manufacturer",
+            "countryOfManufacture",
+            "legalManufacturer"
+          ],
+          "evidence": "Свидетельство RU.66.01.40.015.E.000115.10.22 от 31.10.2022 прямо включает размораживатель замков с силиконовой смазкой LAVR и называет ООО НПО «Полихимтехнологии» с фактическим адресом производства в Российской Федерации."
+        }
+      ],
+      "status": "confirmed",
+      "reason": "Товар точно сопоставлен по артикулу и фасовке; страна подтверждена фактическим адресом производства в приложенном к его карточке свидетельстве.",
+      "expectedDescription": "Изображение — иллюстрация типа товара, не фотография конкретного артикула.",
+      "websiteDescription": "Производитель: ООО НПО «Полихимтехнологии». Марка: LAVR. Страна производства: Россия. Изображение — иллюстрация типа товара, не фотография конкретного артикула."
+    },
+    {
+      "position": 12914,
+      "expected": {
+        "name": "Раскоксовка двигателя EXPRESS LAVR 400 мл LAVR LN2511",
+        "sku": "LN2511",
+        "brand": ""
+      },
+      "brand": "LAVR",
+      "manufacturer": "LAVR",
+      "manufacturerKind": "brand",
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://lavr.ru/production/dvigatel-i-sistemy-avtomobilya/raskoksovka/raskoksovka-dvigatelya-express-lavr-400-ml-ln2511/",
+          "fields": [
+            "manufacturer",
+            "sku",
+            "productIdentity"
+          ],
+          "evidence": "Официальная карточка LAVR: жидкостная раскоксовка Express, Ln2511, 400 мл."
+        },
+        {
+          "url": "https://lavr.ru/l/web/docs/doc_3330.pdf",
+          "fields": [
+            "sourceLimitation"
+          ],
+          "evidence": "Паспорт на раскоксовку EXPRESS LAVR содержит ООО НПО «ПолихимАэро» в общем разделе «производитель и/или поставщик» и почтовый/юридический адрес. Отдельного места изготовления нет, поэтому страна и юридический изготовитель не заполнены."
+        }
+      ],
+      "status": "confirmed",
+      "reason": "Точно подтверждена марка-производитель LAVR; прямого подтверждения страны и однозначного юридического изготовителя для конкретного продукта в проверенных источниках нет.",
+      "expectedDescription": "Изображение — иллюстрация типа товара, не фотография конкретного артикула.",
+      "websiteDescription": "Марка производителя: LAVR. Изображение — иллюстрация типа товара, не фотография конкретного артикула."
+    },
+    {
+      "position": 14514,
+      "expected": {
+        "name": "Свеча зажигания Toyota Corona/Camry NGK (7843)=BPR5EY11",
+        "sku": "7843",
+        "brand": ""
+      },
+      "brand": null,
+      "manufacturer": null,
+      "manufacturerKind": null,
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://www.ngkntk.com/fileadmin/user_upload/ngk-spark-plug_catalogue_sparkplugsglowplugs_2021-2022.pdf",
+          "fields": [],
+          "evidence": "Официальный каталог содержит свечу BPR5EY-11; точная привязка к номеру 7843 в первичном источнике не подтверждена."
+        }
+      ],
+      "status": "review",
+      "reason": "Найден тип свечи, но не подтвержден точный stock number 7843; для внесения производителя нужен первичный источник с этим номером либо маркировка товара. Страна артикула/партии не подтверждена."
+    },
+    {
+      "position": 14526,
+      "expected": {
+        "name": "Свеча зажигания ГАЗель ЗМЗ-405, 409 ЕВРО-3 под ГАЗ (NGK)",
+        "sku": "7938",
+        "brand": ""
+      },
+      "brand": "NGK",
+      "manufacturer": "NGK",
+      "manufacturerKind": "brand",
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://www.ngkntk.com/de/produktfinder/motoren/zuendkerze/briggs-stratton/commercial-series-200-gross-hp-engine-code-40t8-model4-bkr5e/",
+          "fields": [
+            "manufacturer"
+          ],
+          "evidence": "Официальный NGK Product Finder: свеча BKR5E, Bestellnummer 7938."
+        }
+      ],
+      "status": "confirmed",
+      "reason": "Точный номер и тип товара подтверждены. Производитель указан как марка NGK; применяемость к ГАЗ и газовому топливу не подтверждалась. Страна артикула/партии не установлена.",
+      "expectedDescription": "Изображение — иллюстрация типа товара, не фотография конкретного артикула.",
+      "websiteDescription": "Марка производителя: NGK. Изображение — иллюстрация типа товара, не фотография конкретного артикула."
+    },
+    {
+      "position": 14540,
+      "expected": {
+        "name": "Свечи зажигания NGK (к-т) MAZDA 6 1.8/2.0/2.3 02-> Iridium (4477) itr6f13",
+        "sku": "4477",
+        "brand": ""
+      },
+      "brand": null,
+      "manufacturer": null,
+      "manufacturerKind": null,
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://www.ngkntk.com/fileadmin/general_content_all_countries/catalogues/2023/ngk_spark_plug_glow_plug_catalogue.pdf",
+          "fields": [],
+          "evidence": "Официальный каталог NGK: ITR6F13, stock number 4477, в таблице свечей для Mazda 6."
+        }
+      ],
+      "status": "review",
+      "reason": "Свеча-компонент подтверждена, но строка продает комплект без количества и точного состава; производитель всего набора не подтвержден. Страна не установлена."
+    },
+    {
+      "position": 14541,
+      "expected": {
+        "name": "Свечи зажигания NGK (шт.) (BKR6E) Ford Granada.Mazda 323/626. Nissan 1.3-2.9 85-94",
+        "sku": "BKR6E",
+        "brand": ""
+      },
+      "brand": "NGK",
+      "manufacturer": "NGK",
+      "manufacturerKind": "brand",
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://www.ngkntk.com/de/produktfinder/maeher/zuendkerze/oleo-mac/g48tk-allroad-k650-engemak-k-650-159ccm-1-cyl-bkr6e/",
+          "fields": [
+            "manufacturer"
+          ],
+          "evidence": "Официальный NGK Product Finder: свеча BKR6E, Bestellnummer 6962."
+        }
+      ],
+      "status": "confirmed",
+      "reason": "Точная модель и тип одиночной свечи подтверждены; применяемость из импортной строки не переносится. Страна артикула/партии не установлена.",
+      "expectedDescription": "Изображение — иллюстрация типа товара, не фотография конкретного артикула.",
+      "websiteDescription": "Марка производителя: NGK. Изображение — иллюстрация типа товара, не фотография конкретного артикула."
+    },
+    {
+      "position": 14675,
+      "expected": {
+        "name": "Смазка Sintec Grease MULTI EP2 -150 18кг",
+        "sku": "80503",
+        "brand": ""
+      },
+      "brand": "SINTEC",
+      "manufacturer": "SINTEC",
+      "manufacturerKind": "brand",
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://sinteclubricants.ru/catalog/plastichnye_smazki/sintec_multi_grease_ep_2_150/",
+          "fields": [
+            "manufacturer"
+          ],
+          "evidence": "Собственная смазка Multi Grease EP 2-150: артикул 80503, фасовка 18 кг."
+        }
+      ],
+      "status": "confirmed",
+      "reason": "Точный артикул, название и масса совпали. Подтверждена марка SINTEC; юрлицо изготовителя и страна данной партии не установлены.",
+      "expectedDescription": "Изображение — иллюстрация типа товара, не фотография конкретного артикула.",
+      "websiteDescription": "Марка производителя: SINTEC. Изображение — иллюстрация типа товара, не фотография конкретного артикула."
+    },
+    {
+      "position": 14676,
+      "expected": {
+        "name": "Смазка Sintec/Favorit MULTI Grease L Moly EP2 синяя 400г (уп15)",
+        "sku": "80511",
+        "brand": ""
+      },
+      "brand": null,
+      "manufacturer": null,
+      "manufacturerKind": null,
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://sinteclubricants.ru/catalog/plastichnye_smazki/sintec_multi_grease_ep_2_150/",
+          "fields": [],
+          "evidence": "В официальной карточке артикул 80511 относится к Multi Grease EP 2-150 390 г, без твердых добавок."
+        }
+      ],
+      "status": "review",
+      "reason": "Исходник: SINTEC/Favorit, L Moly EP2, 400 г. Иные масса, обозначение Moly и два бренда противоречат точному совпадению. Изготовитель и страна остаются неподтвержденными."
+    },
+    {
+      "position": 14682,
+      "expected": {
+        "name": "Смазка графитная Sintec 9,5 кг",
+        "sku": "БР4802,М39196,СТ",
+        "brand": ""
+      },
+      "brand": null,
+      "manufacturer": null,
+      "manufacturerKind": null,
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://sinteclubricants.ru/catalog/plastichnye_smazki/",
+          "fields": [],
+          "evidence": "В доступном официальном перечне пластичных смазок точная графитная 9,5 кг не установлена."
+        }
+      ],
+      "status": "review",
+      "reason": "Есть только складские БР4802/М39196/СТ; не подтверждены точная карточка и заводской артикул. Изготовитель и страна остаются неподтвержденными."
+    },
+    {
+      "position": 14694,
+      "expected": {
+        "name": "Смазка многоцелевая LV-40, 210 мл LAVR Ln1484",
+        "sku": "Ln1484",
+        "brand": ""
+      },
+      "brand": "LAVR",
+      "manufacturer": "ООО НПО «ПолихимАэро»",
+      "manufacturerKind": "legalEntity",
+      "countryOfManufacture": "Россия",
+      "sources": [
+        {
+          "url": "https://lavr.ru/production/servisnye-produkty/smazki/mnogotselevaya-smazka-lv-40-lavr-multipurpose-grease-210-ml/",
+          "fields": [
+            "manufacturer",
+            "sku",
+            "productIdentity"
+          ],
+          "evidence": "Официальная карточка LAVR: многоцелевая смазка LV-40, Ln1484, 210 мл."
+        },
+        {
+          "url": "https://lavr.ru/l/web/docs/doc_3235.pdf",
+          "fields": [
+            "sku",
+            "productIdentity"
+          ],
+          "evidence": "Паспорт безопасности прямо перечисляет Ln1484, Ln1485 и Ln1453 и фасовки 210/400/520 мл. ООО НПО «ПолихимАэро» названо поставщиком; адрес поставщика не использован для вывода о стране изготовления."
+        },
+        {
+          "url": "https://lavr.ru/l/web/docs/deklaraciya-sootvetstviya-eaes-n-ru-d-ru-ra07-v-57590-25-ot-2025-08-29-3557-2025-09-10-145740.PDF",
+          "fields": [
+            "manufacturer",
+            "countryOfManufacture",
+            "legalManufacturer"
+          ],
+          "evidence": "Декларация ЕАЭС N RU Д-RU.РА07.В.57590/25 от 29.08.2025 охватывает многоцелевую смазку LAVR; изготовитель ООО НПО «ПолихимАэро», адрес деятельности по изготовлению продукции прямо указан в России. Паспорт doc_3235.pdf связывает LV-40 с Ln1484 и Ln1453."
+        }
+      ],
+      "status": "confirmed",
+      "reason": "Страна подтверждена адресом деятельности по изготовлению в декларации; точные артикулы LV-40 связаны паспортом безопасности.",
+      "expectedDescription": "Изображение — иллюстрация типа товара, не фотография конкретного артикула.",
+      "websiteDescription": "Производитель: ООО НПО «ПолихимАэро». Марка: LAVR. Страна производства: Россия. Изображение — иллюстрация типа товара, не фотография конкретного артикула."
+    },
+    {
+      "position": 14695,
+      "expected": {
+        "name": "Смазка многоцелевая LV-40, 520 мл LAVR Ln1453",
+        "sku": "Ln1453",
+        "brand": ""
+      },
+      "brand": "LAVR",
+      "manufacturer": "ООО НПО «ПолихимАэро»",
+      "manufacturerKind": "legalEntity",
+      "countryOfManufacture": "Россия",
+      "sources": [
+        {
+          "url": "https://lavr.ru/production/servisnye-produkty/smazki/smazka-mnogotselevaya-lv-40-520-ml/",
+          "fields": [
+            "manufacturer",
+            "sku",
+            "productIdentity"
+          ],
+          "evidence": "Официальная карточка LAVR: многоцелевая смазка LV-40, Ln1453, 520 мл."
+        },
+        {
+          "url": "https://lavr.ru/l/web/docs/doc_3235.pdf",
+          "fields": [
+            "sku",
+            "productIdentity"
+          ],
+          "evidence": "Паспорт безопасности прямо перечисляет Ln1484, Ln1485 и Ln1453 и фасовки 210/400/520 мл. ООО НПО «ПолихимАэро» названо поставщиком; адрес поставщика не использован для вывода о стране изготовления."
+        },
+        {
+          "url": "https://lavr.ru/l/web/docs/deklaraciya-sootvetstviya-eaes-n-ru-d-ru-ra07-v-57590-25-ot-2025-08-29-3557-2025-09-10-145740.PDF",
+          "fields": [
+            "manufacturer",
+            "countryOfManufacture",
+            "legalManufacturer"
+          ],
+          "evidence": "Декларация ЕАЭС N RU Д-RU.РА07.В.57590/25 от 29.08.2025 охватывает многоцелевую смазку LAVR; изготовитель ООО НПО «ПолихимАэро», адрес деятельности по изготовлению продукции прямо указан в России. Паспорт doc_3235.pdf связывает LV-40 с Ln1484 и Ln1453."
+        }
+      ],
+      "status": "confirmed",
+      "reason": "Страна подтверждена адресом деятельности по изготовлению в декларации; точные артикулы LV-40 связаны паспортом безопасности.",
+      "expectedDescription": "Изображение — иллюстрация типа товара, не фотография конкретного артикула.",
+      "websiteDescription": "Производитель: ООО НПО «ПолихимАэро». Марка: LAVR. Страна производства: Россия. Изображение — иллюстрация типа товара, не фотография конкретного артикула."
+    },
+    {
+      "position": 14710,
+      "expected": {
+        "name": "Смазка цепная белая с PTFE, 400мл LAVR Ln1741",
+        "sku": "Ln1741",
+        "brand": ""
+      },
+      "brand": "LAVR",
+      "manufacturer": "ООО НПО «ПолихимАэро»",
+      "manufacturerKind": "legalEntity",
+      "countryOfManufacture": "Россия",
+      "sources": [
+        {
+          "url": "https://lavr.ru/production/servisnye-produkty/smazki/belaya-tsepnaya-smazka-s-ptfe-lavr-400-ml/",
+          "fields": [
+            "manufacturer",
+            "sku",
+            "productIdentity"
+          ],
+          "evidence": "Официальная карточка LAVR: белая цепная смазка с PTFE, Ln1741, 400 мл."
+        },
+        {
+          "url": "https://lavr.ru/473_2.pdf",
+          "fields": [
+            "manufacturer",
+            "sku",
+            "productIdentity"
+          ],
+          "evidence": "Официальный англоязычный каталог: белая цепная смазка с PTFE, Ln1741, 400 мл."
+        },
+        {
+          "url": "https://lavr.ru/l/web/docs/deklaraciya-sootvetstviya-ds-trts-smazka-belaya-smazka-ptfe-smazka-ftoroplastovaya-smazka-belaya-sinteticheskaya-smazka-napravlyayuschih-i-salazok-tm-lavr-bi-bi-care-eaes-n-ru-d-ru-ra07-v-57523-25-3555-2025-09-02-130304.pdf",
+          "fields": [
+            "legalManufacturer",
+            "countryOfManufacture"
+          ],
+          "evidence": "Декларация ЕАЭС N RU Д-RU.РА07.В.57523/25 от 29.08.2025 на белую/PTFE смазку марки LAVR называет изготовителя ООО НПО «ПолихимАэро» и прямо указывает российский адрес деятельности по изготовлению. Ссылка размещена в карточке Ln1741."
+        }
+      ],
+      "status": "confirmed",
+      "reason": "Артикул, тип и 400 мл совпадают; изготовитель и страна подтверждены декларацией на белую/PTFE смазку LAVR из этой карточки.",
+      "expectedDescription": "Изображение — иллюстрация типа товара, не фотография конкретного артикула.",
+      "websiteDescription": "Производитель: ООО НПО «ПолихимАэро». Марка: LAVR. Страна производства: Россия. Изображение — иллюстрация типа товара, не фотография конкретного артикула."
+    },
+    {
+      "position": 16859,
+      "expected": {
+        "name": "Фиксатор резьбы LAVR неразъемный красный LAVR \"Термостойкий\" ThermFIX 9 мл.",
+        "sku": "Ln1732",
+        "brand": ""
+      },
+      "brand": "LAVR",
+      "manufacturer": "LAVR",
+      "manufacturerKind": "brand",
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://lavr.ru/production/servisnye-produkty/kleevye-sostavy/fiksator-rezby-nerazyem-termostoykiy-thermfix-lavr/",
+          "fields": [
+            "manufacturer",
+            "sku",
+            "productIdentity"
+          ],
+          "evidence": "Официальная карточка LAVR: неразъемный термостойкий фиксатор резьбы, Ln1732, 9 мл; официальный каталог дополнительно называет THERM FIX."
+        },
+        {
+          "url": "https://lavr.ru/l/web/docs/doc_2952.pdf",
+          "fields": [
+            "sourceLimitation"
+          ],
+          "evidence": "Свидетельство RU.01.РА.02.008.E.000400.04.22 описывает неразъемный фиксатор резьбы и изготовителя ООО ТПК «АЛМАЗ-ГРУПП»; ни LAVR/Ln1732/ThermFIX, ни отдельного места производства в тексте нет. Не использовано для страны или юридического изготовителя конкретного товара."
+        }
+      ],
+      "status": "confirmed",
+      "reason": "Марка LAVR, точный артикул, термостойкий тип и 9 мл подтверждены карточкой. Приложенное общее свидетельство не называет LAVR/Ln1732/ThermFIX и содержит адрес изготовителя без отдельного места производства; юридическое лицо и страну не переносили.",
+      "expectedDescription": "Изображение — иллюстрация типа товара, не фотография конкретного артикула.",
+      "websiteDescription": "Марка производителя: LAVR. Изображение — иллюстрация типа товара, не фотография конкретного артикула."
+    },
+    {
+      "position": 16935,
+      "expected": {
+        "name": "Фильтр воздушный 45-255/124 Hyuhdai Getz (Filtron)",
+        "sku": "ap1084 (LX1465)",
+        "brand": ""
+      },
+      "brand": "FILTRON",
+      "manufacturer": "FILTRON",
+      "manufacturerKind": "brand",
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://filtron.eu/en/catalog/search-results/product.html/ap108/4_filtron.html",
+          "fields": [
+            "manufacturer",
+            "productIdentity"
+          ],
+          "evidence": "FILTRON AP 108/4 Air Filter; официальная карточка собственного фильтра, применение:  HYUNDAI Getz"
+        }
+      ],
+      "status": "confirmed",
+      "reason": "Страна изготовления конкретного артикула/партии не подтверждена.",
+      "expectedDescription": "Изображение — иллюстрация типа товара, не фотография конкретного артикула.",
+      "websiteDescription": "Марка производителя: FILTRON. Изображение — иллюстрация типа товара, не фотография конкретного артикула."
+    },
+    {
+      "position": 16962,
+      "expected": {
+        "name": "Фильтр воздушный 52-279/179 Ford Transit 2.0Di/2.4Di & 16V 99> (Filtron)",
+        "sku": "AP0233 (LX935)",
+        "brand": ""
+      },
+      "brand": "FILTRON",
+      "manufacturer": "FILTRON",
+      "manufacturerKind": "brand",
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://filtron.eu/en/catalog/search-results/product.html/ap023/3_filtron.html",
+          "fields": [
+            "manufacturer",
+            "productIdentity"
+          ],
+          "evidence": "FILTRON AP 023/3 Air Filter; официальная карточка собственного фильтра, применение:  FORD Transit 2000, Transit 2007, Transit 2014. LDV LIMITED Convoy 400 (VH C35)"
+        }
+      ],
+      "status": "confirmed",
+      "reason": "Страна изготовления конкретного артикула/партии не подтверждена.",
+      "expectedDescription": "Изображение — иллюстрация типа товара, не фотография конкретного артикула.",
+      "websiteDescription": "Марка производителя: FILTRON. Изображение — иллюстрация типа товара, не фотография конкретного артикула."
+    },
+    {
+      "position": 17053,
+      "expected": {
+        "name": "Фильтр воздушный 191-174/84 Ford Explorer/Ranger 3.0/4.0 95>(AP1996)FILTRON",
+        "sku": "AP1996",
+        "brand": ""
+      },
+      "brand": "FILTRON",
+      "manufacturer": "FILTRON",
+      "manufacturerKind": "brand",
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://filtron.eu/en/catalog/search-results/product.html/ap199/6_filtron.html",
+          "fields": [
+            "manufacturer",
+            "productIdentity"
+          ],
+          "evidence": "FILTRON AP 199/6 Air Filter; официальная карточка собственного фильтра, применение:  Ford Explorer I, Windstar"
+        }
+      ],
+      "status": "confirmed",
+      "reason": "Страна изготовления конкретного артикула/партии не подтверждена.",
+      "expectedDescription": "Изображение — иллюстрация типа товара, не фотография конкретного артикула.",
+      "websiteDescription": "Марка производителя: FILTRON. Изображение — иллюстрация типа товара, не фотография конкретного артикула."
+    },
+    {
+      "position": 17320,
+      "expected": {
+        "name": "Фильтр масляный Nissan Micra 1.0-1.2 82-92 3/4\"-16UNF-2B d=63 (Filtron)",
+        "sku": "OP613 (OC139)",
+        "brand": ""
+      },
+      "brand": "FILTRON",
+      "manufacturer": "FILTRON",
+      "manufacturerKind": "brand",
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://filtron.eu/en/catalog/search-results/product.html/op613_filtron.html",
+          "fields": [
+            "manufacturer",
+            "productIdentity"
+          ],
+          "evidence": "FILTRON OP 613 Oil Filter; официальная карточка собственного фильтра, применение:  CATERPILLAR GP Series. MANITOU CD/CG-Serie, MI-Serie. NISSAN Micra I (K10)"
+        }
+      ],
+      "status": "confirmed",
+      "reason": "Страна изготовления конкретного артикула/партии не подтверждена.",
+      "expectedDescription": "Изображение — иллюстрация типа товара, не фотография конкретного артикула.",
+      "websiteDescription": "Марка производителя: FILTRON. Изображение — иллюстрация типа товара, не фотография конкретного артикула."
+    },
+    {
+      "position": 17322,
+      "expected": {
+        "name": "Фильтр масляный Opel Vectra C/Signum/Meriva/Astra M18x1.5 d=62 (Filtron)",
+        "sku": "OP5701 (OC4053)",
+        "brand": ""
+      },
+      "brand": "FILTRON",
+      "manufacturer": "FILTRON",
+      "manufacturerKind": "brand",
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://filtron.eu/en/catalog/search-results/product.html/op570/1_filtron.html",
+          "fields": [
+            "manufacturer",
+            "productIdentity"
+          ],
+          "evidence": "FILTRON OP 570/1 Oil Filter; официальная карточка собственного фильтра, применение:  OPEL Astra F / Astra F Cabrio, Astra G / Astra G Cabrio/Coupé, Corsa-A, Kadett-E, Vectra-A. VAUXHALL Astra Mk II, Cavalier, Nova"
+        }
+      ],
+      "status": "confirmed",
+      "reason": "Страна изготовления конкретного артикула/партии не подтверждена.",
+      "expectedDescription": "Изображение — иллюстрация типа товара, не фотография конкретного артикула.",
+      "websiteDescription": "Марка производителя: FILTRON. Изображение — иллюстрация типа товара, не фотография конкретного артикула."
+    },
+    {
+      "position": 18608,
+      "expected": {
+        "name": "Холодная сварка LAVR универсальная 60г.",
+        "sku": "Ln1721",
+        "brand": ""
+      },
+      "brand": "LAVR",
+      "manufacturer": "LAVR",
+      "manufacturerKind": "brand",
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://lavr.ru/production/servisnye-produkty/kleevye-sostavy/kholodnaya-svarka-universalnaya-multifix-lavr/",
+          "fields": [
+            "manufacturer",
+            "sku",
+            "productIdentity"
+          ],
+          "evidence": "Официальная карточка LAVR: холодная сварка Универсальная, Ln1721, фасовка 60 г."
+        },
+        {
+          "url": "https://lavr.ru/l/_Ln1721",
+          "fields": [
+            "sourceConflict"
+          ],
+          "evidence": "TDS назван универсальной холодной сваркой и указывает Ln1721, но содержит фасовку 9 ml; это противоречит карточке и каталогу с 60 г."
+        },
+        {
+          "url": "https://lavr.ru/l/web/docs/doc_2752.pdf",
+          "fields": [
+            "sourceLimitation"
+          ],
+          "evidence": "Свидетельство RU.01.РА.02.008.E.000841.06.21 на клей холодную сварку универсальный описывает ТУ «Алмаз-Аметист» и изготовителя ООО ТПК «АЛМАЗ-ГРУПП» с российским адресом производства. Ни LAVR, ни Ln1721 в тексте нет; не использовано для заполнения фактов конкретного товара."
+        }
+      ],
+      "status": "confirmed",
+      "reason": "Точная карточка и официальный каталог подтверждают LAVR, Ln1721, 60 г. TDS ошибочно пишет 9 ml. Приложенное свидетельство doc_2752.pdf описывает универсальную холодную сварку по ТУ «Алмаз-Аметист», не называет LAVR/Ln1721; изготовителя и страну из этого общего документа не переносили.",
+      "expectedDescription": "Изображение — иллюстрация типа товара, не фотография конкретного артикула.",
+      "websiteDescription": "Марка производителя: LAVR. Изображение — иллюстрация типа товара, не фотография конкретного артикула."
+    },
+    {
+      "position": 20439,
+      "expected": {
+        "name": "Щетка стеклооч. 550мм гибридная DENSO (DUR055L)",
+        "sku": "DUR055L",
+        "brand": ""
+      },
+      "brand": "DENSO",
+      "manufacturer": "DENSO",
+      "manufacturerKind": "brand",
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://assets.denso-am.eu/production/about/Wiper-Blades-Product-Catalogue-2025-Multilingual.pdf#page=191",
+          "fields": [
+            "manufacturer"
+          ],
+          "evidence": "Официальный каталог щеток DENSO 2025, стр. 191: в колонках DENSO/DENSO напрямую сопоставлены DUR055L и DUR-055L."
+        }
+      ],
+      "status": "confirmed",
+      "reason": "Точный артикул щетки подтвержден собственным каталогом. Длина и конструкция отдельно не добавляются; страна артикула/партии не установлена.",
+      "expectedDescription": "Изображение — иллюстрация типа товара, не фотография конкретного артикула.",
+      "websiteDescription": "Марка производителя: DENSO. Изображение — иллюстрация типа товара, не фотография конкретного артикула."
+    },
+    {
+      "position": 20494,
+      "expected": {
+        "name": "Щетка стеклооч.спец. задняя 400мм Denso",
+        "sku": "drb040",
+        "brand": ""
+      },
+      "brand": "DENSO",
+      "manufacturer": "DENSO",
+      "manufacturerKind": "brand",
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://assets.denso-am.eu/production/about/Wiper-Blades-Product-Catalogue-2025-Multilingual.pdf#page=190",
+          "fields": [
+            "manufacturer"
+          ],
+          "evidence": "Официальный каталог щеток DENSO 2025, стр. 190: в колонках DENSO/DENSO напрямую сопоставлены DRB040 и DRB-040."
+        }
+      ],
+      "status": "confirmed",
+      "reason": "Точный артикул щетки подтвержден собственным каталогом; регистр и официальный разделитель не меняют совпадение артикула. Страна артикула/партии не установлена.",
+      "expectedDescription": "Изображение — иллюстрация типа товара, не фотография конкретного артикула.",
+      "websiteDescription": "Марка производителя: DENSO. Изображение — иллюстрация типа товара, не фотография конкретного артикула."
+    },
+    {
+      "position": 21229,
+      "expected": {
+        "name": "Свечи накаливания (к-т) OPEL Corsa C D/Agila/Combo/Astra H/Meriva 1.3TD 6/03-> (DG171)",
+        "sku": "DG171",
+        "brand": "Denso"
+      },
+      "brand": null,
+      "manufacturer": null,
+      "manufacturerKind": null,
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://assets.denso-am.eu/production/attachments/Spark-Plug-Glow-Plug-catalogue-Multilingual.pdf",
+          "fields": [],
+          "evidence": "Официальный каталог DENSO содержит DG-171 в технической таблице свечей накаливания, номинал 11 В."
+        }
+      ],
+      "status": "review",
+      "reason": "Свеча-компонент подтверждена, но количество и состав продаваемого комплекта не заданы; производитель всего набора не подтвержден. Страна не установлена."
+    },
+    {
+      "position": 21230,
+      "expected": {
+        "name": "Фильтр салона 20-230/200 Daewoo Kalos. Chevrolet Aveo 1.2/1.4 05>",
+        "sku": "DCF242P (LA361)",
+        "brand": "Denso"
+      },
+      "brand": "DENSO",
+      "manufacturer": "DENSO",
+      "manufacturerKind": "brand",
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://assets.denso-am.eu/production/attachments/DENSO-Cabin-Air-Filters-Product-Catalogue-2024.pdf",
+          "fields": [
+            "manufacturer"
+          ],
+          "evidence": "Собственный каталог салонных фильтров DENSO: DCF242P для Aveo/Kalos T200, T250/T255; таблица MAHLE/DENSO сопоставляет LA361 с DCF242P."
+        }
+      ],
+      "status": "confirmed",
+      "reason": "Подтверждены точный артикул DENSO и значение номера LA361 как перекрестной ссылки, а не второго вложенного товара. Страна артикула/партии не установлена.",
+      "expectedDescription": "Изображение — иллюстрация типа товара, не фотография конкретного артикула.",
+      "websiteDescription": "Марка производителя: DENSO. Изображение — иллюстрация типа товара, не фотография конкретного артикула."
+    },
+    {
+      "position": 21686,
+      "expected": {
+        "name": "Фильтр воздушный 41-239/190 Hyundai Trajet 2.0/2.7 00> Sonata 2.0-2.7 &16V/24V 98>(AP1083)=LX1039",
+        "sku": "AP1083",
+        "brand": "Filtron"
+      },
+      "brand": "FILTRON",
+      "manufacturer": "FILTRON",
+      "manufacturerKind": "brand",
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://filtron.eu/en/catalog/search-results/product.html/ap108/3_filtron.html",
+          "fields": [
+            "manufacturer",
+            "productIdentity"
+          ],
+          "evidence": "FILTRON AP 108/3 Air Filter; официальная карточка собственного фильтра, применение:  HYUNDAI Sonata III (EF), Sonata IV (EU4 / EF-B), Trajet (Highway). KIA MOTORS Magentis (GD)"
+        }
+      ],
+      "status": "confirmed",
+      "reason": "Страна изготовления конкретного артикула/партии не подтверждена.",
+      "expectedDescription": "Изображение — иллюстрация типа товара, не фотография конкретного артикула.",
+      "websiteDescription": "Марка производителя: FILTRON. Изображение — иллюстрация типа товара, не фотография конкретного артикула."
+    },
+    {
+      "position": 21687,
+      "expected": {
+        "name": "Фильтр воздушный 49-199/150 FORD Fiesta III 1.6/1.8D 03/89-02/96 (AP045)=LX337",
+        "sku": "AP045",
+        "brand": "Filtron"
+      },
+      "brand": "FILTRON",
+      "manufacturer": "FILTRON",
+      "manufacturerKind": "brand",
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://filtron.eu/en/catalog/search-results/product.html/ap045_filtron.html",
+          "fields": [
+            "manufacturer",
+            "productIdentity"
+          ],
+          "evidence": "FILTRON AP 045 Air Filter; официальная карточка собственного фильтра, применение:  FORD Fiesta Courier I, Fiesta III / Fiesta III"
+        }
+      ],
+      "status": "confirmed",
+      "reason": "Страна изготовления конкретного артикула/партии не подтверждена.",
+      "expectedDescription": "Изображение — иллюстрация типа товара, не фотография конкретного артикула.",
+      "websiteDescription": "Марка производителя: FILTRON. Изображение — иллюстрация типа товара, не фотография конкретного артикула."
+    },
+    {
+      "position": 21688,
+      "expected": {
+        "name": "Фильтр воздушный 50-200/94 VW Jetta/Golf 1.5-1.8i <93(AP013)=LX266",
+        "sku": "AP013",
+        "brand": "Filtron"
+      },
+      "brand": "FILTRON",
+      "manufacturer": "FILTRON",
+      "manufacturerKind": "brand",
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://filtron.eu/en/catalog/search-results/product.html/ap013_filtron.html",
+          "fields": [
+            "manufacturer",
+            "productIdentity"
+          ],
+          "evidence": "FILTRON AP 013 Air Filter; официальная карточка собственного фильтра, применение:  VW (VOLKSWAGEN) Caddy I (14), Golf Cabriolet I (154,155), Golf I (17), Golf II (19E, 1G1), Jetta I (16), Jetta II (19E, 1G2), Scirocco I (53), Scirocco II (53B)"
+        }
+      ],
+      "status": "confirmed",
+      "reason": "Страна изготовления конкретного артикула/партии не подтверждена.",
+      "expectedDescription": "Изображение — иллюстрация типа товара, не фотография конкретного артикула.",
+      "websiteDescription": "Марка производителя: FILTRON. Изображение — иллюстрация типа товара, не фотография конкретного артикула."
+    },
+    {
+      "position": 21689,
+      "expected": {
+        "name": "Фильтр воздушный 52-244/207 Renault R19/R21 1.7 88-96 (A180)=AP143/1",
+        "sku": "A180",
+        "brand": "Filtron"
+      },
+      "brand": null,
+      "manufacturer": null,
+      "manufacturerKind": null,
+      "countryOfManufacture": null,
+      "sources": [],
+      "status": "review",
+      "reason": "Артикул другого формата/марки или противоречивое название; производитель не подтвержден."
+    },
+    {
+      "position": 21690,
+      "expected": {
+        "name": "Фильтр воздушный 53-374/144 Fiat Doblo/Grande Punto/Panda 1.3D/JTD 03> (LF0376)=LX1920",
+        "sku": "LF0376",
+        "brand": "Filtron"
+      },
+      "brand": null,
+      "manufacturer": null,
+      "manufacturerKind": null,
+      "countryOfManufacture": null,
+      "sources": [],
+      "status": "review",
+      "reason": "Артикул другого формата/марки или противоречивое название; производитель не подтвержден."
+    },
+    {
+      "position": 21691,
+      "expected": {
+        "name": "Фильтр воздушный 85-303/145 Toyota Avensis/Corolla 2.0/2.2 D-4D 05> (AP1781)=LX1837",
+        "sku": "AP1781",
+        "brand": "Filtron"
+      },
+      "brand": "FILTRON",
+      "manufacturer": "FILTRON",
+      "manufacturerKind": "brand",
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://filtron.eu/en/catalog/search-results/product.html/ap178/1_filtron.html",
+          "fields": [
+            "manufacturer",
+            "productIdentity"
+          ],
+          "evidence": "FILTRON AP 178/1 Air Filter; официальная карточка собственного фильтра, применение:  TOYOTA Avensis II (T25), Corolla IX Verso"
+        }
+      ],
+      "status": "confirmed",
+      "reason": "Страна изготовления конкретного артикула/партии не подтверждена.",
+      "expectedDescription": "Изображение — иллюстрация типа товара, не фотография конкретного артикула.",
+      "websiteDescription": "Марка производителя: FILTRON. Изображение — иллюстрация типа товара, не фотография конкретного артикула."
+    },
+    {
+      "position": 21692,
+      "expected": {
+        "name": "Фильтр воздушный 256-198/103 MB 709/809/814/914/1114/1314 (AM418)=LX92",
+        "sku": "AM418",
+        "brand": "Filtron"
+      },
+      "brand": "FILTRON",
+      "manufacturer": "FILTRON",
+      "manufacturerKind": "brand",
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://filtron.eu/en/catalog/search-results/product.html/am418_filtron.html",
+          "fields": [
+            "manufacturer",
+            "productIdentity"
+          ],
+          "evidence": "FILTRON AM 418 Air Filter; официальная карточка собственного фильтра, применение:  MERCEDES-BENZ LN2 / LK (673.001-679.259)"
+        }
+      ],
+      "status": "confirmed",
+      "reason": "Страна изготовления конкретного артикула/партии не подтверждена.",
+      "expectedDescription": "Изображение — иллюстрация типа товара, не фотография конкретного артикула.",
+      "websiteDescription": "Марка производителя: FILTRON. Изображение — иллюстрация типа товара, не фотография конкретного артикула."
+    },
+    {
+      "position": 21693,
+      "expected": {
+        "name": "Фильтр воздушный 318-420/255 \\MB Actros 1848/53/57.2348/53/57 (A808)=LX506",
+        "sku": "A808",
+        "brand": "Filtron"
+      },
+      "brand": null,
+      "manufacturer": null,
+      "manufacturerKind": null,
+      "countryOfManufacture": null,
+      "sources": [],
+      "status": "review",
+      "reason": "Артикул другого формата/марки или противоречивое название; производитель не подтвержден."
+    },
+    {
+      "position": 21694,
+      "expected": {
+        "name": "Фильтр воздушный 342-265/24 внешн. H330 D221 d136 Isuzu, Mitsubishi( am4682)",
+        "sku": "am4682",
+        "brand": "Filtron"
+      },
+      "brand": "FILTRON",
+      "manufacturer": "FILTRON",
+      "manufacturerKind": "brand",
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://filtron.eu/en/catalog/search-results/product.html/am468/2_filtron.html",
+          "fields": [
+            "manufacturer",
+            "productIdentity"
+          ],
+          "evidence": "FILTRON AM 468/2 Air Filter; официальная карточка собственного фильтра, применение:  MITSUBISHI FUSO (DAIMLER) Canter VI"
+        }
+      ],
+      "status": "confirmed",
+      "reason": "Страна изготовления конкретного артикула/партии не подтверждена.",
+      "expectedDescription": "Изображение — иллюстрация типа товара, не фотография конкретного артикула.",
+      "websiteDescription": "Марка производителя: FILTRON. Изображение — иллюстрация типа товара, не фотография конкретного артикула."
+    },
+    {
+      "position": 21695,
+      "expected": {
+        "name": "Фильтр воздушный 378-198/103 DAF 95, MB O303/811/1635 OM352/346/401/401A (A329)=LX265",
+        "sku": "A329",
+        "brand": "Filtron"
+      },
+      "brand": null,
+      "manufacturer": null,
+      "manufacturerKind": null,
+      "countryOfManufacture": null,
+      "sources": [],
+      "status": "review",
+      "reason": "Артикул другого формата/марки или противоречивое название; производитель не подтвержден."
+    },
+    {
+      "position": 21696,
+      "expected": {
+        "name": "Фильтр воздушный 384.5-107/91.5 вставка Deutz,Massey Ferguson,Liebherr,Volvo(AR2005)",
+        "sku": "AR2005",
+        "brand": "Filtron"
+      },
+      "brand": null,
+      "manufacturer": null,
+      "manufacturerKind": null,
+      "countryOfManufacture": null,
+      "sources": [],
+      "status": "review",
+      "reason": "Артикул другого формата/марки или противоречивое название; производитель не подтвержден."
+    },
+    {
+      "position": 21697,
+      "expected": {
+        "name": "Фильтр воздушный 391-331/172 Freightliner Argosy Cummins ISX (A594)",
+        "sku": "A594",
+        "brand": "Filtron"
+      },
+      "brand": null,
+      "manufacturer": null,
+      "manufacturerKind": null,
+      "countryOfManufacture": null,
+      "sources": [],
+      "status": "review",
+      "reason": "Артикул другого формата/марки или противоречивое название; производитель не подтвержден."
+    },
+    {
+      "position": 21698,
+      "expected": {
+        "name": "Фильтр воздушный 400-193/113 MB O520(A582)=LX2020",
+        "sku": "A582",
+        "brand": "Filtron"
+      },
+      "brand": null,
+      "manufacturer": null,
+      "manufacturerKind": null,
+      "countryOfManufacture": null,
+      "sources": [],
+      "status": "review",
+      "reason": "Артикул другого формата/марки или противоречивое название; производитель не подтвержден."
+    },
+    {
+      "position": 21699,
+      "expected": {
+        "name": "Фильтр воздушный 403-220/124 Atlas AB 05, Bomag Bw, Massey Ferguson(AR2006)",
+        "sku": "AR2006",
+        "brand": "Filtron"
+      },
+      "brand": null,
+      "manufacturer": null,
+      "manufacturerKind": null,
+      "countryOfManufacture": null,
+      "sources": [],
+      "status": "review",
+      "reason": "Артикул другого формата/марки или противоречивое название; производитель не подтвержден."
+    },
+    {
+      "position": 21700,
+      "expected": {
+        "name": "Фильтр воздушный 416-353/202 \\Volvo FH12 / 460л.с. (00-->)(A529)MFILTER=lx1281",
+        "sku": "A529",
+        "brand": "Filtron"
+      },
+      "brand": null,
+      "manufacturer": null,
+      "manufacturerKind": null,
+      "countryOfManufacture": null,
+      "sources": [],
+      "status": "review",
+      "reason": "Артикул другого формата/марки или противоречивое название; производитель не подтвержден."
+    },
+    {
+      "position": 21701,
+      "expected": {
+        "name": "Фильтр воздушный 465-309.5/177.8 \\Scania 124",
+        "sku": "RL1109AB30",
+        "brand": "Filtron"
+      },
+      "brand": null,
+      "manufacturer": null,
+      "manufacturerKind": null,
+      "countryOfManufacture": null,
+      "sources": [],
+      "status": "review",
+      "reason": "Артикул другого формата/марки или противоречивое название; производитель не подтвержден."
+    },
+    {
+      "position": 21702,
+      "expected": {
+        "name": "Фильтр воздушный 505-267/172 MAN TGA 18-41.660 (AM4463)=D0322=LX1024",
+        "sku": "AM4463",
+        "brand": "Filtron"
+      },
+      "brand": "FILTRON",
+      "manufacturer": "FILTRON",
+      "manufacturerKind": "brand",
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://filtron.eu/en/catalog/search-results/product.html/am446/3_filtron.html",
+          "fields": [
+            "manufacturer",
+            "productIdentity"
+          ],
+          "evidence": "FILTRON AM 446/3 Air Filter; официальная карточка собственного фильтра, применение:  MAN TRUCK TGA, TGS, TGS II, TGX, TGX II. STEYR (MAN-STEYR AG) 18 S (TGA), 26 S (TGA), 28 S (TGA) secondary element AM 446/3W"
+        }
+      ],
+      "status": "confirmed",
+      "reason": "Страна изготовления конкретного артикула/партии не подтверждена.",
+      "expectedDescription": "Изображение — иллюстрация типа товара, не фотография конкретного артикула.",
+      "websiteDescription": "Марка производителя: FILTRON. Изображение — иллюстрация типа товара, не фотография конкретного артикула."
+    },
+    {
+      "position": 21703,
+      "expected": {
+        "name": "Фильтр воздушный 577-270/158 \\Volvo F10/12 (AM408)=LX84",
+        "sku": "AM408",
+        "brand": "Filtron"
+      },
+      "brand": "FILTRON",
+      "manufacturer": "FILTRON",
+      "manufacturerKind": "brand",
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://filtron.eu/en/catalog/search-results/product.html/am408_filtron.html",
+          "fields": [
+            "manufacturer",
+            "productIdentity"
+          ],
+          "evidence": "FILTRON AM 408 Air Filter; официальная карточка собственного фильтра, применение:  Volvo CH, F 10, F 12"
+        }
+      ],
+      "status": "confirmed",
+      "reason": "Страна изготовления конкретного артикула/партии не подтверждена.",
+      "expectedDescription": "Изображение — иллюстрация типа товара, не фотография конкретного артикула.",
+      "websiteDescription": "Марка производителя: FILTRON. Изображение — иллюстрация типа товара, не фотография конкретного артикула."
+    },
+    {
+      "position": 21704,
+      "expected": {
+        "name": "Фильтр масляный AUDI A6 TDI,100 D 89-,VW Transporter 90 3/4\"-16UNF-2B d=62 (Green Filter)",
+        "sku": "OF0103 (OC214)",
+        "brand": "Filtron"
+      },
+      "brand": null,
+      "manufacturer": null,
+      "manufacturerKind": null,
+      "countryOfManufacture": null,
+      "sources": [],
+      "status": "review",
+      "reason": "Артикул другого формата/марки или противоречивое название; производитель не подтвержден."
+    },
+    {
+      "position": 21705,
+      "expected": {
+        "name": "Фильтр масляный AUDI A6 TDI,100 D 89-,VW Transporter 90 3/4\"-16UNF-2B d=62 (op5255)=OC214",
+        "sku": "op5255",
+        "brand": "Filtron"
+      },
+      "brand": "FILTRON",
+      "manufacturer": "FILTRON",
+      "manufacturerKind": "brand",
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://filtron.eu/en/catalog/search-results/product.html/op525/5_filtron.html",
+          "fields": [
+            "manufacturer",
+            "productIdentity"
+          ],
+          "evidence": "FILTRON OP 525/5 Oil Filter; официальная карточка собственного фильтра, применение:  AUDI 100 (4A, C4), A6 (4A/C4)"
+        }
+      ],
+      "status": "confirmed",
+      "reason": "Страна изготовления конкретного артикула/партии не подтверждена.",
+      "expectedDescription": "Изображение — иллюстрация типа товара, не фотография конкретного артикула.",
+      "websiteDescription": "Марка производителя: FILTRON. Изображение — иллюстрация типа товара, не фотография конкретного артикула."
+    },
+    {
+      "position": 21706,
+      "expected": {
+        "name": "Фильтр масляный AUDI A6 TDI,100 D 89-,VW Transporter 90 3/4\"-16UNF-2B d=62 (OP569)=OC214",
+        "sku": "OP569",
+        "brand": "Filtron"
+      },
+      "brand": "FILTRON",
+      "manufacturer": "FILTRON",
+      "manufacturerKind": "brand",
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://filtron.eu/en/catalog/search-results/product.html/op569_filtron.html",
+          "fields": [
+            "manufacturer",
+            "productIdentity"
+          ],
+          "evidence": "FILTRON OP 569 Oil Filter; официальная карточка собственного фильтра, применение:  HUERLIMANN TRAKTOREN H300-Serie, H400-Serie, H600-Serie (XA). LAMBORGHINI 500-Serie, 600-Serie, 700-Serie. SAME (SAME DEUTZ-FAHR) Explorer. ZETOR 5000-Serie"
+        }
+      ],
+      "status": "confirmed",
+      "reason": "Страна изготовления конкретного артикула/партии не подтверждена.",
+      "expectedDescription": "Изображение — иллюстрация типа товара, не фотография конкретного артикула.",
+      "websiteDescription": "Марка производителя: FILTRON. Изображение — иллюстрация типа товара, не фотография конкретного артикула."
+    },
+    {
+      "position": 21707,
+      "expected": {
+        "name": "Фильтр масляный Chevrolet Spark 0.8-1.2 05>/Aveo 1.2 08> M18x1.5 d=54.5 (OP5641)=OC996",
+        "sku": "OP5641",
+        "brand": "Filtron"
+      },
+      "brand": "FILTRON",
+      "manufacturer": "FILTRON",
+      "manufacturerKind": "brand",
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://filtron.eu/en/catalog/search-results/product.html/op564/1_filtron.html",
+          "fields": [
+            "manufacturer",
+            "productIdentity"
+          ],
+          "evidence": "FILTRON OP 564/1 Oil Filter; официальная карточка собственного фильтра, применение:  CHEVROLET EUROPE / DAEWOO (GM) Aveo, Gentra (UZ-DAEWOO), Spark. MG (SAIC) ZS (ZS32). RAVON Gentra, Nexia R3, R4. UZ-DAEWOO GENTRA"
+        }
+      ],
+      "status": "confirmed",
+      "reason": "Страна изготовления конкретного артикула/партии не подтверждена.",
+      "expectedDescription": "Изображение — иллюстрация типа товара, не фотография конкретного артикула.",
+      "websiteDescription": "Марка производителя: FILTRON. Изображение — иллюстрация типа товара, не фотография конкретного артикула."
+    },
+    {
+      "position": 21708,
+      "expected": {
+        "name": "Фильтр масляный Citroen Xsara/Xantia 1.9D/2.0i/HDi, Peugeot 106-807 1.1i-2.1TD 96>(OP5462)",
+        "sku": "OP5462",
+        "brand": "Filtron"
+      },
+      "brand": null,
+      "manufacturer": null,
+      "manufacturerKind": null,
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://filtron.eu/en/catalog/search-results/product.html/op546/2_filtron.html",
+          "fields": [],
+          "evidence": "FILTRON OP 546/2 Oil Filter"
+        }
+      ],
+      "status": "review",
+      "reason": "Официальная карточка OP546/2 относится к Ford, в исходнике Citroen/Peugeot; соответствие не подтверждено."
+    },
+    {
+      "position": 21709,
+      "expected": {
+        "name": "Фильтр масляный Fiat Brava/Bravo/Punto 1.2 97> M20x1.5(OP5452)=OC986A",
+        "sku": "OP5452",
+        "brand": "Filtron"
+      },
+      "brand": "FILTRON",
+      "manufacturer": "FILTRON",
+      "manufacturerKind": "brand",
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://filtron.eu/en/catalog/search-results/product.html/op545/2_filtron.html",
+          "fields": [
+            "manufacturer",
+            "productIdentity"
+          ],
+          "evidence": "FILTRON OP 545/2 Oil Filter; официальная карточка собственного фильтра, применение:  ALFA ROMEO MiTo. FIAT Idea (135/235), Palio (178), Panda II (169A), Punto II (188/188AX), Punto III / Grande Punto (199) / Evo. LANCIA (LANCIA AUTOBIANCHI) Musa, Ypsilon (843)"
+        }
+      ],
+      "status": "confirmed",
+      "reason": "Страна изготовления конкретного артикула/партии не подтверждена.",
+      "expectedDescription": "Изображение — иллюстрация типа товара, не фотография конкретного артикула.",
+      "websiteDescription": "Марка производителя: FILTRON. Изображение — иллюстрация типа товара, не фотография конкретного артикула."
+    },
+    {
+      "position": 21710,
+      "expected": {
+        "name": "Фильтр масляный Ford Coguar/Maverick/Mondeo l,ll,ll M22x1.5 d=62 (OP533/1)=OC288",
+        "sku": "OP533/1",
+        "brand": "Filtron"
+      },
+      "brand": "FILTRON",
+      "manufacturer": "FILTRON",
+      "manufacturerKind": "brand",
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://filtron.eu/en/catalog/search-results/product.html/op533/1_filtron.html",
+          "fields": [
+            "manufacturer",
+            "productIdentity"
+          ],
+          "evidence": "FILTRON OP 533/1 Oil Filter; официальная карточка собственного фильтра, применение:  DODGE Challenger. FORD Cougar, Explorer II, Mondeo II (BAP/BFP/BNP), Mondeo III (B4Y/5Y/BWY), Mustang. MAZDA MPV, Tribute"
+        }
+      ],
+      "status": "confirmed",
+      "reason": "Страна изготовления конкретного артикула/партии не подтверждена.",
+      "expectedDescription": "Изображение — иллюстрация типа товара, не фотография конкретного артикула.",
+      "websiteDescription": "Марка производителя: FILTRON. Изображение — иллюстрация типа товара, не фотография конкретного артикула."
+    },
+    {
+      "position": 21711,
+      "expected": {
+        "name": "Фильтр масляный Ford Focus/Fiesta 1.8Di/TDi 98> M22x1.5 d=79.5 (OP6474)=OC232",
+        "sku": "OP6474",
+        "brand": "Filtron"
+      },
+      "brand": null,
+      "manufacturer": null,
+      "manufacturerKind": null,
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://filtron.eu/en/catalog/search-results/product.html/op647/4_filtron.html",
+          "fields": [],
+          "evidence": "FILTRON OP 647/4 Oil Filter"
+        }
+      ],
+      "status": "review",
+      "reason": "Официальный OP647/4 указан для другой группы Ford/спецтехники, Focus/Fiesta не найдены; возможна ошибка суффикса."
+    },
+    {
+      "position": 21712,
+      "expected": {
+        "name": "Фильтр масляный Ford Maverick,Nissan 3/4\"-16UNF-2B d=62 (OP581)=OC109/1",
+        "sku": "OP581",
+        "brand": "Filtron"
+      },
+      "brand": "FILTRON",
+      "manufacturer": "FILTRON",
+      "manufacturerKind": "brand",
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://filtron.eu/en/catalog/search-results/product.html/op581_filtron.html",
+          "fields": [
+            "manufacturer",
+            "productIdentity"
+          ],
+          "evidence": "FILTRON OP 581 Oil Filter; официальная карточка собственного фильтра, применение:  KOMATSU FG-Serie (Gabelstapler / Fork Lifts). KUBOTA B7000-Series. NISSAN Bluebird, Cherry, Pick Up / Navara (720, D21, D22), Sunny. SUBARU 1800, Leone"
+        }
+      ],
+      "status": "confirmed",
+      "reason": "Страна изготовления конкретного артикула/партии не подтверждена.",
+      "expectedDescription": "Изображение — иллюстрация типа товара, не фотография конкретного артикула.",
+      "websiteDescription": "Марка производителя: FILTRON. Изображение — иллюстрация типа товара, не фотография конкретного артикула."
+    },
+    {
+      "position": 21713,
+      "expected": {
+        "name": "Фильтр масляный Ford Mondeo/Fiesta/Escort 1.8D/TD 89> 3/4\"-16UNF-2B d=62 (op546)=OC203",
+        "sku": "op546",
+        "brand": "Filtron"
+      },
+      "brand": "FILTRON",
+      "manufacturer": "FILTRON",
+      "manufacturerKind": "brand",
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://filtron.eu/en/catalog/search-results/product.html/op546_filtron.html",
+          "fields": [
+            "manufacturer",
+            "productIdentity"
+          ],
+          "evidence": "FILTRON OP 546 Oil Filter; официальная карточка собственного фильтра, применение:  CASE CONSTRUCTION 20-Serie, CX-Serie (Hydraulikbagger / Hydraulic Excavators). CATERPILLAR CB / CC / CD (Tandem-Walzen / Rollers). FORD Escort Express, Escort VII, Mondeo I (BNP/GBP), Orion. WEIDEMANN (WACKER NEUSON) 10"
+        }
+      ],
+      "status": "confirmed",
+      "reason": "Страна изготовления конкретного артикула/партии не подтверждена.",
+      "expectedDescription": "Изображение — иллюстрация типа товара, не фотография конкретного артикула.",
+      "websiteDescription": "Марка производителя: FILTRON. Изображение — иллюстрация типа товара, не фотография конкретного артикула."
+    },
+    {
+      "position": 21714,
+      "expected": {
+        "name": "Фильтр масляный Lada,Fiat Tempra/Tipo 1,5-1,892> 3/4\"-16UNF d=61.5 (OP520)=OC383A",
+        "sku": "OP520",
+        "brand": "Filtron"
+      },
+      "brand": "FILTRON",
+      "manufacturer": "FILTRON",
+      "manufacturerKind": "brand",
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://filtron.eu/en/catalog/search-results/product.html/op520_filtron.html",
+          "fields": [
+            "manufacturer",
+            "productIdentity"
+          ],
+          "evidence": "FILTRON OP 520 Oil Filter; официальная карточка собственного фильтра, применение:  CASE-DAVID BROWN (CNH GLOBAL) 100-Serie, 1000-Serie. FSO MOTOR Polonez. LADA (SHIGULI) 1200-1600, 2104/2105/2107 (Nova), Oka (1111). TOFAS Dogan, Sahin"
+        }
+      ],
+      "status": "confirmed",
+      "reason": "Страна изготовления конкретного артикула/партии не подтверждена.",
+      "expectedDescription": "Изображение — иллюстрация типа товара, не фотография конкретного артикула.",
+      "websiteDescription": "Марка производителя: FILTRON. Изображение — иллюстрация типа товара, не фотография конкретного артикула."
+    },
+    {
+      "position": 21715,
+      "expected": {
+        "name": "Фильтр масляный Nissan Almera/Primera/Sunny 3/4\"-16UNF-2B d=74 (OP5673)=OC140",
+        "sku": "OP5673",
+        "brand": "Filtron"
+      },
+      "brand": "FILTRON",
+      "manufacturer": "FILTRON",
+      "manufacturerKind": "brand",
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://filtron.eu/en/catalog/search-results/product.html/op567/3_filtron.html",
+          "fields": [
+            "manufacturer",
+            "productIdentity"
+          ],
+          "evidence": "FILTRON OP 567/3 Oil Filter; официальная карточка собственного фильтра, применение:  BOBCAT 300-Serie, E-Serie (Minibagger / Mini Excavators), S-Serie (Kompaktlader / Skid Steer Loader), T-Serie (Kompaktraupenlader / Comp.Track Loader). BOMAG BW-Serie. CATERPILLAR 200 (Kompaktlader / Skid Steer Loaders)"
+        }
+      ],
+      "status": "confirmed",
+      "reason": "Страна изготовления конкретного артикула/партии не подтверждена.",
+      "expectedDescription": "Изображение — иллюстрация типа товара, не фотография конкретного артикула.",
+      "websiteDescription": "Марка производителя: FILTRON. Изображение — иллюстрация типа товара, не фотография конкретного артикула."
+    },
+    {
+      "position": 21716,
+      "expected": {
+        "name": "Фильтр масляный Nissan Bluebird/Urvan/Vanette/Laurel 3/4\"-16UNF-2B d=62 (OP531)=OC33",
+        "sku": "OP531",
+        "brand": "Filtron"
+      },
+      "brand": null,
+      "manufacturer": null,
+      "manufacturerKind": null,
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://filtron.eu/en/catalog/search-results/product.html/op531_filtron.html",
+          "fields": [],
+          "evidence": "FILTRON OP 531 Oil Filter"
+        }
+      ],
+      "status": "review",
+      "reason": "OP531 найден, но исходное описание Nissan не совпало с основными применениями официальной карточки; требуется проверка."
+    },
+    {
+      "position": 21717,
+      "expected": {
+        "name": "Фильтр масляный Scania 92/93/113/143 3/4\"-16UNF-2B d=62 (OP576)=OC83=3105-1017010 ГАЗель",
+        "sku": "OP576",
+        "brand": "Filtron"
+      },
+      "brand": "FILTRON",
+      "manufacturer": "FILTRON",
+      "manufacturerKind": "brand",
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://filtron.eu/en/catalog/search-results/product.html/op576_filtron.html",
+          "fields": [
+            "manufacturer",
+            "productIdentity"
+          ],
+          "evidence": "FILTRON OP 576 Oil Filter; официальная карточка собственного фильтра, применение:  BOBCAT S-Serie (Kompaktlader / Skid Steer Loader). CATERPILLAR 300 (Kettenbagger / Crawler Excavators). KUBOTA KX-Series (Minibagger / Mini Excavators), M-Series, U-Series (Minibagger / Mini Excavators). SCANIA 2 (82-14"
+        }
+      ],
+      "status": "confirmed",
+      "reason": "Страна изготовления конкретного артикула/партии не подтверждена.",
+      "expectedDescription": "Изображение — иллюстрация типа товара, не фотография конкретного артикула.",
+      "websiteDescription": "Марка производителя: FILTRON. Изображение — иллюстрация типа товара, не фотография конкретного артикула."
+    },
+    {
+      "position": 21718,
+      "expected": {
+        "name": "Фильтр масляный Toyota Corolla/Camry/Liteace/Carina 1.8D/2.0D 87-97 M24x1.5 d=79.4 (op619)=OC286",
+        "sku": "op619",
+        "brand": "Filtron"
+      },
+      "brand": "FILTRON",
+      "manufacturer": "FILTRON",
+      "manufacturerKind": "brand",
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://filtron.eu/en/catalog/search-results/product.html/op619_filtron.html",
+          "fields": [
+            "manufacturer",
+            "productIdentity"
+          ],
+          "evidence": "FILTRON OP 619 Oil Filter; официальная карточка собственного фильтра, применение:  TOYOTA Caldina, Camry II (_V2_), Carina E (T19), Corolla VI (E90), Corolla VII (E10), Corona, Lite-Ace, Starlet"
+        }
+      ],
+      "status": "confirmed",
+      "reason": "Страна изготовления конкретного артикула/партии не подтверждена.",
+      "expectedDescription": "Изображение — иллюстрация типа товара, не фотография конкретного артикула.",
+      "websiteDescription": "Марка производителя: FILTRON. Изображение — иллюстрация типа товара, не фотография конкретного артикула."
+    },
+    {
+      "position": 21719,
+      "expected": {
+        "name": "Фильтр масляный элемент 77-62/28 Opel Astra G/Omega B/Vectra B 1.8-3.2 (OE6482)=OX182D",
+        "sku": "OE6482",
+        "brand": "Filtron"
+      },
+      "brand": "FILTRON",
+      "manufacturer": "FILTRON",
+      "manufacturerKind": "brand",
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://filtron.eu/en/catalog/search-results/product.html/oe648/2_filtron.html",
+          "fields": [
+            "manufacturer",
+            "productIdentity"
+          ],
+          "evidence": "FILTRON OE 648/2 Oil Filter; официальная карточка собственного фильтра, применение:  OPEL Astra G / Astra G Cabrio/Coupé, Omega-B, Vectra-B, Zafira A. VAUXHALL Corsa Mk II, Omega, Vectra Mk I, Zafira Mk I"
+        }
+      ],
+      "status": "confirmed",
+      "reason": "Страна изготовления конкретного артикула/партии не подтверждена.",
+      "expectedDescription": "Изображение — иллюстрация типа товара, не фотография конкретного артикула.",
+      "websiteDescription": "Марка производителя: FILTRON. Изображение — иллюстрация типа товара, не фотография конкретного артикула."
+    },
+    {
+      "position": 21720,
+      "expected": {
+        "name": "Фильтр масляный элемент 211-83/28 MB. AtegoI. II. Axor /98 (OE6512)",
+        "sku": "OE6512",
+        "brand": "Filtron"
+      },
+      "brand": "FILTRON",
+      "manufacturer": "FILTRON",
+      "manufacturerKind": "brand",
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://filtron.eu/en/catalog/search-results/product.html/oe651/2_filtron.html",
+          "fields": [
+            "manufacturer",
+            "productIdentity"
+          ],
+          "evidence": "FILTRON OE 651/2 Oil Filter; официальная карточка собственного фильтра, применение:  CLAAS Mega (I + II) (Mähdrescher / Harvesters). EVOBUS (MERCEDES-BENZ/SETRA) Citaro (O 530 / 628), Setra S 400, Setra S/SG 300. MERCEDES-BENZ Atego I (950-953, 970, 974, 975, 976), Atego II (958, 970, 972, 974), Axor II"
+        }
+      ],
+      "status": "confirmed",
+      "reason": "Страна изготовления конкретного артикула/партии не подтверждена.",
+      "expectedDescription": "Изображение — иллюстрация типа товара, не фотография конкретного артикула.",
+      "websiteDescription": "Марка производителя: FILTRON. Изображение — иллюстрация типа товара, не фотография конкретного артикула."
+    },
+    {
+      "position": 21721,
+      "expected": {
+        "name": "Фильтр салона 24-324/237 DAF 95XF",
+        "sku": "K951 (LA501)",
+        "brand": "Filtron"
+      },
+      "brand": null,
+      "manufacturer": null,
+      "manufacturerKind": null,
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://filtron.eu/en/catalog/search-results/product.html/k951_filtron.html",
+          "fields": [],
+          "evidence": "Карточка недоступна"
+        }
+      ],
+      "status": "review",
+      "reason": "Точная карточка K951 недоступна после двух попыток, производитель и страна не подтверждены."
+    },
+    {
+      "position": 21722,
+      "expected": {
+        "name": "Фильтр салона 56-456/182 MB Axor (Filtron)",
+        "sku": "K1253 (LA358)",
+        "brand": "Filtron"
+      },
+      "brand": "FILTRON",
+      "manufacturer": "FILTRON",
+      "manufacturerKind": "brand",
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://filtron.eu/en/catalog/search-results/product.html/k1253_filtron.html",
+          "fields": [
+            "manufacturer",
+            "productIdentity"
+          ],
+          "evidence": "FILTRON K 1253 Cabin Air Filter Particulate; официальная карточка собственного фильтра, применение:  KAMAZ 5000-Serie, 6000-Serie. MERCEDES-BENZ Atego I (950-953, 970, 974, 975, 976), Axor I (375.301-408/944.032-233), Axor II (940, 942, 943, 944, 950, 954), Econic (956 + 957) Particulate filter"
+        }
+      ],
+      "status": "confirmed",
+      "reason": "Страна изготовления конкретного артикула/партии не подтверждена.",
+      "expectedDescription": "Изображение — иллюстрация типа товара, не фотография конкретного артикула.",
+      "websiteDescription": "Марка производителя: FILTRON. Изображение — иллюстрация типа товара, не фотография конкретного артикула."
+    },
+    {
+      "position": 21723,
+      "expected": {
+        "name": "Фильтр топливный Scania 114 DSC9 после 10/95 . 124/144 DSC11 M24x1,5 d=62 (PP963)=KC94",
+        "sku": "PP963",
+        "brand": "Filtron"
+      },
+      "brand": "FILTRON",
+      "manufacturer": "FILTRON",
+      "manufacturerKind": "brand",
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://filtron.eu/en/catalog/search-results/product.html/pp963_filtron.html",
+          "fields": [
+            "manufacturer",
+            "productIdentity"
+          ],
+          "evidence": "FILTRON PP 963 Fuel Filter For diesel; официальная карточка собственного фильтра, применение:  SCANIA 4 (94-164). SCANIA BUS / SCANIA-IRIZAR Century (Irizar), K94/114/124, L94, N94"
+        }
+      ],
+      "status": "confirmed",
+      "reason": "Страна изготовления конкретного артикула/партии не подтверждена.",
+      "expectedDescription": "Изображение — иллюстрация типа товара, не фотография конкретного артикула.",
+      "websiteDescription": "Марка производителя: FILTRON. Изображение — иллюстрация типа товара, не фотография конкретного артикула."
+    },
+    {
+      "position": 22098,
+      "expected": {
+        "name": "Очиститель клапанов и камеры сгорания 310 мл(LN2134)",
+        "sku": "LN2134",
+        "brand": "Lavr"
+      },
+      "brand": "LAVR",
+      "manufacturer": "LAVR",
+      "manufacturerKind": "brand",
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://lavr.ru/production/dvigatel-i-sistemy-avtomobilya/toplivnaya-sistema/prisadki-napravlennogo-deystviya/ochistitel-klapanov-i-kamery-sgoraniya-lavr-310-ml-prisadka-v-benzin/",
+          "fields": [
+            "manufacturer",
+            "sku",
+            "productIdentity"
+          ],
+          "evidence": "Официальная карточка LAVR: очиститель клапанов и камеры сгорания, Ln2134, 310 мл."
+        },
+        {
+          "url": "https://lavr.ru/l/web/docs/doc_3022.pdf",
+          "fields": [
+            "sku",
+            "productIdentity",
+            "sourceLimitation"
+          ],
+          "evidence": "SDS прямо подтверждает Ln2134 и 310 мл, но ООО НПО «Полихимтехнологии» названо поставщиком; российский адрес компании не использован как страна изготовления."
+        }
+      ],
+      "status": "confirmed",
+      "reason": "Точно подтверждена марка-производитель LAVR; прямого подтверждения страны и однозначного юридического изготовителя для конкретного продукта в проверенных источниках нет.",
+      "expectedDescription": "Изображение — иллюстрация типа товара, не фотография конкретного артикула.",
+      "websiteDescription": "Марка производителя: LAVR. Изображение — иллюстрация типа товара, не фотография конкретного артикула."
+    },
+    {
+      "position": 22356,
+      "expected": {
+        "name": "Провода высоковольтные Mitsubishi Galant 2.0 87-93 (RCME64)=BR-3A00/108=JM-JP3",
+        "sku": "RCME64",
+        "brand": "NGK"
+      },
+      "brand": "NGK",
+      "manufacturer": "NGK",
+      "manufacturerKind": "brand",
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://www.ngkntk.com/fileadmin/dach/catalogue_coilsleads_2021-22.pdf",
+          "fields": [
+            "manufacturer"
+          ],
+          "evidence": "Официальный каталог NGK катушек и проводов: RC-ME64, Stock-No. 8741; четыре длины проводов 41/57/71/65 см в собственном товарном наборе."
+        }
+      ],
+      "status": "confirmed",
+      "reason": "Подтвержден точный именованный собственный комплект проводов RC-ME64. Применяемость и перекрестные BR-3A00/108, JM-JP3 не подтверждались. Страна артикула/партии не установлена.",
+      "expectedDescription": "Изображение — иллюстрация типа товара, не фотография конкретного артикула.",
+      "websiteDescription": "Марка производителя: NGK. Изображение — иллюстрация типа товара, не фотография конкретного артикула."
+    },
+    {
+      "position": 22357,
+      "expected": {
+        "name": "Свечи зажигания (к-т 6шт) HYUNDAI (5838) pfr5n11",
+        "sku": "5838",
+        "brand": "NGK"
+      },
+      "brand": "NGK",
+      "manufacturer": "NGK",
+      "manufacturerKind": "brand",
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://www.ngkntk.com/fileadmin/user_upload/ngk-spark-plug_catalogue_sparkplugsglowplugs_2021-2022.pdf",
+          "fields": [
+            "manufacturer"
+          ],
+          "evidence": "Официальный каталог NGK: свеча PFR5N-11, stock number 5838, в строке Hyundai Santa Fe 2.7 SM, 6 цилиндров."
+        }
+      ],
+      "status": "confirmed",
+      "reason": "Импортная строка точно задает шесть одинаковых свечей 5838/PFR5N-11; производитель свечей NGK подтвержден. Заводская упаковка шестиштучного комплекта и применяемость ко всем Hyundai не заявляются. Страна артикула/партии не установлена.",
+      "expectedDescription": "Изображение — иллюстрация типа товара, не фотография конкретного артикула.",
+      "websiteDescription": "Марка производителя: NGK. Изображение — иллюстрация типа товара, не фотография конкретного артикула."
+    },
+    {
+      "position": 22358,
+      "expected": {
+        "name": "Свечи зажигания NGK (к-т) (4228) BPR6EY-11 Honda Accord/Civic 1.2-2.0 84>. Toyota Starlet 1.3 87",
+        "sku": "4228",
+        "brand": "NGK"
+      },
+      "brand": null,
+      "manufacturer": null,
+      "manufacturerKind": null,
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://www.ngkntk.com/fileadmin/general_content_all_countries/catalogues/2023/ngk_spark_plug_glow_plug_catalogue.pdf",
+          "fields": [],
+          "evidence": "Официальный каталог NGK содержит свечу BPR6EY-11 с stock number 4228 в таблице Honda Civic."
+        }
+      ],
+      "status": "review",
+      "reason": "Точный компонент подтвержден, но количество и состав продаваемого комплекта не заданы; производитель всего набора не подтвержден. Страна не установлена."
+    },
+    {
+      "position": 22359,
+      "expected": {
+        "name": "Свечи зажигания NGK (к-т) ZFR6SQ (6449) Audi A2/A3.VW Golf/Passat/Bora/Polo/Lupo/Jetta.",
+        "sku": "6449",
+        "brand": "NGK"
+      },
+      "brand": null,
+      "manufacturer": null,
+      "manufacturerKind": null,
+      "countryOfManufacture": null,
+      "sources": [
+        {
+          "url": "https://www.ngkntk.com/fileadmin/user_upload/ngk-spark-plug_catalogue_sparkplugsglowplugs_2021-2022.pdf#page=424",
+          "fields": [],
+          "evidence": "Официальный каталог NGK, стр. 424: свеча ZFR6S-Q с stock number 6449 для VW Golf 5 1.4 FSI."
+        }
+      ],
+      "status": "review",
+      "reason": "Точный компонент подтвержден с официальным дефисом ZFR6S-Q, но количество и состав комплекта не заданы; производитель всего набора не подтвержден. Страна не установлена."
+    }
+  ]
+}

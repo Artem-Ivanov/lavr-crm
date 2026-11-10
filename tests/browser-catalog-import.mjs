@@ -117,9 +117,9 @@ test('local real API: PDF upload, preview, units/category, atomic apply, repeate
     assert.equal(await page.locator('dialog[open]').count(), 0);
     assert.equal(await page.getByTestId('catalog-import-open').evaluate(el => document.activeElement === el), true);
     await page.goto(`${base}/#catalog?product=${encodeURIComponent(ids[0])}`);
-    await page.getByText('Код каталога', { exact: true }).waitFor();
-    assert.equal(await page.getByText('ID из 1С', { exact: true }).count(), 0);
-    assert.match(await page.locator('dialog[open]').innerText(), /pdf:/);
+    await page.locator('dialog[open] .product-specs').waitFor();
+    assert.doesNotMatch(await page.locator('dialog[open]').innerText(), /Внутренний ID|Код каталога|ID из 1С|pdf:/);
+    assert.equal((await page.locator('dialog[open]').innerText()).includes(ids[0]), false);
     for (const role of ['operator', 'partner']) {
       const other = await browser.newContext();
       await login(other, `${role}@example.test`);

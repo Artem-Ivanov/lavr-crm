@@ -221,18 +221,21 @@ test('adapter preview and saved report render actual shared DTOs in dialog and m
   assert.match(historyText, /PDF\.pdf/);
 });
 
-test('compiled App product details label a published local PDF identifier neutrally', t => {
+test('customer product details show known brand and omit technical identifiers', t => {
   return readFile(new URL('../src/App.vue', import.meta.url), 'utf8').then(appSource => {
     const { descriptor } = parse(appSource);
     const specs = descriptor.template.content.match(/<dl class="product-specs">[\s\S]*?<\/dl>/)[0];
     const compiled = compileTemplate({ source: specs, filename: 'App.vue', id: 'catalog-id-regression' });
     assert.deepEqual(compiled.errors, []);
     return import(`data:text/javascript;base64,${Buffer.from(absoluteImports(compiled.code)).toString('base64')}`).then(({ render }) => {
-      const component = { render, setup: () => ({ modalProduct: { id: 'local-id', externalId: 'pdf:local-catalog-id', specs: {}, stock: 1, unit: 'шт' }, isDemo: false, formatQuantity, productUnit }) };
-      const root = node('root'); const app = renderer.createApp(component); app.mount(root); t.after(() => app.unmount());
-      assert.match(textContent(root), /Код каталога/);
-      assert.match(textContent(root), /pdf:local-catalog-id/);
-      assert.doesNotMatch(textContent(root), /ID из 1С/);
+      for (const brand of ['MANN-FILTER', '']) {
+        const component = { render, setup: () => ({ modalProduct: { id: 'local-id', externalId: 'pdf:local-catalog-id', brand, specs: {}, stock: 1, unit: 'шт' }, isDemo: false, formatQuantity, productUnit }) };
+        const root = node('root'); const app = renderer.createApp(component); app.mount(root); t.after(() => app.unmount());
+        if (brand) assert.match(textContent(root), /Бренд.*MANN-FILTER/);
+        else assert.doesNotMatch(textContent(root), /Бренд/);
+        assert.match(textContent(root), /Доступно.*1 шт/);
+        assert.doesNotMatch(textContent(root), /Внутренний ID|Код каталога|ID из 1С|local-id|pdf:local-catalog-id|Страна/);
+      }
     });
   });
 });
