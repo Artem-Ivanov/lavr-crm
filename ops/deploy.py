@@ -157,6 +157,10 @@ class Deploy:
         for item in json.loads(self.run(['docker', 'inspect', *ids])):
             name = item['Config']['Labels']['com.docker.compose.service']
             require(name not in result, 'unexpected_replicas')
+            if name == 'notifications':
+                command = self.config['services'][name].get('command')
+                require(isinstance(command, list) and command and item['Config'].get('Cmd') == command,
+                        'notification_command_mismatch')
             state = item['State']
             result[name] = {'id': item['Id'], 'image': item['Image'], 'started': state['StartedAt'],
                             'restarts': item['RestartCount'], 'running': state['Running'],
@@ -169,6 +173,8 @@ class Deploy:
         return result
 
     def verify(self, images, baseline, protected):
+        targets = (*TARGETS, 'notifications') if 'notifications' in baseline else TARGETS
+        require(set(images) == set(targets), 'target_images_mismatch')
         deadline = time.monotonic() + 180
         while True:
             current = self.snapshot()
@@ -178,10 +184,10 @@ class Deploy:
             for name, previous in baseline.items():
                 item = current[name]
                 require(all(item[key] == previous[key] for key in ('env', 'mounts')), 'service_configuration_changed')
-                if name in TARGETS:
+                if name in targets:
                     require(item['image'] == images[name] and not item['oom'], 'target_image_or_oom')
                     require(item['id'] == previous['id'] or item['restarts'] == 0, 'target_restarted')
-                    ready = ready and item['running'] and (name == 'catalog-imports' or item['health'] == 'healthy')
+                    ready = ready and item['running'] and (name in ('catalog-imports', 'notifications') or item['health'] == 'healthy')
                 else:
                     require(all(item[key] == previous[key] for key in
                                 ('id', 'image', 'started', 'restarts', 'running', 'health')), 'untouched_service_changed')
@@ -225,9 +231,10 @@ ROLLBACK;"""))
         self.run(self.compose + ['exec', '-T', 'https', 'sh', '-c', command], data=json.dumps(value))
         require(digest(self.active_runtime()) == digest(value), 'caddy_runtime_mismatch')
 
-    def stop(self):
+    def stop(self, images):
         self.database_guard()
-        self.run(self.compose + ['stop', '-t', '10', 'catalog-imports'], timeout=30)
+        workers = ['catalog-imports'] + (['notifications'] if 'notifications' in images else [])
+        self.run(self.compose + ['stop', '-t', '10', *workers], timeout=30)
         self.run(self.compose + ['stop', '-t', '150', 'frontend', 'backend'], timeout=180)
 
     def probe_candidate(self, image):
@@ -243,18 +250,23 @@ ROLLBACK;"""))
                       '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges:true', '--memory', '512m',
                       '--pids-limit', '64', '--tmpfs', '/tmp:rw,noexec,nosuid,size=16m',
                       '--env-file', str(path), '--entrypoint', 'python', image, '-c',
-                      'from app.main import create_app; create_app()'])
+                      'from app.main import create_app; create_app(); '
+                      'from app.orders import StatusInput; StatusInput(status="confirmed"); '
+                      'from inspect import signature; from app.notification_worker import process_once\n'
+                      'if "orders_only" not in signature(process_once).parameters: raise RuntimeError("orders_only_unsupported")'])
         finally:
             path.unlink(missing_ok=True)
 
     def start(self, images):
         up = self.compose + ['up', '-d', '--no-deps', '--no-build', '--pull', 'never', '--force-recreate']
-        if images['catalog-imports'] != images['backend']:
-            self.run(['docker', 'tag', images['catalog-imports'], ALIASES['backend']])
-            self.run(up + ['catalog-imports'], timeout=180)
+        for name in ('catalog-imports', 'notifications'):
+            if name in images and images[name] != images['backend']:
+                self.run(['docker', 'tag', images[name], ALIASES['backend']])
+                self.run(up + [name], timeout=180)
         for name, alias in ALIASES.items():
             self.run(['docker', 'tag', images[name], alias])
-        services = list(TARGETS) if images['catalog-imports'] == images['backend'] else ['backend', 'frontend']
+        targets = (*TARGETS, 'notifications') if 'notifications' in images else TARGETS
+        services = [name for name in targets if name in ALIASES or images[name] == images['backend']]
         self.run(up + services, timeout=180)
 
     def backup(self, receipt):
@@ -314,7 +326,7 @@ ROLLBACK;"""))
             self.database_guard()
             applying = True
             self.save(receipt, 'applying')
-            self.stop()
+            self.stop(receipt['images'])
             self.database_guard()
             self.backup(receipt)
             if receipt['verify_data']:
@@ -341,7 +353,7 @@ ROLLBACK;"""))
                 try:
                     progress('rollback')
                     self.set_runtime(maintenance_runtime(receipt['caddy']))
-                    self.stop()
+                    self.stop(receipt['old_images'])
                     self.rollback_database(receipt)
                     self.git('checkout', '--detach', receipt['old_commit'])
                     self.start(receipt['old_images'])
@@ -366,7 +378,8 @@ ROLLBACK;"""))
         old = self.select_commit(sha)
         self.config = json.loads(self.run(self.compose + ['config', '--format', 'json']))
         protected, baseline = self.protected(), self.snapshot()
-        require(all(name in baseline and baseline[name]['running'] for name in (*TARGETS, 'postgres', 'https')), 'required_service_not_running')
+        targets = (*TARGETS, 'notifications') if 'notifications' in baseline else TARGETS
+        require(all(name in baseline and baseline[name]['running'] for name in (*targets, 'postgres', 'https')), 'required_service_not_running')
         require(all(baseline[name]['health'] == 'healthy' for name in ('backend', 'frontend', 'postgres')), 'unhealthy_baseline')
         self.database_guard()
         state_path = self.control / 'state.json'
@@ -402,11 +415,13 @@ ROLLBACK;"""))
                 progress('candidate_import')
                 self.probe_candidate(images[name])
         images['catalog-imports'] = images['backend']
-        self.verify({name: baseline[name]['image'] for name in TARGETS}, baseline, protected)
+        if 'notifications' in baseline:
+            images['notifications'] = images['backend']
+        self.verify({name: baseline[name]['image'] for name in targets}, baseline, protected)
         require(self.git('rev-parse', 'HEAD') == old
                 and not self.git('status', '--porcelain', '--untracked-files=no'), 'checkout_changed_during_build')
         db = self.database_guard()
-        old_images = {name: baseline[name]['image'] for name in TARGETS}
+        old_images = {name: baseline[name]['image'] for name in targets}
         sizes = json.loads(self.run(['docker', 'image', 'inspect', *sorted(set(old_images.values()))]))
         media_kib = int(self.run(['docker', 'exec', baseline['backend']['id'], 'du', '-sk', '/data/media']).split()[0])
         require(shutil.disk_usage(self.root).free > sum(item['Size'] for item in sizes)

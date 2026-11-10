@@ -39,12 +39,12 @@ def submit(client, product, *, quantity=1, key=None, body=None):
     return client.post('/api/orders', json=body or order_body(product, quantity), headers={'Cookie': '', 'Idempotency-Key': key or str(uuid4())})
 
 
-def test_disabled_erp_rejects_acceptance_and_reports_real_health(client, order_product, monkeypatch, admin_headers, manager_headers, db):
+def test_disabled_erp_accepts_manual_order_and_reports_real_health(client, order_product, monkeypatch, admin_headers, manager_headers, db):
     monkeypatch.setattr(integration, 'get_erp_adapter', lambda: integration.DisabledAdapter())
     response = submit(client, order_product)
-    assert response.status_code == 503
-    assert response.json()['code'] == 'ERP_NOT_CONFIGURED'
-    assert db.scalar(select(func.count()).select_from(Order)) == 0
+    assert response.status_code == 201
+    assert response.json()['integrationStatus'] == 'not_connected'
+    assert db.scalar(select(func.count()).select_from(Order)) == 1
     health = client.get('/api/manager/integration/health', headers=admin_headers)
     assert health.status_code == 200
     assert health.json()['state'] == 'not_connected'
@@ -68,7 +68,11 @@ def test_order_atomic_snapshot_and_safe_idempotent_receipt(client, order_product
     db.refresh(order_product)
     assert order_product.reserved == 2
     assert db.scalar(select(func.count()).select_from(OrderAttempt)) == 1
-    assert db.scalar(select(func.count()).select_from(Outbox)) == 1
+    assert db.scalar(select(func.count()).select_from(Outbox).where(Outbox.event_type == 'order_export')) == 1
+    event = db.scalar(select(Outbox).where(Outbox.event_type == 'order_telegram'))
+    assert event.order_id == order.id
+    assert event.payload == {'orderId': order.id}
+    assert event.state == 'queued' and event.attempts == 0
     order.status = 'confirmed'
     order.integration_status = 'exported'
     order.external_document_id = 'private-external-document'
@@ -168,7 +172,7 @@ def test_safe_cancellation_releases_reserve_outbox_and_audits_atomically(client,
     assert response.headers['etag'] == '"2"'
     db.refresh(order_product)
     assert order_product.reserved == 0
-    assert db.scalar(select(Outbox.state)) == 'cancelled'
+    assert db.scalar(select(Outbox.state).where(Outbox.event_type == 'order_export')) == 'cancelled'
     assert db.scalar(select(func.count()).select_from(AuditEntry).where(AuditEntry.action == 'order.status_changed')) == 1
     assert client.patch(path, json={'status': 'ready'}, headers={**manager_headers, 'If-Match': '"1"'}).status_code == 412
 
@@ -176,8 +180,8 @@ def test_safe_cancellation_releases_reserve_outbox_and_audits_atomically(client,
 def test_manager_cannot_confirm_or_cancel_uncertain_export(client, order_product, db, manager_headers):
     receipt = submit(client, order_product).json()
     path = f"/api/manager/orders/{receipt['id']}"
-    assert client.patch(path + '/status', json={'status': 'confirmed'}, headers={**manager_headers, 'If-Match': '"1"'}).status_code == 422
-    event = db.scalar(select(Outbox))
+    assert client.patch(path + '/status', json={'status': 'confirmed'}, headers={**manager_headers, 'If-Match': '"1"'}).status_code == 409
+    event = db.scalar(select(Outbox).where(Outbox.event_type == 'order_export'))
     event.state = 'uncertain'
     event.attempts = 1
     event.lease_until = utcnow() - timedelta(minutes=1)
@@ -238,7 +242,7 @@ def test_sync_command_is_idempotent_and_uses_one_live_job(client, order_product,
 def test_retry_keeps_external_order_id_event_and_uncertainty(client, order_product, admin_headers, db):
     receipt = submit(client, order_product).json()
     order = db.get(Order, receipt['id'])
-    event = db.scalar(select(Outbox).where(Outbox.order_id == order.id))
+    event = db.scalar(select(Outbox).where(Outbox.order_id == order.id, Outbox.event_type == 'order_export'))
     event.state = 'uncertain'
     event.attempts = 1
     event.lease_until = utcnow() - timedelta(minutes=1)
@@ -256,7 +260,7 @@ def test_retry_keeps_external_order_id_event_and_uncertainty(client, order_produ
     db.refresh(order)
     assert order.integration_status == 'pending_sync'
     assert client.get(f'/api/manager/orders/{order.id}', headers=admin_headers).json()['canCancel'] is False
-    assert db.scalar(select(func.count()).select_from(Outbox)) == 1
+    assert db.scalar(select(func.count()).select_from(Outbox).where(Outbox.event_type == 'order_export')) == 1
 
 
 def test_idempotency_header_is_required_uuid(client, order_product):
@@ -307,7 +311,7 @@ def test_fractional_order_reserve_rounding_and_cancel(client, order_product, db,
     assert order.items[0]['quantity'] == 0.5
     assert order.items[0]['unit'] == 'кг'
     assert order.items[0]['lineTotalKopecks'] == 51
-    event = db.scalar(select(Outbox).where(Outbox.order_id == order.id))
+    event = db.scalar(select(Outbox).where(Outbox.order_id == order.id, Outbox.event_type == 'order_export'))
     assert event.payload['items'] == order.items
     db.refresh(order_product)
     assert order_product.reserved == Decimal('0.5')

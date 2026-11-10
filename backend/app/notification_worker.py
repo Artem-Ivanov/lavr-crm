@@ -1,3 +1,4 @@
+import argparse
 import hashlib
 import logging
 import math
@@ -18,6 +19,7 @@ from .feedback import Feedback
 from .integration import Outbox, TelegramDeliveryState
 from .notifier import NotificationRequest, NotifierClient
 from .notification_links import site_link
+from .orders import Order
 from .telegram_api import DeliveryError, send_telegram, site_origin
 
 logger = logging.getLogger('lavr.notifications')
@@ -36,16 +38,24 @@ def is_configured(transport=None):
     return bool(settings.telegram_bot_token and settings.telegram_chat_id and site_origin())
 
 
-def notification_payload(feedback):
-    url = site_link('crm-feedback', {'case': feedback.id})
-    label = 'Свяжитесь со мной' if feedback.type == 'contact' else 'Оставить запрос'
-    created = feedback.created_at.astimezone(ZoneInfo('Europe/Moscow')).strftime('%d-%m-%Y %H:%M')
+def notification_payload(subject):
+    created = subject.created_at.astimezone(ZoneInfo('Europe/Moscow')).strftime('%d-%m-%Y %H:%M')
+    if isinstance(subject, Order):
+        url = site_link('crm', {'order': subject.id})
+        button = 'Открыть заказ'
+        amount = f'{subject.total_kopecks // 100},{subject.total_kopecks % 100:02d} ₽'
+        text = f'Новый заказ №{subject.number} от {created} МСК\nСумма: {amount} · Позиций: {len(subject.items)}'
+    else:
+        url = site_link('crm-feedback', {'case': subject.id})
+        button = 'Открыть обращение'
+        label = 'Свяжитесь со мной' if subject.type == 'contact' else 'Оставить запрос'
+        text = f'Новое обращение №{subject.number} от {created}\n{label}'
     return {
         'chat_id': settings.telegram_chat_id,
-        'text': f'Новое обращение №{feedback.number} от {created}\n{label}',
+        'text': text,
         'link_preview_options': {'is_disabled': True},
         'reply_markup': {'inline_keyboard': [[{
-            'text': 'Открыть обращение',
+            'text': button,
             'url': url,
         }]]},
     }
@@ -114,15 +124,15 @@ def source_fingerprint():
     return hashlib.sha256(settings.notification_relay_token.encode()).hexdigest()
 
 
-def relay_snapshot(event_id, feedback, now) -> NotificationRequest:
-    payload = notification_payload(feedback)
+def relay_snapshot(event_id, subject, now) -> NotificationRequest:
+    payload = notification_payload(subject)
     button = payload['reply_markup']['inline_keyboard'][0][0]
     return {'request_id': event_id, 'request_created_at': now.isoformat(),
             'destination_alias': settings.notification_destination_alias, 'text': payload['text'],
             'button': {'label': button['text'], 'url': button['url']}}
 
 
-def process_once(*, session_factory=SessionLocal, send=send_telegram, now=None, relay_client_factory: Callable[[], NotifierClient] | None = None):
+def process_once(*, session_factory=SessionLocal, send=send_telegram, now=None, relay_client_factory: Callable[[], NotifierClient] | None = None, orders_only=False):
     if not settings.telegram_notifications_enabled:
         return False
     try:
@@ -132,7 +142,7 @@ def process_once(*, session_factory=SessionLocal, send=send_telegram, now=None, 
     claimed_at = now or utcnow()
     with session_factory() as db:
         event = db.scalar(select(Outbox).where(
-            Outbox.event_type == 'feedback_telegram',
+            Outbox.event_type.in_(('order_telegram',) if orders_only else ('feedback_telegram', 'order_telegram')),
             or_(
                 and_(Outbox.state.in_(('queued', 'error', 'uncertain')),
                      or_(Outbox.next_attempt_at.is_(None), Outbox.next_attempt_at <= claimed_at)),
@@ -153,10 +163,15 @@ def process_once(*, session_factory=SessionLocal, send=send_telegram, now=None, 
         event.attempts += 1
         event.lease_until = claimed_at + timedelta(seconds=LEASE_SECONDS)
         event_id, attempt, lease = event.id, event.attempts, event.lease_until
-        feedback = db.get(Feedback, saved.get('feedbackId'))
-        payload = notification_payload(feedback) if feedback and not use_relay else None
-        if use_relay and not saved.get('relay_request') and feedback:
-            saved = {**saved, 'relay_request': relay_snapshot(event_id, feedback, claimed_at),
+        if event.event_type == 'order_telegram':
+            subject = db.get(Order, event.order_id) if event.order_id else None
+            missing_code = 'ORDER_NOT_FOUND'
+        else:
+            subject = db.get(Feedback, saved.get('feedbackId'))
+            missing_code = 'FEEDBACK_NOT_FOUND'
+        payload = notification_payload(subject) if subject and not use_relay else None
+        if use_relay and not saved.get('relay_request') and subject:
+            saved = {**saved, 'relay_request': relay_snapshot(event_id, subject, claimed_at),
                      'relay_target': settings.notification_relay_target, 'relay_source_fingerprint': source_fingerprint()}
             event.payload = saved
         db.commit()
@@ -166,7 +181,7 @@ def process_once(*, session_factory=SessionLocal, send=send_telegram, now=None, 
         if use_relay:
             from .notification_relay_client import RelayClient, validate_receipt
             if not saved.get('relay_request'):
-                raise DeliveryError('FEEDBACK_NOT_FOUND', retry_after=900)
+                raise DeliveryError(missing_code, retry_after=900)
             if saved.get('relay_target') != settings.notification_relay_target or saved.get('relay_source_fingerprint') != source_fingerprint() or not settings.notification_relay_token:
                 raise DeliveryError('RELAY_CONFIGURATION_CHANGED', retry_after=900, uncertain=True)
             known_id = saved.get('relay_notification_id')
@@ -180,9 +195,10 @@ def process_once(*, session_factory=SessionLocal, send=send_telegram, now=None, 
                 client.close()
         else:
             if payload is None:
-                raise DeliveryError('FEEDBACK_NOT_FOUND', retry_after=900)
+                raise DeliveryError(missing_code, retry_after=900)
             message_id = send(payload)
             if type(message_id) is not int or message_id <= 0:
+                message_id = None
                 raise DeliveryError('TELEGRAM_INVALID_RESPONSE', uncertain=True)
     except DeliveryError as error:
         failure = error
@@ -206,7 +222,7 @@ def process_once(*, session_factory=SessionLocal, send=send_telegram, now=None, 
             message_id = remote.telegram_message_id
     if failure:
         terminal = failure.code in ('RELAY_REQUEST_INVALID', 'RELAY_UNAUTHENTICATED', 'RELAY_PERMISSION_DENIED',
-                                   'RELAY_IDEMPOTENCY_CONFLICT', 'RELAY_NOT_FOUND', 'REQUEST_EXPIRED')
+                                   'RELAY_IDEMPOTENCY_CONFLICT', 'RELAY_NOT_FOUND', 'REQUEST_EXPIRED', 'ORDER_NOT_FOUND')
         delay = (5, 30, 120, 900)[min(attempt - 1, 3)] + (random.uniform(0, 1) if use_relay else 0)
         uncertain = failure.uncertain or (use_relay and was_uncertain)
         state = 'rejected' if terminal else ('uncertain' if uncertain else 'error')
@@ -237,7 +253,10 @@ def process_once(*, session_factory=SessionLocal, send=send_telegram, now=None, 
     return True
 
 
-def main():
+def main(argv=None):
+    parser = argparse.ArgumentParser(description='Deliver queued Telegram notifications')
+    parser.add_argument('--orders-only', action='store_true', help='Process only order notifications')
+    args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO)
     previous_state = None
     while True:
@@ -246,7 +265,7 @@ def main():
             logger.info('Telegram notifications %s', state)
             previous_state = state
         try:
-            processed = process_once()
+            processed = process_once(orders_only=args.orders_only)
         except Exception:
             logger.error('Notification queue: DATABASE_OR_WORKER_ERROR')
             processed = False

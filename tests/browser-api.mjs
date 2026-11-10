@@ -386,30 +386,29 @@ test('a persisted off-page cart resolves through API and retries checkout with t
   await page.locator('[name="name"]').fill('API Покупатель');
   await page.locator('[name="phone"]').fill('+79991234567');
   await page.locator('[name="email"]').fill('api@example.test');
-  await page.locator('[name="method"][value="delivery"]').check();
-  await page.locator('[name="address"]').fill('Москва, Проверочная, 2');
+  const pickupDetails = await page.locator('.pickup-details').textContent();
+  assert.ok(pickupDetails.includes('Москва, Серверная, 1'));
+  assert.ok(pickupDetails.includes('Ежедневно 09:00–18:00'));
+  assert.equal(await page.locator('#checkout-form [name="method"], #checkout-form [name="address"]').count(), 0);
   await page.locator('.checkout-submit').click();
   await page.waitForFunction(() => document.querySelector('#checkout-error')?.textContent.trim());
   assert.equal(attempts.length, 1);
   assert.match(attempts[0].key, /^[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}$/i);
   assert.deepEqual(attempts[0].body, {
-    customer: { name: 'API Покупатель', phone: '+79991234567', email: 'api@example.test' }, fulfillment: { method: 'delivery', address: 'Москва, Проверочная, 2' },
+    customer: { name: 'API Покупатель', phone: '+79991234567', email: 'api@example.test' }, fulfillment: { method: 'pickup', address: '' },
     items: [{ productId: state.offPageProduct.id, quantity: 2, expectedUnitPriceKopecks: state.offPageProduct.priceKopecks }],
   });
   assert.deepEqual(await page.evaluate(() => JSON.parse(localStorage.getItem('lavr.cart.v1'))), originalCart);
   for (const [name, value] of Object.entries(attempts[0].body.customer)) assert.equal(await page.locator(`[name="${name}"]`).inputValue(), value);
-  assert.equal(await page.locator('[name="address"]').inputValue(), 'Москва, Проверочная, 2');
-  assert.equal(await page.locator('[name="method"][value="delivery"]').isChecked(), true);
+  assert.equal(await page.locator('#checkout-form [name="method"], #checkout-form [name="address"]').count(), 0);
   assert.equal(await page.locator('.receipt').count(), 0);
   assert.equal(await page.evaluate(() => sessionStorage.getItem('lavr.orders.v1')), null);
   const persistedAttempt = await page.evaluate(() => sessionStorage.getItem('lavr.checkout-attempt.v1'));
   assert.ok(persistedAttempt?.includes(attempts[0].key), 'The uncertain request key survives reload');
-  for (const privateValue of ['API Покупатель', '+79991234567', 'api@example.test', 'Москва, Проверочная, 2', state.offPageProduct.id]) assert.ok(!persistedAttempt.includes(privateValue), 'The persisted attempt contains a digest, not customer or cart data');
+  for (const privateValue of ['API Покупатель', '+79991234567', 'api@example.test', state.offPageProduct.id]) assert.ok(!persistedAttempt.includes(privateValue), 'The persisted attempt contains a digest, not customer or cart data');
   await page.reload({ waitUntil: 'domcontentloaded' });
   await checkoutReady(page);
   for (const [name, value] of Object.entries(attempts[0].body.customer)) await page.locator(`[name="${name}"]`).fill(value);
-  await page.locator('[name="method"][value="delivery"]').check();
-  await page.locator('[name="address"]').fill(attempts[0].body.fulfillment.address);
   await page.locator('.checkout-submit').click();
   await page.locator('.receipt').waitFor();
   assert.deepEqual(attempts[1], attempts[0]);

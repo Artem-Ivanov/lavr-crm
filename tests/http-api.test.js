@@ -110,6 +110,18 @@ test('checkout sends the price agreement and idempotency key once without a sess
   assert.deepEqual(JSON.parse(calls[0].body), body);
 });
 
+test('manager can confirm a manual order with CSRF and its current version', async () => {
+  const manual = { ...order, integrationStatus: 'not_connected' };
+  const confirmed = { ...manual, status: 'confirmed', version: 4 };
+  const { api, calls } = setup([json(session), json(confirmed)]);
+  await api.getUserSession();
+  assert.deepEqual(await api.updateOrderStatus(manual, 'confirmed'), confirmed);
+  assert.equal(calls[1].url, '/api/manager/orders/order-1/status');
+  assert.equal(calls[1].headers['If-Match'], '"3"');
+  assert.equal(calls[1].headers['X-CSRF-Token'], session.csrfToken);
+  assert.deepEqual(JSON.parse(calls[1].body), { status: 'confirmed' });
+});
+
 test('session mutations send CSRF and optimistic versions without changing accounting fields', async () => {
   const saved = { ...presentation, categoryId: 'filters', version: 8 };
   const updatedOrder = { ...order, status: 'cancelled', version: 4 };

@@ -170,7 +170,7 @@ class CreateOrderRequest(InputModel):
 
 
 class StatusInput(InputModel):
-    status: Literal['ready', 'completed', 'cancelled']
+    status: Literal['confirmed', 'ready', 'completed', 'cancelled']
 
 
 def parse_idempotency_key(value):
@@ -193,6 +193,8 @@ def order_receipt(order):
 
 
 def can_cancel(db, order, event=None):
+    if order.integration_status == 'not_connected' and order.external_document_id is None:
+        return order.status in ('new', 'confirmed', 'ready')
     if order.status != 'new' or order.external_document_id:
         return False
     if event is None:
@@ -215,9 +217,9 @@ router = APIRouter(prefix='/api')
 def build_order(db: Session, body: CreateOrderRequest, *, customer_id=None) -> Order:
     from .catalog import Category, Product, ProductPresentation, catalog_metadata
 
-    integration.require_erp()
+    erp_configured = integration.get_erp_adapter().is_configured
     if catalog_metadata(db)['stale']:
-        raise ApiError(503, 'CATALOG_STALE', 'Каталог требует обновления из 1С. Приём заказов временно недоступен.')
+        raise ApiError(503, 'CATALOG_STALE', 'Цены и остатки требуют обновления. Приём заказов временно недоступен.')
     ids = [item.productId for item in body.items]
     products = {product.id: product for product in db.scalars(select(Product).where(Product.id.in_(ids)).order_by(Product.id).with_for_update())}
     presentations = {item.product_id: item for item in db.scalars(select(ProductPresentation).where(ProductPresentation.product_id.in_(ids)).order_by(ProductPresentation.product_id).with_for_update())}
@@ -251,12 +253,14 @@ def build_order(db: Session, body: CreateOrderRequest, *, customer_id=None) -> O
         snapshots.append({'productId': product.id, 'sku': product.sku, 'brand': product.brand, 'name': presentation.website_title or product.name, 'quantity': quantity_json(item.quantity), 'unit': product.unit, 'unitPriceKopecks': product.price_kopecks, 'lineTotalKopecks': line_total})
     created_at = utcnow()
     order_id = new_id()
-    order = Order(id=order_id, customer_id=customer_id, phone_lookup=lookup_digest('phone', body.customer.phone), email_lookup=lookup_digest('email', body.customer.email.strip().lower()) if body.customer.email else None, number=f'L-{created_at:%Y%m%d}-{order_id.upper()}', created_at=created_at, customer=body.customer.model_dump(), fulfillment=body.fulfillment.model_dump(), items=snapshots, total_kopecks=total, status='new', integration_status='pending_sync', version=1)
+    order = Order(id=order_id, customer_id=customer_id, phone_lookup=lookup_digest('phone', body.customer.phone), email_lookup=lookup_digest('email', body.customer.email.strip().lower()) if body.customer.email else None, number=f'L-{created_at:%Y%m%d}-{order_id.upper()}', created_at=created_at, customer=body.customer.model_dump(), fulfillment=body.fulfillment.model_dump(), items=snapshots, total_kopecks=total, status='new', integration_status='pending_sync' if erp_configured else 'not_connected', version=1)
     db.add(order)
     db.flush()
     for item in body.items:
         products[item.productId].reserved += item.quantity
-    db.add(integration.Outbox(id=new_id(), order_id=order.id, event_type='order_export', payload={'externalOrderId': order.id, 'customer': order.customer, 'fulfillment': order.fulfillment, 'items': order.items, 'totalKopecks': total}, state='queued', attempts=0))
+    if erp_configured:
+        db.add(integration.Outbox(id=new_id(), order_id=order.id, event_type='order_export', payload={'externalOrderId': order.id, 'customer': order.customer, 'fulfillment': order.fulfillment, 'items': order.items, 'totalKopecks': total}, state='queued', attempts=0))
+    db.add(integration.Outbox(id=new_id(), order_id=order.id, event_type='order_telegram', payload={'orderId': order.id}, state='queued', attempts=0))
     return order
 
 
@@ -278,6 +282,8 @@ def accept_order(db, body, key, *, customer_id=None, receipt_builder=order_recei
         if previous.actor != actor or order.customer_id != customer_id or previous.digest != request_digest(body, actor, previous.digest_version):
             raise ApiError(409, 'IDEMPOTENCY_CONFLICT', 'С этим ключом уже принят другой запрос.')
         return previous.receipt, False
+    if body.fulfillment.method != 'pickup':
+        raise ApiError(422, 'FULFILLMENT_UNAVAILABLE', 'Сейчас доступен только самовывоз из магазина.')
     order = build_order(db, body, customer_id=customer_id)
     receipt = receipt_builder(order)
     db.add(OrderAttempt(idempotency_key=key, actor=actor, digest_version=2, digest=request_digest(body, actor), order_id=order.id, receipt=receipt))
@@ -339,21 +345,33 @@ def update_status(order_id: Annotated[str, Path(min_length=1, max_length=128, pa
     if order is None:
         raise ApiError(404, 'NOT_FOUND', 'Заказ не найден.')
     check_version(order, if_match)
+    manual = order.integration_status == 'not_connected' and order.external_document_id is None
     if body.status == 'cancelled':
         event = db.scalar(select(integration.Outbox).where(integration.Outbox.order_id == order.id, integration.Outbox.event_type == 'order_export').with_for_update())
         if not can_cancel(db, order, event):
             raise ApiError(409, 'CANCEL_NOT_ALLOWED', 'Результат отправки не позволяет безопасно отменить заказ в CRM.')
+    elif manual:
+        if (order.status, body.status) not in (('new', 'confirmed'), ('confirmed', 'ready'), ('ready', 'completed')):
+            raise ApiError(409, 'INVALID_TRANSITION', 'Этот переход статуса недоступен.')
+    elif not (body.status == 'ready' and order.status == 'confirmed' or body.status == 'completed' and order.status == 'ready') or order.integration_status != 'exported' or not order.external_document_id:
+        raise ApiError(409, 'INVALID_TRANSITION', 'Этот переход статуса недоступен.')
+    if body.status == 'cancelled' or manual and body.status == 'completed':
         products = {product.id: product for product in db.scalars(select(Product).where(Product.id.in_([item['productId'] for item in order.items])).order_by(Product.id).with_for_update())}
         for item in order.items:
             product = products.get(item['productId'])
             quantity = quantity_decimal(item['quantity'])
-            if product is None or product.reserved < quantity or product.unit != item.get('unit', 'шт'):
-                raise ApiError(409, 'RESERVE_CONFLICT', 'Локальный резерв требует проверки. Отмена не выполнена.')
+            if product is None or product.reserved < quantity or product.unit != item.get('unit', 'шт') or body.status == 'completed' and product.stock < quantity:
+                raise ApiError(409, 'RESERVE_CONFLICT', 'Локальный резерв требует проверки. Статус не изменён.')
             product.reserved -= quantity
-        event.state = 'cancelled'
-        order.integration_status = 'cancelled_before_sync'
-    elif not (body.status == 'ready' and order.status == 'confirmed' or body.status == 'completed' and order.status == 'ready') or order.integration_status != 'exported' or not order.external_document_id:
-        raise ApiError(409, 'INVALID_TRANSITION', 'Этот переход статуса недоступен.')
+            if body.status == 'completed':
+                product.stock -= quantity
+    if body.status == 'cancelled':
+        if not manual:
+            event.state = 'cancelled'
+            order.integration_status = 'cancelled_before_sync'
+        notification = db.scalar(select(integration.Outbox).where(integration.Outbox.order_id == order.id, integration.Outbox.event_type == 'order_telegram').with_for_update())
+        if notification and notification.state == 'queued' and notification.attempts == 0 and notification.lease_until is None and 'relay_request' not in notification.payload:
+            notification.state = 'cancelled'
     order.status = body.status
     order.version += 1
     record_audit(db, staff, 'order.status_changed', order.id, order.version)

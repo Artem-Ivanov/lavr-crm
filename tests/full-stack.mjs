@@ -42,6 +42,7 @@ test('live Docker stack stores catalog/content/images in PostgreSQL and serves V
   let siteVersion;
   let product;
   let completed = false;
+  const testOrderIds = new Set();
   const publicTitle = `QA Docker ${runId}`;
 
   const api = (path, options = {}, expected = 200) => request(path, { ...options, headers: { ...sessionHeaders, ...options.headers } }, expected);
@@ -50,6 +51,13 @@ test('live Docker stack stores catalog/content/images in PostgreSQL and serves V
     await browser.close();
     const canKeep = keepFixtures && completed && errors.length === 0;
     const cleanups = [];
+    for (const id of testOrderIds) cleanups.push(async () => {
+      const order = await (await api(`/api/manager/orders/${id}`)).json();
+      if (order.status !== 'cancelled') {
+        assert.equal(order.canCancel, true, 'QA order must remain safely cancellable');
+        await api(`/api/manager/orders/${id}/status`, { method: 'PATCH', body: { status: 'cancelled' }, headers: { 'If-Match': `"${order.version}"` } });
+      }
+    });
     if (siteVersion) cleanups.push(() => api('/api/admin/site', { method: 'PATCH', body: { hero: siteBefore.hero }, headers: { 'If-Match': `"${siteVersion}"` } }));
     if (presentationVersion) {
       const { version, productId, ...presentation } = presentationBefore;
@@ -103,9 +111,15 @@ test('live Docker stack stores catalog/content/images in PostgreSQL and serves V
   const conflict = await api(`/api/admin/products/${product.id}/presentation`, { method: 'PATCH', body: { websiteTitle: 'Stale edit' }, headers: { 'If-Match': `"${presentationBefore.version}"` } }, 412);
   assert.equal((await conflict.json()).code, 'VERSION_CONFLICT');
   assert.equal((await (await request(`/api/catalog/${product.id}`)).json()).product.websiteTitle, title);
-  const receipt = await request('/api/orders', { method: 'POST', body: { customer: { name: 'QA purchase', phone: '+79991234567' }, fulfillment: { method: 'pickup' }, items: [{ productId: product.id, quantity: 1, expectedUnitPriceKopecks: product.priceKopecks }] }, headers: { 'Idempotency-Key': randomUUID() } }, 503);
-  assert.equal((await receipt.json()).code, 'ERP_NOT_CONFIGURED');
-  console.log('API: public catalog, SKU search, sessions, CSRF, versions and ERP gate passed.');
+  const receipt = await request('/api/orders', { method: 'POST', body: { customer: { name: 'QA purchase', phone: '+79991234567' }, fulfillment: { method: 'pickup' }, items: [{ productId: product.id, quantity: 1, expectedUnitPriceKopecks: product.priceKopecks }] }, headers: { Origin: origin, 'Idempotency-Key': randomUUID() } }, 201);
+  const accepted = await receipt.json(); testOrderIds.add(accepted.id);
+  assert.equal(accepted.status, 'new');
+  assert.equal(accepted.integrationStatus, 'not_connected');
+  const apiOrder = await (await api(`/api/manager/orders/${accepted.id}`)).json();
+  assert.equal(apiOrder.canCancel, true);
+  await api(`/api/manager/orders/${accepted.id}/status`, { method: 'PATCH', body: { status: 'cancelled' }, headers: { 'If-Match': `"${apiOrder.version}"` } });
+  testOrderIds.delete(accepted.id);
+  console.log('API: public catalog, SKU search, sessions, CSRF, versions and manual checkout passed.');
 
   const bytes = await readFile(new URL('../public/images/brake-disc.jpg', import.meta.url));
   const upload = new FormData();
@@ -147,12 +161,14 @@ test('live Docker stack stores catalog/content/images in PostgreSQL and serves V
   }
 
   async function signIn(page) {
+    await page.goto(baseUrl + '/#login');
+    await page.locator('.account-form input[name="email"]').fill(login);
+    await page.locator('.account-form input[name="password"]').fill(password);
+    await page.locator('.account-form button[type="submit"]').click();
+    await page.locator('.header-account .account-role').waitFor();
     await page.goto(baseUrl + '/#crm-content');
-    await page.locator('.staff-login input[name="login"]').fill(login);
-    await page.locator('.staff-login input[name="password"]').fill(password);
-    await page.locator('.staff-login button[type="submit"]').click();
     await page.getByTestId('hero-title').waitFor();
-    assert.equal(await page.locator('.staff-login').count(), 0);
+    assert.equal(await page.locator('.account-form').count(), 0);
   }
 
   const desktop = await open(1440);
@@ -202,23 +218,26 @@ test('live Docker stack stores catalog/content/images in PostgreSQL and serves V
     await mobile.locator('#checkout-form input[name="phone"]').fill('+79991234567');
     const orderResponse = mobile.waitForResponse(response => new URL(response.url()).pathname === '/api/orders' && response.request().method() === 'POST');
     await mobile.locator('.checkout-submit').click();
-    const rejected = await orderResponse;
-    assert.equal(rejected.status(), 503);
-    assert.equal((await rejected.json()).code, 'ERP_NOT_CONFIGURED');
-    await mobile.locator('#checkout-error').filter({ hasText: '1С' }).waitFor();
-    assert.equal(await mobile.locator('#checkout-form input[name="name"]').inputValue(), 'QA purchase');
+    const created = await orderResponse;
+    assert.equal(created.status(), 201);
+    const receipt = await created.json(); testOrderIds.add(receipt.id);
+    assert.equal(receipt.status, 'new');
+    assert.equal(receipt.integrationStatus, 'not_connected');
+    await mobile.locator('.receipt-number').filter({ hasText: receipt.number }).waitFor();
+    assert.ok((await mobile.locator('.receipt').innerText()).includes('Оплата на сайте не производится.'));
+    assert.deepEqual(JSON.parse(await mobile.evaluate(() => localStorage.getItem('lavr.cart.v1'))), []);
   } else {
     assert.ok(await mobile.locator('.api-feedback').filter({ hasText: /каталог|Остаток/ }).count(), 'A stale catalog must explain why checkout is disabled.');
+    assert.equal(await mobile.evaluate(() => localStorage.getItem('lavr.cart.v1')), cartBefore);
+    assert.equal(await mobile.locator('.receipt').count(), 0);
   }
-  assert.equal(await mobile.evaluate(() => localStorage.getItem('lavr.cart.v1')), cartBefore);
-  assert.equal(await mobile.locator('.receipt').count(), 0);
   await signIn(mobile);
   assert.equal(await mobile.getByTestId('hero-title').inputValue(), editedHero);
   await fits(mobile, 'Mobile content editor');
   await mobile.getByTestId('content-tab-media').click();
   await mobile.getByTestId(`media-${media.id}`).waitFor();
   await fits(mobile, 'Mobile image library');
-  console.log('Chrome 390: public server changes, image decoding, SKU search, retained cart and administrator editor passed.');
+  console.log('Chrome 390: public server changes, image decoding, SKU search, manual checkout and administrator editor passed.');
   assert.equal(errors.length, 0, 'A browser page raised an unexpected JavaScript exception.');
   completed = true;
   console.log('QA_RECORDS ' + JSON.stringify({ categoryId: category.id, mediaId: media.id, publicationId: publication.id, publicationTitle: publicTitle, publicImagePath: `/api/media/${media.id}` }));

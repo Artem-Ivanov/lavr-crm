@@ -274,7 +274,7 @@ export function createHttpApi({ baseUrl = '/api', fetchImpl = globalThis.fetch }
       return checked((await request('/orders', { method: 'POST', body, headers: { 'Idempotency-Key': idempotencyKey } })).data, receipt);
     },
     async updateOrderStatus(order, status) {
-      if (!object(order) || !integer(order.version, 1) || !['ready', 'completed', 'cancelled'].includes(status)) throw new Error('Некорректный статус или версия заказа.');
+      if (!object(order) || !integer(order.version, 1) || !['confirmed', 'ready', 'completed', 'cancelled'].includes(status)) throw new Error('Некорректный статус или версия заказа.');
       return checked((await request(`/manager/orders/${pathId(order.id)}/status`, {
         method: 'PATCH', body: { status }, protectedMutation: true, headers: { 'If-Match': `"${order.version}"` },
       })).data, managerOrder);

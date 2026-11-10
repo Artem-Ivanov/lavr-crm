@@ -5,8 +5,10 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import tarfile
+import types
 import unittest
 from unittest.mock import patch
 
@@ -128,7 +130,7 @@ class DeployTests(unittest.TestCase):
         release.mkdir()
         self.operator.stage = release
         previous = {'backend': 'sha256:old-api', 'catalog-imports': 'sha256:older-worker',
-                    'frontend': 'sha256:old-ui'}
+                    'frontend': 'sha256:old-ui', 'notifications': 'sha256:old-notifications'}
         receipt = {'old_commit': self.old, 'commit': candidate, 'old_images': previous,
                    'images': {name: 'sha256:new-' + name for name in previous},
                    'caddy': {}, 'baseline': {}, 'protected': {}, 'verify_data': False}
@@ -136,7 +138,7 @@ class DeployTests(unittest.TestCase):
         with patch.object(self.operator, 'set_runtime', side_effect=lambda value: events.append(('caddy', value))), \
              patch.object(self.deploy, 'maintenance_runtime', return_value={'maintenance': True}), \
              patch.object(self.operator, 'database_guard'), patch.object(self.operator, 'backup'), \
-             patch.object(self.operator, 'stop', side_effect=lambda: events.append(('stop',))), \
+             patch.object(self.operator, 'stop', side_effect=lambda images: events.append(('stop', images))), \
              patch.object(self.operator, 'start', side_effect=lambda images: events.append(('start', images))), \
              patch.object(self.operator, 'verify', side_effect=[self.deploy.DeployError('health_timeout'), {}]), \
              patch.object(self.operator, 'public_smoke'):
@@ -150,31 +152,59 @@ class DeployTests(unittest.TestCase):
         self.assertEqual(json.loads((release / 'receipt.json').read_text())['status'], 'rolled_back')
 
     def test_rollback_restarts_distinct_worker_image_before_api_alias_changes(self):
-        images = {'backend': 'sha256:api', 'catalog-imports': 'sha256:worker', 'frontend': 'sha256:ui'}
+        images = {'backend': 'sha256:api', 'catalog-imports': 'sha256:worker',
+                  'frontend': 'sha256:ui', 'notifications': 'sha256:notifications'}
         calls = []
         with patch.object(self.operator, 'run', side_effect=lambda args, **kw: calls.append(args) or ''):
             self.operator.start(images)
         ups = [args for args in calls if 'up' in args]
-        self.assertEqual(len(ups), 2)
+        self.assertEqual(len(ups), 3)
         self.assertEqual(ups[0][-1:], ['catalog-imports'])
-        self.assertEqual(ups[1][-2:], ['backend', 'frontend'])
+        self.assertEqual(ups[1][-1:], ['notifications'])
+        self.assertEqual(ups[2][-2:], ['backend', 'frontend'])
+        self.assertLess(calls.index(['docker', 'tag', 'sha256:notifications', 'lavr-crm-backend:local']),
+                        calls.index(ups[1]))
+        self.assertLess(calls.index(ups[1]),
+                        calls.index(['docker', 'tag', 'sha256:api', 'lavr-crm-backend:local']))
         for args in ups:
             for flag in ('--no-deps', '--no-build', '--pull', 'never'):
                 self.assertIn(flag, args)
+
+    def test_start_recreates_notifications_only_when_present_in_images(self):
+        for active in (False, True):
+            with self.subTest(active=active):
+                images = {'backend': 'sha256:api', 'catalog-imports': 'sha256:api', 'frontend': 'sha256:ui'}
+                if active:
+                    images['notifications'] = 'sha256:api'
+                calls = []
+                with patch.object(self.operator, 'run', side_effect=lambda args, **kw: calls.append(args) or ''):
+                    self.operator.start(images)
+                ups = [args for args in calls if 'up' in args]
+                expected = ['backend', 'catalog-imports', 'frontend'] + (['notifications'] if active else [])
+                self.assertEqual(len(ups), 1)
+                self.assertEqual(ups[0][-len(expected):], expected)
 
     def test_worker_short_stop_requires_idle_imports_and_keeps_http_drain(self):
         calls = []
         with patch.object(self.operator, 'database_guard', side_effect=self.deploy.DeployError('imports_busy')), \
              patch.object(self.operator, 'run', side_effect=lambda args, **kwargs: calls.append((args, kwargs))):
             with self.assertRaisesRegex(self.deploy.DeployError, 'imports_busy'):
-                self.operator.stop()
+                self.operator.stop({})
         self.assertEqual(calls, [])
         with patch.object(self.operator, 'database_guard'), \
              patch.object(self.operator, 'run', side_effect=lambda args, **kwargs: calls.append((args, kwargs))):
-            self.operator.stop()
+            self.operator.stop({})
         self.assertEqual(calls[0][0][-4:], ['stop', '-t', '10', 'catalog-imports'])
         self.assertEqual(calls[0][1]['timeout'], 30)
         self.assertEqual(calls[1][0][-5:], ['stop', '-t', '150', 'frontend', 'backend'])
+
+    def test_stop_includes_active_notifications_before_http_drain(self):
+        calls = []
+        with patch.object(self.operator, 'database_guard'), \
+             patch.object(self.operator, 'run', side_effect=lambda args, **kwargs: calls.append(args)):
+            self.operator.stop({'notifications': 'sha256:api'})
+        self.assertEqual(calls[0][-5:], ['stop', '-t', '10', 'catalog-imports', 'notifications'])
+        self.assertEqual(calls[1][-5:], ['stop', '-t', '150', 'frontend', 'backend'])
 
     def test_candidate_probe_protects_env_and_removes_it_after_failure(self):
         self.operator.config = {'services': {'backend': {'environment': {'SESSION_SECRET': 'private=value'}}}}
@@ -192,11 +222,137 @@ class DeployTests(unittest.TestCase):
                 self.operator.probe_candidate('sha256:candidate')
         self.assertFalse((self.operator.stage / 'candidate.env').exists())
 
+    def test_candidate_probe_rejects_missing_manual_order_and_orders_only_contracts(self):
+        self.operator.config = {'services': {'backend': {'environment': {}}}}
+        for manual_orders, orders_only in ((False, True), (True, False), (True, True)):
+            with self.subTest(manual_orders=manual_orders, orders_only=orders_only):
+                modules = {name: types.ModuleType(name) for name in
+                           ('app', 'app.main', 'app.orders', 'app.notification_worker')}
+                modules['app.main'].create_app = lambda: None
+                class StatusInput:
+                    def __init__(self, *, status):
+                        if status == 'confirmed' and not manual_orders:
+                            raise ValueError('manual_order_status_unsupported')
+                modules['app.orders'].StatusInput = StatusInput
+                def unexpected_queue_call(*args, **kwargs):
+                    self.fail('candidate probe must not execute the notification queue')
+                modules['app.notification_worker'].process_once = (
+                    lambda *, orders_only=False: unexpected_queue_call()) if orders_only else unexpected_queue_call
+                def candidate(args, **kwargs):
+                    with patch.dict(sys.modules, modules):
+                        exec(args[-1], {})
+                    return ''
+                with patch.object(self.operator, 'run', side_effect=candidate):
+                    if manual_orders and orders_only:
+                        self.operator.probe_candidate('sha256:candidate')
+                    else:
+                        with self.assertRaises((ValueError, RuntimeError)):
+                            self.operator.probe_candidate('sha256:candidate')
+                self.assertFalse((self.operator.stage / 'candidate.env').exists())
+
+    def test_notification_snapshot_requires_exact_explicit_compose_command(self):
+        expected = ['python', '-m', 'app.notification_worker', '--orders-only']
+        item = {'Id': 'worker', 'Image': 'sha256:api', 'RestartCount': 0, 'Mounts': [],
+                'State': {'StartedAt': 'now', 'Running': True},
+                'Config': {'Labels': {'com.docker.compose.service': 'notifications'}, 'Env': []}}
+        for configured, actual, accepted in ((expected, expected, True),
+                                             (expected, expected[:-1], False),
+                                             (expected, None, False),
+                                             (None, None, False),
+                                             ('python -m app.notification_worker --orders-only',
+                                              'python -m app.notification_worker --orders-only', False)):
+            with self.subTest(configured=configured, actual=actual):
+                self.operator.config = {'services': {'notifications': {'command': configured}}}
+                item['Config']['Cmd'] = actual
+                with patch.object(self.operator, 'run', side_effect=['worker', json.dumps([item])]):
+                    if accepted:
+                        self.assertEqual(self.operator.snapshot()['notifications']['id'], 'worker')
+                    else:
+                        with self.assertRaisesRegex(self.deploy.DeployError, 'notification_command_mismatch'):
+                            self.operator.snapshot()
+
     def baseline(self):
         return {name: {'id': name, 'image': 'sha256:old-' + name, 'started': 'old', 'restarts': 0,
                        'running': True, 'oom': False, 'health': None if name in ('catalog-imports', 'https') else 'healthy',
                        'env': 'unchanged', 'mounts': []}
                 for name in ('backend', 'catalog-imports', 'frontend', 'postgres', 'https')}
+
+    def notification_baseline(self):
+        baseline = self.baseline()
+        baseline['notifications'] = {**baseline['catalog-imports'], 'id': 'notifications',
+                                     'image': 'sha256:old-notifications'}
+        return baseline
+
+    def test_verify_tracks_notification_image_and_configuration_without_healthcheck(self):
+        baseline = self.notification_baseline()
+        images = {'backend': 'sha256:api', 'catalog-imports': 'sha256:api',
+                  'frontend': 'sha256:ui', 'notifications': 'sha256:api'}
+        current = copy.deepcopy(baseline)
+        for name, image in images.items():
+            current[name].update(id='new-' + name, image=image)
+        with patch.object(self.operator, 'snapshot', return_value=current), \
+             patch.object(self.operator, 'protected', return_value={}):
+            self.assertEqual(self.operator.verify(images, baseline, {}), current)
+            for field, value, reason in (('image', 'sha256:wrong', 'target_image_or_oom'),
+                                         ('oom', True, 'target_image_or_oom'),
+                                         ('env', 'changed', 'service_configuration_changed'),
+                                         ('mounts', [{'Destination': '/new'}], 'service_configuration_changed'),
+                                         ('restarts', 1, 'target_restarted'),
+                                         ('running', False, 'health_timeout')):
+                with self.subTest(field=field):
+                    saved = current['notifications'][field]
+                    current['notifications'][field] = value
+                    with patch.object(self.deploy.time, 'monotonic', side_effect=[0, 181]):
+                        with self.assertRaisesRegex(self.deploy.DeployError, reason):
+                            self.operator.verify(images, baseline, {})
+                    current['notifications'][field] = saved
+
+    def test_verify_rejects_notification_baseline_without_saved_image(self):
+        baseline = self.notification_baseline()
+        images = {name: baseline[name]['image'] for name in ('backend', 'catalog-imports', 'frontend')}
+        with patch.object(self.operator, 'snapshot', return_value=baseline), \
+             patch.object(self.operator, 'protected', return_value={}):
+            with self.assertRaisesRegex(self.deploy.DeployError, 'target_images_mismatch'):
+                self.operator.verify(images, baseline, {})
+
+    def test_stopped_notification_baseline_blocks_deploy_before_build(self):
+        baseline = self.notification_baseline()
+        baseline['notifications']['running'] = False
+        with patch.object(self.operator, 'select_commit', return_value=self.old), \
+             patch.object(self.operator, 'run', return_value='{"services": {}}'), \
+             patch.object(self.operator, 'snapshot', return_value=baseline), \
+             patch.object(self.operator, 'protected', return_value={}), \
+             patch.object(self.operator, 'database_guard', side_effect=AssertionError('stopped worker reached database guard')):
+            with self.assertRaisesRegex(self.deploy.DeployError, 'required_service_not_running'):
+                self.operator.deploy(self.old)
+
+    def test_deploy_uses_backend_build_and_saves_old_notification_image(self):
+        baseline, receipts, builds = self.notification_baseline(), [], []
+        def runtime(args, **kwargs):
+            if 'config' in args:
+                return '{"services": {}}'
+            if args[:2] == ['docker', 'build']:
+                builds.append(args)
+                return ''
+            if args[:3] == ['docker', 'image', 'inspect']:
+                return '[{"Id":"sha256:candidate", "Size":1}]'
+            if args[:2] == ['docker', 'exec'] and 'du' in args:
+                return '1 /data/media\n'
+            raise AssertionError('unexpected external command: ' + repr(args))
+        with patch.object(self.operator, 'select_commit', return_value=self.old), \
+             patch.object(self.operator, 'git', side_effect=lambda *args: self.old if args == ('rev-parse', 'HEAD') else ''), \
+             patch.object(self.operator, 'run', side_effect=runtime), \
+             patch.object(self.operator, 'snapshot', return_value=baseline), \
+             patch.object(self.operator, 'protected', return_value={}), \
+             patch.object(self.operator, 'database_guard', return_value={'bytes': 1}), \
+             patch.object(self.operator, 'probe_candidate'), \
+             patch.object(self.operator, 'active_runtime', return_value={}), \
+             patch.object(self.operator, 'apply', side_effect=receipts.append):
+            self.operator.deploy(self.old)
+        self.assertEqual(len(builds), 2)
+        self.assertEqual(receipts[0]['images'], {'backend': 'sha256:candidate', 'frontend': 'sha256:candidate',
+                                               'catalog-imports': 'sha256:candidate', 'notifications': 'sha256:candidate'})
+        self.assertEqual(receipts[0]['old_images'].get('notifications'), 'sha256:old-notifications')
 
     def test_first_same_sha_builds_from_exact_detached_checkout(self):
         baseline, builds, receipts, phases = self.baseline(), [], [], []

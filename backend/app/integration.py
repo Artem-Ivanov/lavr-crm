@@ -76,7 +76,7 @@ def get_erp_adapter():
 
 def require_erp():
     if not get_erp_adapter().is_configured:
-        raise ApiError(503, 'ERP_NOT_CONFIGURED', 'Обмен с 1С ещё не настроен. Приём заказов недоступен.')
+        raise ApiError(503, 'ERP_NOT_CONFIGURED', 'Обмен с 1С ещё не настроен.')
 
 
 router = APIRouter(prefix='/api')

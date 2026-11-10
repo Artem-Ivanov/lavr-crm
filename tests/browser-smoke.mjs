@@ -332,22 +332,22 @@ test('true mobile SKU search, basket quantities, checkout and CRM use readable t
   for (const viewport of mobileProfiles) {
     const page = await open(t, { viewport, isMobile: true, hasTouch: true });
     assert.equal(await page.evaluate(() => matchMedia('(pointer: coarse)').matches), true);
-    await mobileControls(page, ['#search-form button', '.header-cart', '.catalog-nav', '.crm-nav', '.filter-row', '.stock-check', '#brand', '#sort', '.add-button'], ['#search', '#brand', '#sort']);
+    await mobileControls(page, ['#search-form button', '.header-cart', '.catalog-nav', '.header-account a', '.filter-row', '.stock-check', '#brand', '#sort', '.add-button'], ['#search', '#brand', '#sort']);
     await page.locator('#search').fill('w 914 / 2');
     await page.locator('#search-form button').tap();
     assert.equal(await page.locator('.product-card').count(), 1);
     await page.locator('[data-action="add"][data-id="filter-mann-oil"]').tap();
     await page.locator('.header-cart').tap();
-    await mobileControls(page, ['.quantity-button', '.remove-button', '.delivery-option', '.checkout-submit'], ['[name="name"]', '[name="phone"]', '[name="email"]']);
+    await mobileControls(page, ['.quantity-button', '.remove-button', '.checkout-submit'], ['[name="name"]', '[name="phone"]', '[name="email"]']);
     await pageFits(page, `basket ${viewport.width}`);
     assert.equal(await page.locator('.cart-item').evaluate(element => element.scrollWidth <= element.clientWidth + 1), true, 'The complete basket row must fit even at 320px');
     await page.locator('.quantity-button[data-quantity="2"]').tap();
-    assert.equal(await page.locator('.quantity-control span').textContent(), '2');
+    assert.equal(await page.locator('.quantity-input').inputValue(), '2');
     await page.locator('[name="name"]').fill('Мобильный демопокупатель');
     await page.locator('[name="phone"]').fill('+79991234567');
-    await page.locator('.delivery-option').last().tap();
-    await page.locator('[name="address"]').fill('Тестовая улица, 1');
-    await mobileControls(page, [], ['[name="address"]']);
+    assert.equal(await page.locator('.pickup-details strong').textContent(), 'Самовывоз из магазина');
+    assert.ok((await page.locator('.pickup-details').textContent()).trim());
+    assert.equal(await page.locator('#checkout-form [name="method"], #checkout-form [name="address"]').count(), 0);
     await page.locator('.checkout-submit').tap();
     await page.locator('.receipt').waitFor();
     assert.equal(await page.evaluate(() => JSON.parse(sessionStorage.getItem('lavr.orders.v1'))[0].totalKopecks), 178000);
@@ -427,7 +427,7 @@ test('catalog search, combined filters, price sorting and empty result', async t
   assert.match(await page.locator('.product-name').first().textContent(), /Свеча/);
 });
 
-test('checkout validates contacts, delivery and saves the order in CRM', async t => {
+test('checkout validates contacts and saves a pickup order in CRM', async t => {
   const page = await open(t);
   await page.locator('[data-action="add"][data-id="filter-mann-oil"]').click();
   await page.locator('.header-cart').click();
@@ -438,14 +438,15 @@ test('checkout validates contacts, delivery and saves the order in CRM', async t
   assert.match(await page.locator('#checkout-error').textContent(), /телефон/);
   assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('lavr.cart.v1'))[0].quantity), 2);
   await page.locator('[name="phone"]').fill('+7 (999) 123-45-67');
-  await page.locator('[name="method"][value="delivery"]').check();
   assert.equal(await page.locator('[name="name"]').inputValue(), 'Демо Покупатель');
-  await page.locator('[name="address"]').fill('Демо-город, Тестовая улица, 1');
+  assert.equal(await page.locator('.pickup-details strong').textContent(), 'Самовывоз из магазина');
+  assert.equal(await page.locator('#checkout-form [name="method"], #checkout-form [name="address"]').count(), 0);
   await page.locator('.checkout-submit').click();
   await page.locator('.receipt').waitFor();
   const order = await page.evaluate(() => JSON.parse(sessionStorage.getItem('lavr.orders.v1'))[0]);
   assert.equal(order.totalKopecks, 178000);
-  assert.equal(order.fulfillment.method, 'delivery');
+  assert.deepEqual(order.fulfillment, { method: 'pickup', address: '' });
+  assert.match(await page.locator('.receipt').textContent(), /Оплата на сайте не производится\./);
   assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('lavr.cart.v1')).length), 0);
   await page.locator('.receipt-actions a').click();
   await signInDemoStaff(page);
@@ -500,7 +501,7 @@ test('product dialog returns keyboard focus to its opener on Escape and close', 
   assert.equal(await page.evaluate(() => document.activeElement?.dataset.action), 'product');
 });
 
-test('skip link keeps the current route and fulfillment choices keep keyboard focus', async t => {
+test('skip link keeps the current route and pickup checkout keeps keyboard access to submit', async t => {
   const page = await open(t);
   await page.evaluate(() => { location.hash = 'crm'; });
   await signInDemoStaff(page);
@@ -511,9 +512,9 @@ test('skip link keeps the current route and fulfillment choices keep keyboard fo
   await page.locator('.catalog-nav').click();
   await page.locator('[data-action="add"][data-id="filter-mann-oil"]').click();
   await page.locator('.header-cart').click();
-  await page.locator('[name="method"][value="pickup"]').focus();
-  await page.keyboard.press('ArrowRight');
-  assert.equal(await page.evaluate(() => document.activeElement?.value), 'delivery');
+  await page.locator('#checkout-form [name="name"]').focus();
+  await page.keyboard.press('Tab');
+  assert.equal(await page.locator('.checkout-submit').evaluate(element => element === document.activeElement), true);
 });
 
 test('stored customer text is escaped and a storage failure preserves the cart', async t => {

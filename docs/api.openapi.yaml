@@ -114,7 +114,7 @@ paths:
     post:
       tags: [Orders]
       operationId: createOrder
-      summary: Сохранить заявку и событие outbox в одной транзакции
+      summary: Сохранить заявку, резерв и уведомление в одной транзакции
       description: >-
         Сервер берёт цены из своей проекции и сравнивает их с expectedUnitPriceKopecks,
         затем повторно проверяет доступность при экспорте в 1С. Клиентские цены
@@ -126,7 +126,12 @@ paths:
         409 CUSTOMER_FLOW_REQUIRED (использовать /customer/orders). Действующий ключ с тем же
         нормализованным телом возвращает исходную квитанцию, с другим — 409.
         Параллельная ещё не завершённая операция возвращает 409
-        IDEMPOTENCY_IN_PROGRESS и Retry-After. Ответ не обещает резерв в 1С.
+        IDEMPOTENCY_IN_PROGRESS и Retry-After. Для новых заказов доступен только
+        самовывоз: другой fulfillment.method даёт 422 FULFILLMENT_UNAVAILABLE.
+        Сохраненный повтор исторического заказа проверяется до этого ограничения.
+        Без адаптера создаётся ручной заказ
+        new/not_connected; при настроенном адаптере — new/pending_sync и order_export.
+        В обоих режимах атомарно создаётся order_telegram. Ответ не обещает резерв в 1С.
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -137,7 +142,7 @@ paths:
       responses:
         '201':
           description: >-
-            Заявка сохранена: new/pending_sync. Квитанция не содержит контактов.
+            Заявка сохранена: new/not_connected без 1С либо new/pending_sync с адаптером. Квитанция не содержит контактов.
           headers:
             Cache-Control:
               schema: { type: string, const: no-store }
@@ -432,7 +437,10 @@ paths:
       description: >-
         Контакты и customer_id берутся только из серверного профиля; служебные input-поля запрещены.
         Профиль должен быть подтверждён. Сетевой повтор сохраняет Idempotency-Key и тело.
-        Сохраняются проверки цены, остатков и 1С; без адаптера 503 ERP_NOT_CONFIGURED.
+        Новое оформление доступно только с pickup; delivery даёт 422 FULFILLMENT_UNAVAILABLE.
+        Сохраненный повтор прежнего delivery-заказа по исходному ключу возвращается без изменений.
+        Сохраняются проверки цены, единицы, свежести и остатков; без адаптера создаётся
+        ручной заказ new/not_connected и order_telegram, без order_export.
         Первое создание 201, сохранённый повтор 200 с тем же CustomerOrder.
       security: [{ UserCookie: [] }]
       x-required-roles: [partner, operator, admin]
@@ -515,6 +523,8 @@ paths:
       description: >-
         Контакты и customer_id берутся только из серверного профиля; служебные input-поля запрещены.
         Профиль должен быть подтверждён. Сетевой повтор сохраняет Idempotency-Key и тело.
+        Новое оформление доступно только с pickup; delivery даёт 422 FULFILLMENT_UNAVAILABLE.
+        Сохраненный повтор прежнего delivery-заказа по исходному ключу возвращается без изменений.
         Сохраняется транзакционный Telegram outbox; 202 не обещает доставку уведомления.
       security: [{ UserCookie: [] }]
       x-required-roles: [partner, operator, admin]
@@ -815,11 +825,14 @@ paths:
       operationId: changeOrderStatus
       summary: Изменить бизнес-статус с проверкой текущей версии
       description: >-
-        Роли operator/admin. Допустимы confirmed -> ready и ready -> completed.
-        new -> cancelled допустим только при canCancel=true: отправка ещё не
-        началась или однозначно отвергнута 1С. Экспортированную заявку отменяют
-        в 1С; результат импортируется в CRM. completed — терминальный статус.
-        confirmed устанавливается только по подтверждённому ответу 1С.
+        Роли operator/admin. Ручной заказ not_connected без внешнего документа:
+        new -> confirmed -> ready -> completed; отмена из new/confirmed/ready
+        при canCancel=true освобождает локальный резерв. completed одновременно
+        уменьшает физический остаток и резерв. cancelled и completed терминальны.
+        В ERP-режиме confirmed устанавливается только ответом 1С; допускаются
+        confirmed -> ready и ready -> completed при подтверждённом документе.
+        Безопасная отмена ERP-заказа new требует canCancel=true; неопределённый
+        экспорт и экспортированный документ этим endpoint не отменяются.
         Строки заказа и цены этим endpoint не редактируются.
       security: [{ UserCookie: [] }]
       x-required-roles: [operator, admin]
@@ -843,7 +856,7 @@ paths:
               additionalProperties: false
               required: [status]
               properties:
-                status: { type: string, enum: [ready, completed, cancelled] }
+                status: { type: string, enum: [confirmed, ready, completed, cancelled] }
       responses:
         '200':
           description: Статус изменён, версия увеличена, запись аудита сохранена
@@ -1016,10 +1029,10 @@ paths:
         CreateOrderRequest: нужны имя, российский телефон, товары, актуальные
         цены/остатки и адрес доставки при необходимости. В одной транзакции
         проверяются товары и цены, резервируются остатки, создаются Order и
-        order_export, связь, статус converted, увеличенная версия и аудит.
-        Любая ошибка откатывает всё; без адаптера 1С — 503 ERP_NOT_CONFIGURED,
-        обращение остаётся в работе. converted означает локальное создание
-        заказа и задания обмена, а не подтверждённую выгрузку или продажу.
+        order_telegram, при настроенном адаптере также order_export, связь,
+        статус converted, увеличенная версия и аудит. Без адаптера заказ ручной,
+        new/not_connected. Любая ошибка откатывает всё; обращение остаётся в работе.
+        converted означает локальное создание заказа, не выгрузку или продажу.
         Отдельный UUID Idempotency-Key действует в рамках этого обращения и
         хранится вместе с нормализованным отпечатком и исходной карточкой ответа.
         После проверки сессии, CSRF и владельца успешный повтор возвращает
@@ -2467,7 +2480,7 @@ components:
       type: string
       enum: [not_connected, pending_sync, exporting, exported, error, cancelled_before_sync]
       description: >-
-        not_connected — демо/ненастроенное соединение; pending_sync — локально
+        not_connected — ручная обработка без 1С (также демо); pending_sync — локально
         принятая заявка; exporting — отправка/сверка; exported — подтверждены
         документ и резерв 1С; error — проблема обмена; cancelled_before_sync —
         безопасная отмена без документа 1С. Бизнес-статус хранится отдельно.
@@ -2522,7 +2535,7 @@ components:
             version: { type: integer, minimum: 1 }
             canCancel:
               type: boolean
-              description: Вычисляется сервером с учётом состояния worker и определённости результата 1С
+              description: Для ручного заказа true до завершения/отмены; для ERP вычисляется с учётом состояния worker и определённости результата 1С
             externalDocumentId:
               type: [string, 'null']
               description: Полученная ссылка документа 1С; null до подтверждения экспорта

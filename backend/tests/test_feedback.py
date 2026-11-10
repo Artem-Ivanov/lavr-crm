@@ -232,7 +232,9 @@ def test_conversion_is_atomic_replays_before_stale_version_and_disabled_erp(clie
     assert converted['order']['totalKopecks'] == 25000
     assert db.scalar(select(func.count()).select_from(Order)) == 1
     assert db.scalar(select(func.count()).select_from(OrderAttempt)) == 0
-    assert db.scalar(select(func.count()).select_from(Outbox)) == 2
+    events = db.scalars(select(Outbox)).all()
+    assert sorted(event.event_type for event in events) == ['feedback_telegram', 'order_export', 'order_telegram']
+    assert next(event for event in events if event.event_type == 'order_telegram').order_id == converted['order']['id']
     db.refresh(order_product)
     assert order_product.reserved == 2
     monkeypatch.setattr(integration, 'get_erp_adapter', lambda: integration.DisabledAdapter())
@@ -251,15 +253,22 @@ def test_conversion_failure_leaves_case_reserve_and_attempt_retriable(client, or
     mutation(client, receipt, manager_headers)
     key, body = str(uuid4()), order_body(order_product)
     monkeypatch.setattr(integration, 'get_erp_adapter', lambda: integration.DisabledAdapter())
+    order_product.stock = 0
+    db.commit()
     result = mutation(client, receipt, manager_headers, suffix='order', body=body, version=2, key=key)
-    assert result.status_code == 503, result.text
-    assert result.json()['code'] == 'ERP_NOT_CONFIGURED'
+    assert result.status_code == 409, result.text
+    assert result.json()['code'] == 'OUT_OF_STOCK'
     assert client.get(f"/api/manager/feedback/{receipt['id']}", headers=manager_headers).json()['status'] == 'in_progress'
     assert db.scalar(select(func.count()).select_from(Order)) == 0
     db.refresh(order_product)
     assert order_product.reserved == 0
-    monkeypatch.setattr(integration, 'get_erp_adapter', lambda: type('TestAdapter', (), {'is_configured': True})())
-    assert mutation(client, receipt, manager_headers, suffix='order', body=body, version=2, key=key).status_code == 201
+    order_product.stock = 4
+    db.commit()
+    accepted = mutation(client, receipt, manager_headers, suffix='order', body=body, version=2, key=key)
+    assert accepted.status_code == 201
+    assert accepted.json()['order']['integrationStatus'] == 'not_connected'
+    events = db.scalars(select(Outbox).where(Outbox.order_id == accepted.json()['order']['id'])).all()
+    assert [event.event_type for event in events] == ['order_telegram']
 
 
 def test_conversion_competes_atomically_with_close_and_other_conversion(client, order_product, manager_headers, admin_headers, db):

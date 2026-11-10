@@ -214,19 +214,15 @@ body:not(:has(.hero)) .catalog-section { padding-top: 38px; }
 .checkout-form h2 { font-size: 20px; font-weight: 600; letter-spacing: -.5px; margin-bottom: 21px; }
 .checkout-form h2:not(:first-child) { margin-top: 30px; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 19px; }
-.form-grid label, .address-field { display: block; font-size: 12px; font-weight: 500; }
+.form-grid label { display: block; font-size: 12px; font-weight: 500; }
 .form-grid .full { grid-column: 1 / -1; }
-.form-grid label > span, .address-field > span { color: var(--red); }
+.form-grid label > span { color: var(--red); }
 .form-grid label > small { color: #9a9ea7; font-weight: 400; font-size: 10px; margin-left: 4px; }
-.form-grid input, .address-field input { display: block; width: 100%; border: 1px solid #dadfe6; padding: 12px 14px; margin-top: 9px; background: white; font-size: 12px; }
-.delivery-options { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-.delivery-option { display: flex; align-items: center; gap: 10px; padding: 15px 13px; border: 1px solid #dfe3e9; border-radius: 7px; cursor: pointer; }
-.delivery-option.chosen { border-color: #e16a71; background: #fff8f8; }
-.delivery-option .icon { width: 20px; height: 20px; color: #606975; }
-.delivery-option input { width: 13px; height: 13px; flex-shrink: 0; margin: 0; }
-.delivery-option strong { display: block; font-size: 11px; font-weight: 600; }
-.delivery-option small { display: block; font-size: 9px; color: #9298a1; line-height: 1.5; margin-top: 5px; }
-.address-field { margin-top: 20px; }
+.form-grid input { display: block; width: 100%; border: 1px solid #dadfe6; padding: 12px 14px; margin-top: 9px; background: white; font-size: 12px; }
+.pickup-details { display: flex; align-items: start; gap: 14px; padding: 20px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); }
+.pickup-details > .icon { width: 22px; height: 22px; flex-shrink: 0; color: var(--red); }
+.pickup-details strong { display: block; font-size: 14px; font-weight: 600; }
+.pickup-details p { font-size: 12px; line-height: 1.7; color: var(--muted); margin-top: 5px; }
 .form-error { color: #b4212a; font-size: 13px; line-height: 1.6; margin-top: 20px; }
 .order-summary { align-self: start; position: sticky; top: 24px; padding: 27px; background: #f8f9fb; border: 1px solid var(--line); border-radius: 8px; }
 .order-summary h2 { font-size: 25px; letter-spacing: -.7px; margin-bottom: 28px; }
@@ -471,11 +467,7 @@ body:not(:has(.hero)) .catalog-section { padding-top: 38px; }
   .cart-item .product-brand { font-size: 9px; }
   .checkout-form h2 { font-size: 21px; }
   .form-grid { grid-template-columns: 1fr; gap: 16px; }
-  .delivery-options { grid-template-columns: 1fr; gap: 10px; }
-  .delivery-option { padding: 16px; }
-  .delivery-option strong { font-size: 12px; }
-  .delivery-option small { font-size: 10px; }
-  .form-grid input, .address-field input { font-size: 16px; }
+  .form-grid input { font-size: 16px; }
   .order-summary { position: static; }
   .receipt { padding-block: 55px; }
   .receipt .eyebrow { font-size: 8px; letter-spacing: 1px; line-height: 1.7; }
@@ -530,7 +522,7 @@ body:not(:has(.hero)) .catalog-section { padding-top: 38px; }
 @media (max-width: 760px), (pointer: coarse) {
   .search { height: 54px; }
   .search input, .crm-search input, .filters select, .filters input[name="brand"], .sort-label select,
-  .form-grid input, .address-field input { font-size: 16px; min-height: 44px; }
+  .form-grid input { font-size: 16px; min-height: 44px; }
   .search button, .crm-search button, .add-button, .product-name, .status-filter, .order-number,
   .filter-row, .stock-check, .reset-link, .text-link, .crm-tabs a, .header-cart, .navigation a { min-height: 44px; }
   .search button { min-width: 44px; font-size: 12px; }

@@ -168,14 +168,16 @@ test('demo clearly labels simulation, refuses real signup and simulates account 
  await page.locator('.crm-tabs a[href="#account-feedback"]').click(); await page.getByRole('button', { name: 'Новое обращение' }).click(); await page.locator('.feedback-dialog textarea').fill('Демонстрационный вопрос'); await page.locator('.feedback-dialog button[type="submit"]').click();
  await page.getByRole('heading', { name: 'Демообращение сохранено' }).waitFor(); assert.ok((await page.locator('.feedback-dialog').textContent()).includes('Магазину они не отправлены'));
 });
-test('checkout recovery restores only the same account and clears address on explicit logout', async t => {
+test('checkout recovery restores the same account name and clears it on explicit logout', async t => {
  const { page } = await open(t, { initial: session('partner', 'first'), hash: 'catalog', handle: async ({ path, method, json }) => { if (path === '/customer/orders' && method === 'POST') { await json({ code: 'SESSION_EXPIRED', message: 'Войдите снова' }, 401); return true; } } });
  await page.locator('.product-card button[data-action="add"]').first().click(); await page.evaluate(() => { location.hash = 'cart'; });
- await page.locator('#checkout-form input[name="name"]').fill('Имя для этого заказа'); await page.locator('input[name="method"][value="delivery"]').check(); await page.locator('input[name="address"]').fill('Адрес первого аккаунта');
+ await page.locator('#checkout-form input[name="name"]').fill('Имя для этого заказа');
+ assert.equal(await page.locator('#checkout-form [name="method"], #checkout-form [name="address"]').count(), 0);
  await page.locator('.checkout-submit').click(); await page.getByRole('link', { name: 'Войти снова', exact: true }).click(); await signIn(page, 'first@example.test'); await page.evaluate(() => { location.hash = 'cart'; });
- assert.equal(await page.locator('#checkout-form input[name="name"]').inputValue(), 'Имя для этого заказа'); assert.equal(await page.locator('input[name="address"]').inputValue(), 'Адрес первого аккаунта');
+ assert.equal(await page.locator('#checkout-form input[name="name"]').inputValue(), 'Имя для этого заказа');
  await page.getByRole('button', { name: 'Выйти', exact: true }).click(); await signIn(page, 'second@example.test'); await page.evaluate(() => { location.hash = 'cart'; });
- assert.equal(await page.locator('input[name="address"]').inputValue(), ''); assert.equal(await page.locator('#checkout-form input[name="name"]').inputValue(), '');
+ assert.equal(await page.locator('#checkout-form input[name="name"]').inputValue(), '');
+ assert.equal(await page.locator('#checkout-form [name="method"], #checkout-form [name="address"]').count(), 0);
 });
 
 for (const [role, label] of [['admin', 'Администратор'], ['operator', 'Оператор'], ['partner', 'Партнёр']]) test(`${role} account controls appear once beside the cart and disappear on logout`, async t => {

@@ -39,9 +39,9 @@ def own_feedback(client, headers, *, key=None, **changes):
 
 
 def test_all_stored_pii_copies_are_encrypted(client, db, order_product, manager_headers):
+    receipt = guest_order(client, order_product).json()
     body = order_body(order_product)
     body['fulfillment'] = {'method': 'delivery', 'address': 'Private delivery address'}
-    receipt = guest_order(client, order_product, body=body).json()
     case = guest_feedback(client, feedback_body(name='Private name', message='Private request')).json()
     assert mutation(client, case, manager_headers).status_code == 200
     assert mutation(client, case, manager_headers, 'notes', {'text': 'Private staff note'}, version=2).status_code == 200
@@ -53,7 +53,8 @@ def test_all_stored_pii_copies_are_encrypted(client, db, order_product, manager_
     stored = json.dumps(raw, ensure_ascii=False, default=str)
     for value in ('Private delivery address', 'Private name', 'Private request', 'Private staff note', 'buyer@example.test', '+79991234567'):
         assert value not in stored
-    assert db.get(Order, receipt['id']).fulfillment['address'] == 'Private delivery address'
+    assert db.get(Order, receipt['id']).fulfillment == {'method': 'pickup', 'address': ''}
+    assert db.get(Order, conversion.json()['order']['id']).fulfillment['address'] == 'Private delivery address'
     assert db.get(Feedback, case['id']).conversion_response['history'][-1]['action'] == 'feedback.converted'
 
 
@@ -170,18 +171,29 @@ def test_staff_search_accepts_only_full_normalized_contacts(client, db, order_pr
             assert client.get('/api/manager/' + path, params={'q': value}, headers=manager_headers).json()['total'] == 0
 
 
-def test_customer_order_snapshot_receipt_encrypts_address_and_stays_immutable(client, db, customer, order_product):
+def test_legacy_delivery_customer_receipt_encrypts_address_and_stays_immutable(client, db, customer, order_product):
+    from app import orders
+    from app.customer_records import customer_order
+
     user, headers = customer
     key = str(uuid4())
-    initial = own_order(client, order_product, headers, key=key, fulfillment={'method': 'delivery', 'address': 'Private receipt street'})
-    assert initial.status_code == 201, initial.text
+    body = orders.CreateOrderRequest.model_construct(
+        customer=orders.CustomerInput.model_construct(name='', phone=user.profile['phone'], email=user.profile['email']),
+        fulfillment=orders.FulfillmentInput(method='delivery', address='Private receipt street'),
+        items=[orders.OrderItemInput(**order_body(order_product)['items'][0])],
+    )
+    order = orders.build_order(db, body, customer_id=user.id)
+    initial = customer_order(order)
+    db.add(OrderAttempt(idempotency_key=key, actor=user.id, digest_version=2,
+                        digest=orders.request_digest(body, user.id), order_id=order.id, receipt=initial))
+    db.commit()
     raw = db.execute(select(OrderAttempt.__table__.c.receipt).where(OrderAttempt.__table__.c.idempotency_key == key)).scalar_one()
     assert 'Private receipt street' not in json.dumps(raw)
-    order = db.get(Order, initial.json()['id'])
     order.status = 'confirmed'
     db.commit()
     replay = own_order(client, order_product, headers, key=key, fulfillment={'method': 'delivery', 'address': 'Private receipt street'})
-    assert replay.json() == initial.json()
+    assert replay.status_code == 200
+    assert replay.json() == initial
 
 
 @pytest.mark.parametrize(('legacy_name', 'role'), [('L' * 101, 'operator'), ('L' * 240, 'admin'), ('Legacy\nOperator', 'operator')], ids=('operator-101', 'admin-240', 'operator-multiline'))
