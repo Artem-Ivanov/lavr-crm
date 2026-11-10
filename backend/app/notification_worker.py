@@ -1,42 +1,52 @@
 import hashlib
 import logging
 import math
+import random
+import re
 import time
-from datetime import timedelta
-from urllib.parse import quote
+from collections.abc import Callable
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import and_, func, or_, select, update
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.dialects.postgresql import insert
 
 from .common import utcnow
-from .config import settings
+from .config import settings, validate_notification_transport
 from .db import SessionLocal
 from .feedback import Feedback
 from .integration import Outbox, TelegramDeliveryState
+from .notifier import NotificationRequest, NotifierClient
+from .notification_links import site_link
 from .telegram_api import DeliveryError, send_telegram, site_origin
 
 logger = logging.getLogger('lavr.notifications')
 LEASE_SECONDS = 60
 
 
-def is_configured():
+def is_configured(transport=None):
+    try:
+        transport = validate_notification_transport(transport)
+    except DeliveryError:
+        return False
+    if transport == 'relay':
+        from .notification_relay_client import relay_is_configured
+        return bool(relay_is_configured() and re.fullmatch(r'[A-Za-z0-9_.-]{1,80}', settings.notification_destination_alias)
+                    and site_origin() and site_origin().startswith('https://'))
     return bool(settings.telegram_bot_token and settings.telegram_chat_id and site_origin())
 
 
 def notification_payload(feedback):
-    origin = site_origin()
-    if not origin:
-        raise DeliveryError('TELEGRAM_NOT_CONFIGURED', retry_after=900)
+    url = site_link('crm-feedback', {'case': feedback.id})
     label = 'Свяжитесь со мной' if feedback.type == 'contact' else 'Оставить запрос'
-    created = feedback.created_at.astimezone(ZoneInfo('Europe/Moscow')).strftime('%d.%m.%Y %H:%M МСК')
+    created = feedback.created_at.astimezone(ZoneInfo('Europe/Moscow')).strftime('%d-%m-%Y %H:%M')
     return {
         'chat_id': settings.telegram_chat_id,
-        'text': f'Новое обращение № {feedback.number}\n{created}\n{label}',
+        'text': f'Новое обращение №{feedback.number} от {created}\n{label}',
         'link_preview_options': {'is_disabled': True},
         'reply_markup': {'inline_keyboard': [[{
             'text': 'Открыть обращение',
-            'url': f'{origin}/#crm-feedback?case={quote(feedback.id, safe="")}',
+            'url': url,
         }]]},
     }
 
@@ -59,7 +69,20 @@ def persist_pause(db, key, now, seconds):
     ))
 
 
-def send_test_notification(*, session_factory=SessionLocal, send=send_telegram, now=None):
+def send_test_notification(*, session_factory=SessionLocal, send=send_telegram, now=None, relay_client_factory: Callable[[], NotifierClient] | None = None):
+    if validate_notification_transport() == 'relay':
+        from .common import new_id
+        from .notification_relay_client import RelayClient, validate_receipt
+        if not is_configured('relay'):
+            raise DeliveryError('RELAY_NOT_CONFIGURED', retry_after=900)
+        snapshot: NotificationRequest = {'request_id': new_id(), 'request_created_at': (now or utcnow()).isoformat(),
+                    'destination_alias': settings.notification_destination_alias,
+                    'text': 'Тест интеграции MIRZAP67. Это техническое сообщение, обращение не создаётся.'}
+        client = (relay_client_factory or RelayClient)()
+        try:
+            return validate_receipt(client.submit(snapshot))
+        finally:
+            client.close()
     if not settings.telegram_bot_token or not settings.telegram_chat_id:
         raise DeliveryError('TELEGRAM_NOT_CONFIGURED', retry_after=900)
     origin = site_origin()
@@ -72,7 +95,7 @@ def send_test_notification(*, session_factory=SessionLocal, send=send_telegram, 
         raise DeliveryError('TELEGRAM_RATE_LIMIT', retry_after=retry)
     payload = {
         'chat_id': settings.telegram_chat_id,
-        'text': 'Тест интеграции LAVR. Telegram-уведомления доступны. Это техническое сообщение, обращение не создаётся.',
+        'text': 'Тест интеграции MIRZAP67. Telegram-уведомления доступны. Это техническое сообщение, обращение не создаётся.',
         'link_preview_options': {'is_disabled': True},
     }
     if origin:
@@ -87,14 +110,27 @@ def send_test_notification(*, session_factory=SessionLocal, send=send_telegram, 
         raise
 
 
-def process_once(*, session_factory=SessionLocal, send=send_telegram, now=None):
-    if not settings.telegram_notifications_enabled or not is_configured():
+def source_fingerprint():
+    return hashlib.sha256(settings.notification_relay_token.encode()).hexdigest()
+
+
+def relay_snapshot(event_id, feedback, now) -> NotificationRequest:
+    payload = notification_payload(feedback)
+    button = payload['reply_markup']['inline_keyboard'][0][0]
+    return {'request_id': event_id, 'request_created_at': now.isoformat(),
+            'destination_alias': settings.notification_destination_alias, 'text': payload['text'],
+            'button': {'label': button['text'], 'url': button['url']}}
+
+
+def process_once(*, session_factory=SessionLocal, send=send_telegram, now=None, relay_client_factory: Callable[[], NotifierClient] | None = None):
+    if not settings.telegram_notifications_enabled:
+        return False
+    try:
+        validate_notification_transport()
+    except DeliveryError:
         return False
     claimed_at = now or utcnow()
-    key = destination_key()
     with session_factory() as db:
-        if remaining_pause(db, key, claimed_at):
-            return False
         event = db.scalar(select(Outbox).where(
             Outbox.event_type == 'feedback_telegram',
             or_(
@@ -105,40 +141,98 @@ def process_once(*, session_factory=SessionLocal, send=send_telegram, now=None):
         ).order_by(Outbox.created_at, Outbox.id).limit(1).with_for_update(skip_locked=True))
         if event is None:
             return False
+        saved = event.payload
+        was_uncertain = event.state == 'uncertain' or bool(saved.get('relay_duplicate_possible'))
+        use_relay = bool(saved.get('relay_request')) or settings.notification_transport == 'relay'
+        if not saved.get('relay_request') and not is_configured('relay' if use_relay else 'direct'):
+            return False
+        key = None if use_relay else destination_key()
+        if key and remaining_pause(db, key, claimed_at):
+            return False
         event.state = 'running'
         event.attempts += 1
         event.lease_until = claimed_at + timedelta(seconds=LEASE_SECONDS)
         event_id, attempt, lease = event.id, event.attempts, event.lease_until
-        feedback = db.get(Feedback, event.payload.get('feedbackId'))
-        payload = notification_payload(feedback) if feedback else None
+        feedback = db.get(Feedback, saved.get('feedbackId'))
+        payload = notification_payload(feedback) if feedback and not use_relay else None
+        if use_relay and not saved.get('relay_request') and feedback:
+            saved = {**saved, 'relay_request': relay_snapshot(event_id, feedback, claimed_at),
+                     'relay_target': settings.notification_relay_target, 'relay_source_fingerprint': source_fingerprint()}
+            event.payload = saved
         db.commit()
 
-    failure = None
+    failure, remote, message_id = None, None, None
     try:
-        if payload is None:
-            raise DeliveryError('FEEDBACK_NOT_FOUND', retry_after=900)
-        send(payload)
+        if use_relay:
+            from .notification_relay_client import RelayClient, validate_receipt
+            if not saved.get('relay_request'):
+                raise DeliveryError('FEEDBACK_NOT_FOUND', retry_after=900)
+            if saved.get('relay_target') != settings.notification_relay_target or saved.get('relay_source_fingerprint') != source_fingerprint() or not settings.notification_relay_token:
+                raise DeliveryError('RELAY_CONFIGURATION_CHANGED', retry_after=900, uncertain=True)
+            known_id = saved.get('relay_notification_id')
+            created = datetime.fromisoformat(saved['relay_request']['request_created_at'])
+            if not known_id and claimed_at >= created + timedelta(days=7):
+                raise DeliveryError('REQUEST_EXPIRED')
+            client = (relay_client_factory or RelayClient)()
+            try:
+                remote = validate_receipt(client.get(known_id) if known_id else client.submit(saved['relay_request']), known_id)
+            finally:
+                client.close()
+        else:
+            if payload is None:
+                raise DeliveryError('FEEDBACK_NOT_FOUND', retry_after=900)
+            message_id = send(payload)
+            if type(message_id) is not int or message_id <= 0:
+                raise DeliveryError('TELEGRAM_INVALID_RESPONSE', uncertain=True)
     except DeliveryError as error:
         failure = error
     except Exception:
-        failure = DeliveryError('TELEGRAM_NETWORK_ERROR', uncertain=True)
+        failure = DeliveryError('RELAY_UNAVAILABLE' if use_relay else 'TELEGRAM_NETWORK_ERROR', uncertain=True)
 
     finished_at = now or utcnow()
-    values = {'lease_until': None, 'state': 'done', 'next_attempt_at': None, 'last_error_code': None}
+    state, next_at, code = 'done', None, None
+    if remote is not None:
+        from .notification_protocol import notifications_pb2 as pb
+        states = {pb.QUEUED: 'queued', pb.RETRY_WAIT: 'queued', pb.SENDING: 'running',
+                  pb.UNCERTAIN: 'uncertain', pb.TELEGRAM_ACCEPTED: 'done', pb.FAILED: 'rejected'}
+        state = states[remote.state]
+        code = DeliveryError(remote.safe_error_code).code if remote.safe_error_code else None
+        if state not in ('done', 'rejected'):
+            delay = 5
+            if remote.HasField('next_attempt_at'):
+                delay = max(5, min(900, remote.next_attempt_at.ToDatetime(tzinfo=finished_at.tzinfo).timestamp() - finished_at.timestamp()))
+            next_at = finished_at + timedelta(seconds=delay)
+        if remote.state == pb.TELEGRAM_ACCEPTED:
+            message_id = remote.telegram_message_id
     if failure:
-        delay = (5, 30, 120, 900)[min(attempt - 1, 3)]
-        values.update(state='uncertain' if failure.uncertain else 'error',
-                      next_attempt_at=finished_at + timedelta(seconds=max(delay, failure.retry_after)),
-                      last_error_code=failure.code)
+        terminal = failure.code in ('RELAY_REQUEST_INVALID', 'RELAY_UNAUTHENTICATED', 'RELAY_PERMISSION_DENIED',
+                                   'RELAY_IDEMPOTENCY_CONFLICT', 'RELAY_NOT_FOUND', 'REQUEST_EXPIRED')
+        delay = (5, 30, 120, 900)[min(attempt - 1, 3)] + (random.uniform(0, 1) if use_relay else 0)
+        uncertain = failure.uncertain or (use_relay and was_uncertain)
+        state = 'rejected' if terminal else ('uncertain' if uncertain else 'error')
+        next_at = None if terminal else finished_at + timedelta(seconds=max(delay, failure.retry_after))
+        code = failure.code
     with session_factory() as db:
-        if failure and failure.code == 'TELEGRAM_RATE_LIMIT':
+        event = db.scalar(select(Outbox).where(
+            Outbox.id == event_id, Outbox.state == 'running', Outbox.attempts == attempt,
+            Outbox.lease_until == lease,
+        ).with_for_update())
+        if event is None:
+            return True
+        if failure and failure.code == 'TELEGRAM_RATE_LIMIT' and key:
             persist_pause(db, key, finished_at, failure.retry_after)
-        changed = db.execute(update(Outbox).where(
-            Outbox.id == event_id, Outbox.state == 'running',
-            Outbox.attempts == attempt, Outbox.lease_until == lease,
-        ).values(**values))
+        payload = event.payload
+        if remote is not None:
+            payload = {**payload, 'relay_checked_at': finished_at.isoformat(), 'relay_notification_id': remote.notification_id,
+                       'relay_duplicate_possible': bool(payload.get('relay_duplicate_possible') or remote.duplicate_possible)}
+        if message_id is not None:
+            payload = {**payload, 'telegram_message_id': message_id}
+        event.payload = payload
+        event.state, event.next_attempt_at, event.last_error_code = state, next_at, code
+        # Remote SENDING is a pollable status, rather than a held source lease.
+        event.lease_until = next_at if state == 'running' else None
         db.commit()
-        if failure and changed.rowcount:
+        if failure:
             logger.warning('Notification %s: %s', event_id, failure.code)
     return True
 

@@ -1,5 +1,6 @@
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
+import { checkoutKey } from '../src/checkout-attempt.js';
 
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
@@ -10,7 +11,7 @@ const updatedAt = '2026-10-11T08:00:00Z';
 const csrfToken = 'browser-api-csrf-token-01234567890123456789';
 const money = value => new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'RUB', minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(value / 100);
 const error = (code, message) => ({ code, message, requestId: 'browser-api-request' });
-const staff = role => ({ user: { id: `api-${role}`, name: `API ${role}`, role }, csrfToken, expiresAt: '2027-01-01T00:00:00Z' });
+const staff = role => ({ user: { id: `api-${role}`, name: `API ${role}`, email: null, phone: null, emailVerified: false, phoneVerified: false, profileComplete: false }, capabilities: { operate: true, editSite: role === 'admin', manageUsers: role === 'admin' }, csrfToken, expiresAt: '2027-01-01T00:00:00Z' });
 const tinyPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a3ioAAAAASUVORK5CYII=', 'base64');
 const product = (id, overrides = {}) => ({
   id, externalId: `external-${id}`, sku: `SKU-${id}`, brand: 'API Brand', name: `Серверная деталь ${id}`,
@@ -107,9 +108,9 @@ async function open(t, { state = fixtures(), hash = '', seed = {}, handle, viewp
       const found = [...state.products, state.offPageProduct].find(item => item.id === id);
       return found ? json(route, { product: found, catalogUpdatedAt: updatedAt, stale: state.stale }) : json(route, error('PRODUCT_UNAVAILABLE', 'Товар недоступен'), 404);
     }
-    if (path === '/manager/session') {
+    if (path === '/manager/session' || path === '/customer/session') {
       if (method === 'GET') return state.session ? json(route, state.session) : json(route, error('UNAUTHORIZED', 'Войдите в кабинет'), 401);
-      if (method === 'POST') { state.session = staff(request.postDataJSON().login === 'admin' ? 'admin' : 'manager'); return json(route, state.session); }
+      if (method === 'POST') { state.session = staff(request.postDataJSON().email === 'admin@example.test' ? 'admin' : 'manager'); return json(route, state.session); }
       if (method === 'DELETE') { state.session = null; return route.fulfill({ status: 204 }); }
     }
     if (path === '/admin/site') {
@@ -223,19 +224,19 @@ test('true mobile navigation exposes all eight long server menu entries without 
     assert.equal(await page.evaluate(() => matchMedia('(pointer: coarse)').matches), true);
     const menu = page.locator('.mobile-menu');
     const summary = menu.locator('summary');
-    const items = menu.locator('.mobile-menu-items button');
+    const items = menu.locator('.mobile-menu-items a');
     assert.equal(await page.locator('.desktop-menu-item:visible').count(), 0);
     await mobileControls(page, ['.mobile-menu summary', '#search-form button', '.header-cart', '.catalog-nav', '.filter-row', '.stock-check', '#brand', '#sort', '.add-button'], ['#search', '#brand', '#sort']);
     for (let index = 0; index < state.site.menu.length; index++) {
       await summary.tap();
       assert.deepEqual(await items.allTextContents(), state.site.menu.map(item => item.label));
-      await mobileControls(page, ['.mobile-menu-items button']);
-      assert.equal(await items.evaluateAll(elements => elements.every(element => element.scrollWidth <= element.clientWidth + 1)), true, 'Long menu labels wrap inside their buttons');
+      await mobileControls(page, ['.mobile-menu-items a']);
+      assert.equal(await items.evaluateAll(elements => elements.every(element => element.scrollWidth <= element.clientWidth + 1)), true, 'Long menu labels wrap inside their links');
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), `Open menu must fit ${viewport.width}×${viewport.height}`);
       await items.nth(index).tap();
       assert.equal(await menu.evaluate(element => element.open), false);
       assert.equal(await summary.evaluate(element => document.activeElement === element), true);
-      await page.waitForFunction(() => location.hash === '#catalog');
+      await page.waitForFunction(() => location.hash === '#catalog?category=api-category');
     }
     assert.ok(requests.some(item => item.path === '/catalog' && item.query.category === 'api-category'), 'A mobile server menu entry navigates to its configured category');
     await summary.tap();
@@ -256,13 +257,13 @@ test('mobile staff sign-in, CRM tables and category assignment stay touch and ke
         await json(route, state.orders[0]); return true;
       },
     });
-    await page.locator('.staff-login').waitFor();
-    await mobileControls(page, ['.staff-login button'], ['[name="login"]', '[name="password"]']);
-    await page.locator('[name="login"]').fill('admin');
+    await page.locator('.account-card').waitFor();
+    await mobileControls(page, ['.account-card button'], ['[name="email"]', '[name="password"]']);
+    await page.locator('[name="email"]').fill('admin@example.test');
     await page.locator('[name="password"]').fill('browser-password');
-    await page.locator('.staff-login button[type="submit"]').tap();
+    await page.locator('.account-card button[type="submit"]').tap();
     await page.locator('.orders-table').waitFor();
-    await mobileControls(page, ['.staff-session .text-link', '#order-search-form button', '.status-filter', '.order-number', '.table-action'], ['[name="orderQuery"]']);
+    await mobileControls(page, ['.header-account button', '#order-search-form button', '.status-filter', '.order-number', '.table-action'], ['[name="orderQuery"]']);
     const ordersRegion = page.getByRole('region', { name: 'Заказы: прокрутка таблицы', exact: true });
     assert.equal(await ordersRegion.getAttribute('tabindex'), '0');
     await page.locator('.table-scroll-hint').waitFor();
@@ -336,7 +337,7 @@ test('HTTP failures have explicit retries; server content, pagination and latest
   await catalogReady(page);
   assert.equal(await page.locator('#hero-title').textContent(), state.site.hero.title);
   assert.equal(await page.locator('#promotions h3').textContent(), state.site.publications[0].title);
-  await page.getByRole('button', { name: 'Меню API', exact: true }).waitFor();
+  await page.getByRole('link', { name: 'Меню API', exact: true }).waitFor();
   assert.equal(await page.locator('.product-name').first().textContent(), state.products[0].websiteTitle);
   assert.equal(await page.locator('.product-card').count(), 24);
   assert.match(await page.locator('.pagination').textContent(), /1–24 из 25/);
@@ -464,12 +465,12 @@ test('a delayed checkout receipt preserves a new cart received from another tab'
 
 test('staff auth gates API access; managers cannot open admin catalog and admins create categories with CSRF', async t => {
   const { page, state, requests } = await open(t, { hash: '/#crm' });
-  await page.locator('.staff-login').waitFor();
-  assert.ok(requests.some(item => item.path === '/manager/session' && item.method === 'GET'));
+  await page.locator('.account-card').waitFor();
+  assert.ok(requests.some(item => item.path === '/customer/session' && item.method === 'GET'));
   assert.equal(requests.filter(item => item.path === '/manager/orders' || item.path.startsWith('/admin/')).length, 0);
-  await page.locator('[name="login"]').fill('manager');
+  await page.locator('[name="email"]').fill('manager@example.test');
   await page.locator('[name="password"]').fill('browser-password');
-  await page.locator('.staff-login button[type="submit"]').click();
+  await page.locator('.account-card button[type="submit"]').click();
   await page.locator('.orders-table').waitFor();
   assert.match(await page.locator('.orders-table').textContent(), /Серверный покупатель/);
   assert.equal(await page.locator('.crm-tabs a[href="#crm-catalog"]').count(), 0);
@@ -477,12 +478,12 @@ test('staff auth gates API access; managers cannot open admin catalog and admins
   await page.getByText('Управление каталогом доступно администратору.', { exact: true }).waitFor();
   assert.equal(await page.locator('#category-form').count(), 0);
   assert.equal(requests.filter(item => item.path.startsWith('/admin/')).length, 0);
-  await page.locator('.staff-session').getByRole('button', { name: 'Выйти', exact: true }).click();
-  await page.locator('.staff-login').waitFor();
-  assert.equal(requests.find(item => item.path === '/manager/session' && item.method === 'DELETE').headers['x-csrf-token'], csrfToken);
-  await page.locator('[name="login"]').fill('admin');
+  await page.getByRole('button', { name: 'Выйти', exact: true }).click();
+  await page.locator('.account-card').waitFor();
+  assert.equal(requests.find(item => item.path === '/customer/session' && item.method === 'DELETE').headers['x-csrf-token'], csrfToken);
+  await page.locator('[name="email"]').fill('admin@example.test');
   await page.locator('[name="password"]').fill('browser-password');
-  await page.locator('.staff-login button[type="submit"]').click();
+  await page.locator('.account-card button[type="submit"]').click();
   await page.locator('[data-testid="product-category-api-part-1"]').waitFor();
   assert.equal(await page.locator('#product-form').count(), 0, 'API mode cannot create accounting products');
   await page.locator('#category-name').fill('Категория создана сервером');
@@ -581,9 +582,9 @@ test('expired catalog session returns to login instead of keeping an unusable ad
   await page.locator('[data-testid="product-category-api-part-1"]').waitFor();
   expire = true;
   await page.locator('#catalog-admin-search').fill('SKU');
-  await page.locator('.staff-login').waitFor();
+  await page.locator('.account-card').waitFor();
   assert.equal(await page.locator('#category-form').count(), 0);
-  assert.match(await page.locator('.staff-login').textContent(), /Сессия завершена/);
+  assert.match(await page.locator('.crm-page').textContent(), /Сессия завершена/);
   await noServerStorage(page);
 });
 
@@ -609,17 +610,17 @@ test('a late status 401 from the previous session cannot invalidate a newer logi
   await page.locator('[data-action="status"][data-status="cancelled"]').click();
   await sent;
   await page.locator('dialog[open] .dialog-close').click();
-  await page.locator('.staff-session').getByRole('button', { name: 'Выйти', exact: true }).click();
-  await page.locator('.staff-login').waitFor();
-  await page.locator('[name="login"]').fill('admin');
+  await page.getByRole('button', { name: 'Выйти', exact: true }).click();
+  await page.locator('.account-card').waitFor();
+  await page.locator('[name="email"]').fill('admin@example.test');
   await page.locator('[name="password"]').fill('browser-password');
-  await page.locator('.staff-login button[type="submit"]').click();
+  await page.locator('.account-card button[type="submit"]').click();
   await page.locator('.crm-tabs a[href="#crm-catalog"]').waitFor();
   const finished = page.waitForResponse(response => response.request().method() === 'PATCH' && response.url().endsWith('/status'));
   release();
   await finished;
-  await page.waitForFunction(() => !document.querySelector('.staff-login') && document.querySelector('.staff-session')?.textContent.includes('API admin'));
-  assert.equal(await page.locator('.staff-login').count(), 0);
+  await page.waitForFunction(() => !document.querySelector('.account-card') && document.querySelector('.header-account .crm-nav')?.title === 'API admin');
+  assert.equal(await page.locator('.account-card').count(), 0);
   await noServerStorage(page);
 });
 
@@ -633,7 +634,9 @@ test('server-managed long headings, descriptions and buttons fit desktop and mob
   await page.locator('#hero-title').waitFor();
   for (const width of [1440, 390, 320]) {
     await page.setViewportSize({ width, height: 1100 });
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
     const overflow = await page.evaluate(() => ({ width: document.documentElement.clientWidth, scroll: document.documentElement.scrollWidth }));
+    if (overflow.scroll > overflow.width + 1) t.diagnostic(JSON.stringify(await page.evaluate(() => [...document.querySelectorAll('body *')].filter(element => element.scrollWidth > element.clientWidth + 1 && getComputedStyle(element).overflowX === 'visible').slice(0, 12).map(element => ({ tag: element.tagName, class: element.className, right: element.getBoundingClientRect().right, width: element.clientWidth, scroll: element.scrollWidth })))));
     assert.ok(overflow.scroll <= overflow.width + 1, `API content overflow at ${width}px: ${JSON.stringify(overflow)}`);
   }
 });
@@ -693,7 +696,7 @@ test('mobile admins save long hero text, typed targets and reordered menu items 
     await page.getByTestId('move-menu-up-1').tap();
     assert.equal(await page.getByTestId('menu-label-0').inputValue(), 'Горячие предложения из API');
     await page.getByTestId('remove-menu-item-1').tap();
-    await mobileControls(page, ['.content-tabs button', '[data-testid="save-site"]', '[data-testid="add-menu-item"]', '.menu-editor-actions button', '.content-check'], ['.content-manager input:not([type="checkbox"])', '.content-manager textarea', '.content-manager select']);
+    await mobileControls(page, ['.content-tabs a', '[data-testid="save-site"]', '[data-testid="add-menu-item"]', '.menu-editor-actions button', '.content-check'], ['.content-manager input:not([type="checkbox"])', '.content-manager textarea', '.content-manager select']);
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), `Content editor fits ${viewport.width}px with long fields`);
     await page.getByTestId('save-site').tap();
     await page.getByTestId('site-success').waitFor();
@@ -737,7 +740,8 @@ test('HTTP publication drafts stay private until publish and disappear after arc
   await mobileControls(page, ['[data-testid="save-publication"]', '.publication-list-item', '[data-testid="publication-media-api-image"]'], ['[data-testid="publication-title"]', '[data-testid="publication-description"]', '[data-testid="publication-status"]']);
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
   await page.getByTestId('save-publication').tap();
-  await page.getByTestId('publication-success').waitFor();
+  await page.waitForFunction(() => new URLSearchParams(location.hash.split('?')[1]).has('publication'));
+  await page.getByTestId('publication-title').waitFor();
   const create = requests.find(item => item.path === '/admin/publications' && item.method === 'POST');
   assert.equal(create.headers['x-csrf-token'], csrfToken);
   assert.equal(create.body.status, 'draft');
@@ -834,23 +838,23 @@ test('content access and failed saves preserve drafts while session generations 
   const sent = page.waitForRequest(request => request.method() === 'PATCH' && request.url().endsWith('/admin/site'));
   await page.getByTestId('save-site').click();
   await sent;
-  await page.locator('.staff-session').getByRole('button', { name: 'Выйти', exact: true }).click();
-  await page.locator('.staff-login').waitFor();
-  await page.locator('[name="login"]').fill('admin');
+  await page.getByRole('button', { name: 'Выйти', exact: true }).click();
+  await page.locator('.account-card').waitFor();
+  await page.locator('[name="email"]').fill('admin@example.test');
   await page.locator('[name="password"]').fill('browser-password');
-  await page.locator('.staff-login button[type="submit"]').click();
+  await page.locator('.account-card button[type="submit"]').click();
   await page.getByTestId('hero-title').waitFor();
   const finished = page.waitForResponse(response => response.request().method() === 'PATCH' && response.url().endsWith('/admin/site'));
   release();
   await (await finished).finished();
   await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-  assert.equal(await page.locator('.staff-login').count(), 0, 'An unmounted editor cannot expire the newer login');
+  assert.equal(await page.locator('.account-card').count(), 0, 'An unmounted editor cannot expire the newer login');
   failure = 'expiry';
   await page.getByTestId('hero-title').fill('Проверка текущей сессии');
   await page.getByTestId('save-site').click();
-  await page.locator('.staff-login').waitFor();
+  await page.locator('.account-card').waitFor();
   assert.equal(await page.locator('.content-manager').count(), 0);
-  assert.match(await page.locator('.staff-login').textContent(), /Сессия завершена/);
+  assert.match(await page.locator('.crm-page').textContent(), /Сессия завершена/);
   await noServerStorage(page);
 });
 
@@ -948,4 +952,35 @@ test('a delayed public site response from the first content save cannot replace 
   assert.deepEqual(patches.map(item => item.body.hero.title), ['Первое сохранение с задержанным ответом', 'Второе актуальное сохранение']);
   assert.equal(state.siteVersion, 9);
   await noServerStorage(page);
+});
+
+
+test('a legacy guest checkout attempt keeps its original key after the accounts upgrade', async t => {
+  const state = fixtures();
+  const legacyBody = {
+    customer: { name: 'Гость до обновления', phone: '+79991234567', email: '' },
+    fulfillment: { method: 'pickup', address: '' },
+    items: [{ productId: state.products[0].id, quantity: 1, expectedUnitPriceKopecks: state.products[0].priceKopecks }],
+  };
+  const saved = new Map();
+  const storage = { getItem: name => saved.get(name) ?? null, setItem: (name, value) => saved.set(name, value) };
+  const legacyKey = await checkoutKey(legacyBody, storage);
+  const { page, requests } = await open(t, {
+    state, hash: '/#cart', seed: {
+      local: { 'lavr.cart.v1': JSON.stringify([{ productId: state.products[0].id, quantity: 1 }]) },
+      session: { 'lavr.checkout-attempt.v1': saved.get('lavr.checkout-attempt.v1') },
+    },
+    handle: async ({ route, path, method }) => {
+      if (path !== '/orders' || method !== 'POST') return false;
+      await json(route, state.receipt, 200); return true;
+    },
+  });
+  await checkoutReady(page);
+  await page.locator('#checkout-form [name="name"]').fill(legacyBody.customer.name);
+  await page.locator('#checkout-form [name="phone"]').fill(legacyBody.customer.phone);
+  await page.locator('.checkout-submit').click();
+  await page.locator('.receipt').waitFor();
+  const submission = requests.find(request => request.path === '/orders' && request.method === 'POST');
+  assert.deepEqual(submission.body, legacyBody);
+  assert.equal(submission.headers['idempotency-key'], legacyKey);
 });

@@ -69,3 +69,18 @@ test('image upload validation rejects invalid types and limits before transport'
     assert.throws(() => validateMediaUpload(input, alt), /изображен|файл|текст/i);
   }
 });
+
+test('CMS publication media and target IDs count Unicode code points without relaxing boundaries', () => {
+  const id = '🚗'.repeat(128);
+  const record = { ...publication(), id, imageIds: [id], target: { type: 'product', productId: id }, status: 'draft', startsAt: null, endsAt: null, version: 1 };
+  assert.equal(isPublication(record), true);
+  assert.equal(isAdminMedia({ ...media(), id }), true);
+  const config = { hero: { ...hero(), imageId: id }, settings: settings(), menu: [{ label: 'Категория', target: { type: 'category', categoryId: id }, position: 0, isVisible: true }], version: 1 };
+  assert.equal(isSiteConfiguration(config), true);
+  for (const invalid of ['', '.', '..', 'bad\nID', 'bad\u007fID', '🚗'.repeat(129)]) {
+    assert.equal(isPublication({ ...record, id: invalid }), false);
+    assert.equal(isPublication({ ...record, imageIds: [invalid] }), false);
+    assert.equal(isPublication({ ...record, target: { type: 'product', productId: invalid } }), false);
+    assert.equal(isAdminMedia({ ...media(), id: invalid }), false);
+  }
+});

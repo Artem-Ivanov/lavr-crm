@@ -1,40 +1,43 @@
+import { createCatalogImportMethods } from './http-catalog-import-api.js';
+import { isUnit, isQuantity, productUnit, MAX_STOCK, validRequestQuantity, validSnapshotQuantity } from '../quantity.js';
+import { isAdminUser, USER_ROLES, isUserSession, isAccountFlow, isOwnOrder, isOwnFeedback, normalizeAccountInput, normalizeOwnFeedback, validateOwnOrder } from '../accounts.js';
 import { isSiteConfiguration, isPublication, isAdminMedia, validateSitePatch, validatePublicationInput, validateMediaUpload } from '../content.js';
 import { FEEDBACK_STATUSES, normalizeFeedbackInput, normalizeFeedbackStatus, normalizeFeedbackNote, isFeedbackReceipt, isFeedbackCase } from '../feedback.js';
 
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const text = (value, min = 0, max = 4000) => typeof value === 'string' && value.length >= min && value.length <= max;
 const integer = (value, min = 0, max = Number.MAX_SAFE_INTEGER) => Number.isSafeInteger(value) && value >= min && value <= max;
-const id = value => text(value, 1, 128) && !/[\u0000-\u001f\u007f]/.test(value) && value !== '.' && value !== '..';
+const id = value => typeof value === 'string' && [...value].length >= 1 && [...value].length <= 128 && !/[\u0000-\u001f\u007f]/.test(value) && value !== '.' && value !== '..';
 const timestamp = value => text(value, 1, 80) && Number.isFinite(Date.parse(value));
 const list = (value, check, max = Number.MAX_SAFE_INTEGER) => Array.isArray(value) && value.length <= max && value.every(check);
 const imagePath = value => typeof value === 'string' && /^(?:|\/api\/media\/[A-Za-z0-9_-]+|\/images\/(?:hero-car|motor-oil|oil-filter|brake-disc|spark-plug|air-filter)\.jpg)$/.test(value);
 const media = value => object(value) && id(value.id) && /^\/api\/media\/[A-Za-z0-9_-]+$/.test(value.path)
   && text(value.alt, 0, 240) && integer(value.width, 1, 4096) && integer(value.height, 1, 4096);
 const nullableText = (value, min, max) => value === null || text(value, min, max);
-const productCore = value => object(value) && id(value.id) && id(value.category) && text(value.sku, 1, 80)
-  && text(value.brand, 1, 80) && text(value.name, 1, 240) && integer(value.priceKopecks) && integer(value.stock, 0, 2147483647);
-const product = value => productCore(value) && id(value.externalId) && imagePath(value.image) && integer(value.deliveryDays, 0, 365)
+const productCore = value => object(value) && id(value.id) && id(value.category) && text(value.sku, 0, 80)
+  && text(value.brand, 0, 80) && text(value.name, 1, 240) && integer(value.priceKopecks) && isQuantity(value.stock, value.unit === null ? 'кг' : productUnit(value), { max: MAX_STOCK, zero: true });
+const presentationProduct = value => productCore(value) && id(value.externalId) && imagePath(value.image) && integer(value.deliveryDays, 0, 365)
   && (value.images === undefined || list(value.images, media, 8))
   && (value.websiteTitle === undefined || nullableText(value.websiteTitle, 1, 240))
   && (value.websiteDescription === undefined || nullableText(value.websiteDescription, 0, 4000));
-const adminProduct = value => productCore(value) && typeof value.isVisible === 'boolean';
+const product = value => presentationProduct(value) && value.unit !== null;
+const adminProduct = value => productCore(value) && typeof value.isVisible === 'boolean'
+  && (value.physicalStock === undefined || isQuantity(value.physicalStock, value.unit === null ? 'кг' : productUnit(value), { max: MAX_STOCK, zero: true }))
+  && (value.reservedStock === undefined || isQuantity(value.reservedStock, value.unit === null ? 'кг' : productUnit(value), { max: MAX_STOCK, zero: true }));
 const category = value => object(value) && id(value.id) && text(value.name, 1, 80) && integer(value.position, 0, 1000000) && typeof value.showInMenu === 'boolean';
 const adminCategory = value => category(value) && typeof value.isVisible === 'boolean' && integer(value.version, 1);
 const orderStatuses = ['new', 'confirmed', 'ready', 'completed', 'cancelled'];
 const integrationStatuses = ['not_connected', 'pending_sync', 'exporting', 'exported', 'error', 'cancelled_before_sync'];
 const receipt = value => object(value) && id(value.id) && text(value.number, 1, 80) && timestamp(value.createdAt)
   && integer(value.totalKopecks) && orderStatuses.includes(value.status) && integrationStatuses.includes(value.integrationStatus);
-const customer = value => object(value) && text(value.name, 1, 100) && text(value.phone, 10, 30) && (value.email === undefined || text(value.email, 0, 254));
+const customer = (value, allowEmptyName = false) => object(value) && text(value.name, allowEmptyName ? 0 : 1, 100) && text(value.phone, 10, 30) && (value.email === undefined || text(value.email, 0, 254));
 const fulfillment = value => object(value) && ['pickup', 'delivery'].includes(value.method)
   && (value.address === undefined || text(value.address, 0, 500)) && (value.method !== 'delivery' || text(value.address, 1, 500) && value.address.trim().length > 0);
-const orderItem = value => object(value) && id(value.productId) && text(value.sku, 1, 80) && text(value.brand, 1, 80)
-  && text(value.name, 1, 240) && integer(value.quantity, 1, 999) && integer(value.unitPriceKopecks);
-const managerOrder = value => receipt(value) && customer(value.customer) && fulfillment(value.fulfillment)
+const orderItem = value => object(value) && id(value.productId) && text(value.sku, 0, 80) && text(value.brand, 0, 80)
+  && text(value.name, 1, 240) && validSnapshotQuantity(value) && integer(value.unitPriceKopecks);
+const managerOrder = value => receipt(value) && customer(value.customer, true) && fulfillment(value.fulfillment)
   && list(value.items, orderItem) && value.items.length > 0 && integer(value.version, 1)
   && typeof value.canCancel === 'boolean' && nullableText(value.externalDocumentId, 0, 128);
-const managerSession = value => object(value) && object(value.user) && id(value.user.id) && text(value.user.name, 1, 240)
-  && ['manager', 'admin'].includes(value.user.role) && typeof value.csrfToken === 'string'
-  && /^[\x21-\x7e]{32,256}$/.test(value.csrfToken) && timestamp(value.expiresAt);
 const presentation = value => object(value) && id(value.productId) && id(value.categoryId) && integer(value.version, 1)
   && nullableText(value.websiteTitle, 1, 240) && nullableText(value.websiteDescription, 0, 4000) && list(value.imageIds, id, 8);
 const target = value => object(value) && (value.type === 'catalog'
@@ -78,7 +81,7 @@ function feedbackAttemptHeader(key) {
 }
 function feedbackOrderBody(body) {
   if (!object(body) || !customer(body.customer) || !fulfillment(body.fulfillment)
-    || !list(body.items, item => object(item) && id(item.productId) && integer(item.quantity, 1, 999) && integer(item.expectedUnitPriceKopecks), 100)
+    || !list(body.items, item => object(item) && id(item.productId) && validRequestQuantity(item) && integer(item.expectedUnitPriceKopecks), 100)
     || body.items.length === 0) throw new Error('Некорректные данные заказа.');
   const contact = normalizeFeedbackInput({ type: 'contact', name: body.customer.name, phone: body.customer.phone, email: body.customer.email });
   if (!contact.name || !contact.phone) throw new Error('Укажите имя и российский телефон покупателя для заказа.');
@@ -103,7 +106,7 @@ export function createHttpApi({ baseUrl = '/api', fetchImpl = globalThis.fetch }
   let csrfToken = null;
   let sessionGeneration = 0;
 
-  async function request(path, { method = 'GET', body, headers = {}, protectedMutation = false, empty = false } = {}) {
+  async function request(path, { method = 'GET', body, headers = {}, protectedMutation = false, empty = false, identityBound = /^\/(?:customer|manager|admin)\//.test(path) || method !== 'GET' } = {}) {
     const generation = sessionGeneration;
     const requestHeaders = { Accept: 'application/json', ...headers };
     const multipart = body instanceof FormData;
@@ -116,16 +119,22 @@ export function createHttpApi({ baseUrl = '/api', fetchImpl = globalThis.fetch }
       method, credentials: 'same-origin', cache: 'no-store', redirect: 'error', headers: requestHeaders,
       ...(body === undefined ? {} : { body: multipart ? body : JSON.stringify(body) }),
     });
+    if (identityBound && generation !== sessionGeneration) throw apiError('Аккаунт изменился. Повторите запрос.', undefined, 'SESSION_CHANGED');
     if (response.status === 401 && generation === sessionGeneration) csrfToken = null;
     if (response.status === 204 && response.ok && empty) return { data: undefined };
     let data;
     if (/^application\/json(?:\s*;|$)/i.test(response.headers.get('Content-Type') || '')) {
       try { data = await response.json(); } catch { /* An error page must never replace application data. */ }
     }
+    if (identityBound && generation !== sessionGeneration) throw apiError('Аккаунт изменился. Повторите запрос.', undefined, 'SESSION_CHANGED');
     if (!response.ok) {
       const message = object(data) && text(data.message, 1, 2000) ? data.message : `Ошибка API (${response.status}). Попробуйте позже.`;
       const code = object(data) && text(data.code, 1, 128) ? data.code : 'HTTP_ERROR';
-      throw apiError(message, response.status, code);
+      const error = apiError(message, response.status, code);
+      if (code === 'UNIT_CHANGED' && list(data.details, detail => object(detail) && id(detail.productId) && detail.code === code && (detail.currentUnit === null || isUnit(detail.currentUnit)), 100)) {
+        error.details = data.details.map(({ productId, currentUnit }) => ({ productId, code, currentUnit }));
+      }
+      throw error;
     }
     if (data === undefined) throw apiError('API вернул некорректный ответ JSON.', response.status, 'INVALID_RESPONSE');
     return { data, etag: response.headers.get('ETag') };
@@ -133,21 +142,24 @@ export function createHttpApi({ baseUrl = '/api', fetchImpl = globalThis.fetch }
 
   async function getPage(path, filters, requested, checkItem) {
     const { offset, limit } = pagination(requested);
-    const { data } = await request(`${path}${queryString({ ...filters, offset, limit })}`);
+    const { data } = await request(`${path}${queryString({ ...filters, offset, limit })}`, { identityBound: !['/catalog'].includes(path) });
     return checked(data, value => object(value) && integer(value.total) && value.offset === offset && value.limit === limit
       && list(value.items, checkItem, limit) && value.items.length <= Math.max(0, value.total - offset));
   }
-  async function loadSession(method, body) {
+  async function loadSession(method, body, path = '/manager/session', protectedMutation = false) {
     const generation = ++sessionGeneration;
-    csrfToken = null;
-    const { data } = await request('/manager/session', { method, body });
-    checked(data, managerSession);
+    const previousToken = csrfToken;
+    csrfToken = protectedMutation ? previousToken : null;
+    const { data } = await request(path, { method, body, protectedMutation, identityBound: true });
+    checked(data, isUserSession);
     if (generation === sessionGeneration) csrfToken = data.csrfToken;
     return data;
   }
+  function loginWithEmail(input) { return loadSession('POST', normalizeAccountInput(input, 'login'), '/customer/session'); }
 
   return {
     mode: 'api',
+    ...createCatalogImportMethods(request),
     canCreateProduct: false,
     async getSite() {
       return checked((await request('/site')).data, publicSite);
@@ -226,7 +238,7 @@ export function createHttpApi({ baseUrl = '/api', fetchImpl = globalThis.fetch }
       return Object.freeze(checked((await request('/feedback', { method: 'POST', body, headers })).data, isFeedbackReceipt));
     },
     async getFeedback({ query = '', status = '' } = {}, requested) {
-      if (!text(query, 0, 120) || status !== '' && !Object.hasOwn(FEEDBACK_STATUSES, status)) throw new Error('Некорректные фильтры обращений.');
+      if (!text(query, 0, 254) || status !== '' && !Object.hasOwn(FEEDBACK_STATUSES, status)) throw new Error('Некорректные фильтры обращений.');
       return getPage('/manager/feedback', { q: query, status }, requested, isFeedbackCase);
     },
     async getFeedbackDetail(feedbackId) {
@@ -256,7 +268,7 @@ export function createHttpApi({ baseUrl = '/api', fetchImpl = globalThis.fetch }
     async createOrder(body, idempotencyKey) {
       if (typeof idempotencyKey !== 'string' || !/^[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}$/i.test(idempotencyKey)) throw new Error('Некорректный ключ оформления заказа.');
       if (!object(body) || !customer(body.customer) || !fulfillment(body.fulfillment)
-        || !list(body.items, item => object(item) && id(item.productId) && integer(item.quantity, 1, 999) && integer(item.expectedUnitPriceKopecks), 100)
+        || !list(body.items, item => object(item) && id(item.productId) && validRequestQuantity(item) && integer(item.expectedUnitPriceKopecks), 100)
         || body.items.length === 0) throw new Error('Некорректные данные заказа.');
       return checked((await request('/orders', { method: 'POST', body, headers: { 'Idempotency-Key': idempotencyKey } })).data, receipt);
     },
@@ -279,23 +291,56 @@ export function createHttpApi({ baseUrl = '/api', fetchImpl = globalThis.fetch }
       const path = `/admin/products/${pathId(productId)}/presentation`;
       if (!id(categoryId)) throw new Error('Некорректный идентификатор категории.');
       const { data, etag } = await request(path);
-      checked(data, value => object(value) && product(value.product) && presentation(value.presentation));
+      checked(data, value => object(value) && presentationProduct(value.product) && presentation(value.presentation));
       const version = `"${data.presentation.version}"`;
       if (etag !== null && etag !== version) throw apiError('Некорректная версия в ответе API.', undefined, 'INVALID_RESPONSE');
       return checked((await request(path, {
         method: 'PATCH', body: { categoryId }, protectedMutation: true, headers: { 'If-Match': etag || version },
       })).data, presentation);
     },
+    async listUsers({ query = '' } = {}, requested) {
+      if (!text(query, 0, 254)) throw new Error('Проверьте поисковый запрос.');
+      return getPage('/admin/users', { q: query }, requested, isAdminUser);
+    },
+    async getUser(userId) { return checkedVersion(await request(`/admin/users/${pathId(userId)}`, { identityBound: true }), isAdminUser); },
+    async updateUserRole(userId, role, version) {
+      if (!Object.hasOwn(USER_ROLES, role)) throw new Error('Выберите допустимую роль.');
+      return checkedVersion(await request(`/admin/users/${pathId(userId)}/permissions`, { method: 'PATCH', body: { role }, headers: { 'If-Match': versionHeader(version) }, protectedMutation: true, identityBound: true }), isAdminUser);
+    },
+    async updateUserStatus(userId, isActive, version) {
+      if (typeof isActive !== 'boolean') throw new Error('Проверьте статус пользователя.');
+      return checkedVersion(await request(`/admin/users/${pathId(userId)}/status`, { method: 'PATCH', body: { isActive }, headers: { 'If-Match': versionHeader(version) }, protectedMutation: true, identityBound: true }), isAdminUser);
+    },
+    async getUserSession() { return loadSession('GET', undefined, '/customer/session'); },
+    async loginUser(input) { return loginWithEmail(input); },
+    async signup(input) { return checked((await request('/customer/auth/signup', { method: 'POST', body: normalizeAccountInput(input, 'signup') })).data, isAccountFlow); },
+    async activate(input) { return loadSession('POST', normalizeAccountInput(input, 'confirm'), '/customer/auth/activate'); },
+    async resendCode(input) { return checked((await request('/customer/auth/resend', { method: 'POST', body: normalizeAccountInput(input, 'resend') })).data, isAccountFlow); },
+    async requestPasswordReset(input) { return checked((await request('/customer/auth/password-reset', { method: 'POST', body: normalizeAccountInput(input, 'reset') })).data, isAccountFlow); },
+    async confirmPasswordReset(input) {
+      const body = normalizeAccountInput(input, 'password');
+      ++sessionGeneration; csrfToken = null;
+      await request('/customer/auth/password-reset/confirm', { method: 'POST', body, empty: true, identityBound: true });
+    },
+    async startProfileActivation(input) { return checked((await request('/customer/profile/activation', { method: 'POST', body: normalizeAccountInput(input, 'profile'), protectedMutation: true, identityBound: true })).data, isAccountFlow); },
+    async confirmProfileActivation(input) { return loadSession('POST', normalizeAccountInput(input, 'confirm'), '/customer/profile/activation/confirm', true); },
+    async getOwnOrders(requested) { return getPage('/customer/orders', {}, requested, isOwnOrder); },
+    async getOwnOrder(orderId) { return checked((await request(`/customer/orders/${pathId(orderId)}`, { identityBound: true })).data, isOwnOrder); },
+    async createOwnOrder(input, key) { return checked((await request('/customer/orders', { method: 'POST', body: validateOwnOrder(input), headers: feedbackAttemptHeader(key), protectedMutation: true, identityBound: true })).data, isOwnOrder); },
+    async getOwnFeedback(requested) { return getPage('/customer/feedback', {}, requested, isOwnFeedback); },
+    async getOwnFeedbackCase(feedbackId) { return checked((await request(`/customer/feedback/${pathId(feedbackId)}`, { identityBound: true })).data, isOwnFeedback); },
+    async createOwnFeedback(input, key) { return checked((await request('/customer/feedback', { method: 'POST', body: normalizeOwnFeedback(input), headers: feedbackAttemptHeader(key), protectedMutation: true, identityBound: true })).data, isOwnFeedback); },
     async getSession() {
       return loadSession('GET');
     },
-    async login({ login, password }) {
-      if (!text(login, 1, 120) || !text(password, 1, 256)) throw new Error('Введите логин и пароль.');
-      return loadSession('POST', { login, password });
+    async login(input = {}) {
+      const { login, ...credentials } = input;
+      return loginWithEmail({ ...credentials, email: credentials.email ?? login });
     },
     async logout() {
       const generation = ++sessionGeneration;
-      await request('/manager/session', { method: 'DELETE', protectedMutation: true, empty: true });
+      const token = csrfToken; csrfToken = null;
+      await request('/customer/session', { method: 'DELETE', headers: token ? { 'X-CSRF-Token': token } : {}, empty: true, identityBound: true });
       if (generation === sessionGeneration) csrfToken = null;
     },
   };

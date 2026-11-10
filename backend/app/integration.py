@@ -7,9 +7,10 @@ from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Integer, String, U
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
-from .auth import record_audit, require_admin, require_admin_mutation
+from .auth import get_current_staff, record_audit, require_mutation
 from .common import ApiError, new_id, utcnow
 from .db import Base, get_db
+from .crypto import encrypted_property
 
 
 class IntegrationState(Base):
@@ -41,7 +42,8 @@ class Outbox(Base):
     id: Mapped[str] = mapped_column(String(128), primary_key=True, default=new_id)
     order_id: Mapped[str | None] = mapped_column(ForeignKey('orders.id', ondelete='CASCADE'), nullable=True, index=True)
     event_type: Mapped[str] = mapped_column(String(40), index=True)
-    payload: Mapped[dict] = mapped_column(JSONB)
+    _payload: Mapped[dict] = mapped_column('payload', JSONB)
+    payload = encrypted_property('payload')
     state: Mapped[str] = mapped_column(String(30), default='queued', index=True)
     attempts: Mapped[int] = mapped_column(Integer, default=0)
     lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -81,7 +83,7 @@ router = APIRouter(prefix='/api')
 
 
 @router.get('/manager/integration/health')
-def health(response: Response, db: Session = Depends(get_db), staff=Depends(require_admin)):
+def health(response: Response, db: Session = Depends(get_db), staff=Depends(get_current_staff)):
     from .catalog import catalog_metadata
     from .orders import Order
 
@@ -118,7 +120,7 @@ def command_replay(db, scope, key):
 
 
 @router.post('/manager/integration/sync', status_code=202)
-def sync(response: Response, idempotency_key: str | None = Header(default=None), db: Session = Depends(get_db), staff=Depends(require_admin_mutation)):
+def sync(response: Response, idempotency_key: str | None = Header(default=None), db: Session = Depends(get_db), staff=Depends(require_mutation)):
     from .orders import advisory_key, parse_idempotency_key
 
     key = parse_idempotency_key(idempotency_key)
@@ -143,7 +145,7 @@ def sync(response: Response, idempotency_key: str | None = Header(default=None),
 
 
 @router.post('/manager/integration/orders/{order_id}/retry', status_code=202)
-def retry(order_id: Annotated[str, Path(min_length=1, max_length=128, pattern=r'^[^\x00-\x1f\x7f]+$')], response: Response, idempotency_key: str | None = Header(default=None), db: Session = Depends(get_db), staff=Depends(require_admin_mutation)):
+def retry(order_id: Annotated[str, Path(min_length=1, max_length=128, pattern=r'^[^\x00-\x1f\x7f]+$')], response: Response, idempotency_key: str | None = Header(default=None), db: Session = Depends(get_db), staff=Depends(require_mutation)):
     from .orders import Order, parse_idempotency_key
 
     key = parse_idempotency_key(idempotency_key)

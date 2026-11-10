@@ -99,9 +99,9 @@ test('cart refuses invalid quantities, unknown products and stock overflow', () 
   assert.throws(() => addCartItem([], 'missing', products));
 });
 
-test('totals and item count use quantities and exact integer kopecks', () => {
+test('totals use exact integer kopecks and the counter counts positions', () => {
   assert.equal(cartTotal(cart, products), 505048);
-  assert.equal(cartCount(cart), 3);
+  assert.equal(cartCount(cart), 2);
   assert.equal(cartTotal([], products), 0);
 });
 
@@ -162,7 +162,7 @@ test('new order snapshots names, SKUs and current catalog prices', () => {
   assert.equal(order.totalKopecks, 505048);
   assert.equal(order.status, 'new');
   assert.equal(order.integrationStatus, 'not_connected');
-  assert.deepEqual(order.items[0], { productId: 'oil', sku: 'OC-384', brand: 'MANN-FILTER', name: 'Масляный фильтр', quantity: 2, unitPriceKopecks: 129999 });
+  assert.deepEqual(order.items[0], { productId: 'oil', sku: 'OC-384', brand: 'MANN-FILTER', name: 'Масляный фильтр', quantity: 2, unitPriceKopecks: 129999, unit: 'шт', lineTotalKopecks: 259998 });
   assert.ok(order.id && order.number && Number.isFinite(Date.parse(order.createdAt)));
   source[0].priceKopecks = 1;
   source[0].name = 'Изменено';

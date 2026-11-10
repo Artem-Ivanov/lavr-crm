@@ -2,8 +2,10 @@
 import sys
 
 from .telegram_api import DeliveryError, check_connection, site_origin
+from .config import validate_notification_transport
 
 _ERROR_MESSAGES = {
+    'NOTIFICATION_TRANSPORT_INVALID': 'Укажите NOTIFICATION_TRANSPORT=direct или relay.',
     'TELEGRAM_NOT_CONFIGURED': 'Заполните серверные TELEGRAM_BOT_TOKEN и TELEGRAM_CHAT_ID.',
     'TELEGRAM_INVALID_SITE_URL': 'Укажите корректный PUBLIC_SITE_URL без пути, пароля, query и fragment.',
     'TELEGRAM_AUTH_ERROR': 'Telegram отклонил токен бота. Проверьте серверную настройку.',
@@ -25,6 +27,24 @@ def main(argv=None):
         print('Использование: python -m app.telegram_cli check|test', file=sys.stderr)
         return 2
     try:
+        if validate_notification_transport() == 'relay':
+            from .notification_relay_client import RelayClient
+            client = RelayClient()
+            try:
+                client.check()
+            finally:
+                client.close()
+            if arguments == ['check']:
+                print('Проверка relay пройдена: TLS, авторизация и ledger доступны; доставка Telegram проверяется отдельной командой test.')
+            else:
+                from .notification_worker import send_test_notification
+                from .notification_protocol import notifications_pb2 as pb
+                receipt = send_test_notification()
+                if receipt.state == pb.TELEGRAM_ACCEPTED and receipt.HasField('telegram_message_id') and receipt.telegram_message_id > 0:
+                    print(f'Тестовое сообщение принято Telegram: сообщение {receipt.telegram_message_id}.')
+                else:
+                    print(f'Тест принят relay: {receipt.notification_id}; доставка Telegram пока не подтверждена. Повтор команды создаёт новое техническое сообщение.')
+            return 0
         info = check_connection()
         if arguments == ['check']:
             print(f'Проверка пройдена: бот {info["bot_id"]}, канал {info["chat_id"]}; публикация разрешена.')

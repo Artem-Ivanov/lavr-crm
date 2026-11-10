@@ -1,16 +1,32 @@
 export const FEEDBACK_STATUSES = Object.freeze({
   new: 'Новое', in_progress: 'В работе', converted: 'Создан заказ', closed: 'Закрыто без заказа',
 });
+export const FEEDBACK_STATUS_DESCRIPTIONS = Object.freeze({
+  new: 'Обращение принято и ожидает ответственного сотрудника.',
+  in_progress: 'Ответственный сотрудник работает с обращением.',
+  converted: 'По обращению создан заказ. Продолжение работы — в карточке заказа.',
+  closed: 'Работа с обращением завершена без создания заказа.',
+});
+export const isFeedbackNumber = value => Number.isSafeInteger(value) && value > 0;
+const referenceDate = new Intl.DateTimeFormat('ru-RU', {
+  timeZone: 'Europe/Moscow', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+});
+export function formatFeedbackReference(number, createdAt) {
+  const parts = Object.fromEntries(referenceDate.formatToParts(new Date(createdAt)).map(part => [part.type, part.value]));
+  return `№${number} от ${parts.day}-${parts.month}-${parts.year} ${parts.hour}:${parts.minute}`;
+}
 
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const controls = /[\u0000-\u0009\u000b\u000c\u000e-\u001f\u007f-\u009f]/;
 const singleLineControls = /[\u0000-\u001f\u007f-\u009f]/;
 const string = (value, max, multiline = false) => typeof value === 'string' && [...value].length <= max && !(multiline ? controls : singleLineControls).test(value);
+// Conversion replies and public receipts created before integer numbering are immutable.
+const snapshotNumber = value => isFeedbackNumber(value) || string(value, 80) && value.trim().length > 0;
 const exact = (value, keys, optional = []) => object(value) && keys.every(key => Object.hasOwn(value, key))
   && Object.keys(value).every(key => keys.includes(key) || optional.includes(key));
 const identifier = value => string(value, 128) && value.length > 0 && value !== '.' && value !== '..';
 const date = value => string(value, 80) && value.length > 0 && Number.isFinite(Date.parse(value));
-const staff = value => exact(value, ['id', 'name']) && identifier(value.id) && string(value.name, 240) && value.name.trim().length > 0;
+const staff = value => exact(value, ['id', 'name']) && identifier(value.id) && string(value.name, 240);
 const optionalDemo = value => value.demo === undefined || value.demo === true;
 const inputKeys = ['type', 'name', 'phone', 'email', 'messenger', 'message'];
 
@@ -65,7 +81,7 @@ export function normalizeFeedbackNote(input) {
 
 export function isFeedbackReceipt(value) {
   return exact(value, ['id', 'number', 'createdAt', 'state'], ['demo']) && identifier(value.id)
-    && string(value.number, 80) && value.number.trim().length > 0 && date(value.createdAt)
+    && snapshotNumber(value.number) && date(value.createdAt)
     && value.state === 'accepted' && optionalDemo(value);
 }
 
@@ -75,8 +91,8 @@ const orderReceipt = value => object(value) && identifier(value.id) && string(va
   && ['not_connected', 'pending_sync', 'exporting', 'exported', 'error', 'cancelled_before_sync'].includes(value.integrationStatus);
 
 export function isFeedbackCase(value) {
-  if (!exact(value, ['id', 'number', 'createdAt', 'updatedAt', ...inputKeys, 'status', 'assignedTo', 'version', 'resolution', 'order', 'history', 'notification'], ['demo'])
-    || !identifier(value.id) || !string(value.number, 80) || !value.number.trim() || !date(value.createdAt) || !date(value.updatedAt)
+  if (!exact(value, ['id', 'number', 'createdAt', 'updatedAt', ...inputKeys, 'status', 'assignedTo', 'version', 'resolution', 'order', 'history', 'notification', 'canManage'], ['demo'])
+    || typeof value.canManage !== 'boolean' || !identifier(value.id) || !snapshotNumber(value.number) || !date(value.createdAt) || !date(value.updatedAt)
     || !Object.hasOwn(FEEDBACK_STATUSES, value.status) || !Number.isSafeInteger(value.version) || value.version < 1
     || !(value.assignedTo === null || staff(value.assignedTo)) || !string(value.resolution, 2000, true) || !optionalDemo(value)) return false;
   try {

@@ -1,3 +1,4 @@
+import { isQuantity, parseQuantity, productUnit, MAX_STOCK } from './quantity.js';
 import { CATEGORIES, PRODUCTS } from './catalog.js';
 
 const imagePaths = new Set(PRODUCTS.map(product => product.image));
@@ -30,16 +31,15 @@ function readProduct(raw, categories) {
   if (!isRecord(raw)) throw new Error('Некорректная номенклатура каталога.');
   const id = identifier(raw.id);
   const name = requiredText(raw.name, 160, 'Наименование');
-  const sku = requiredText(raw.sku, 80, 'Артикул');
-  const brand = requiredText(raw.brand, 80, 'Бренд');
-  if (!normalizedCode(sku) || !normalizedCode(brand)) throw new Error('Артикул и бренд должны содержать буквы или цифры.');
+  const sku = raw.sku === '' ? '' : requiredText(raw.sku, 80, 'Артикул');
+  const brand = raw.brand === '' ? '' : requiredText(raw.brand, 80, 'Бренд');
+  if (sku && !normalizedCode(sku) || brand && !normalizedCode(brand)) throw new Error('Артикул и бренд должны содержать буквы или цифры.');
   if (!categories.some(category => category.id === raw.category)) throw new Error('Выберите существующую категорию.');
   if (!Number.isSafeInteger(raw.priceKopecks) || raw.priceKopecks <= 0 || raw.priceKopecks > 1000000000) {
     throw new Error('Цена должна быть больше нуля и не превышать 10 000 000 ₽.');
   }
-  if (!Number.isSafeInteger(raw.stock) || raw.stock < 0 || raw.stock > 100000) {
-    throw new Error('Остаток должен быть целым числом от 0 до 100 000.');
-  }
+  const unit = productUnit(raw);
+  if (!isQuantity(raw.stock, unit === null ? 'кг' : unit, { max: MAX_STOCK, zero: true })) throw new Error('Проверьте остаток и единицу измерения.');
   if (typeof raw.externalId !== 'string' || typeof raw.description !== 'string' ||
       !Number.isSafeInteger(raw.deliveryDays) || raw.deliveryDays < 0 ||
       (raw.image !== '' && !imagePaths.has(raw.image)) || !isRecord(raw.specs) ||
@@ -48,7 +48,7 @@ function readProduct(raw, categories) {
   }
   return {
     id, externalId: raw.externalId, sku, brand, name, category: raw.category,
-    priceKopecks: raw.priceKopecks, stock: raw.stock, image: raw.image, deliveryDays: raw.deliveryDays,
+    priceKopecks: raw.priceKopecks, stock: raw.stock, unit, image: raw.image, deliveryDays: raw.deliveryDays,
     description: raw.description, specs: Object.fromEntries(Object.entries(raw.specs)),
   };
 }
@@ -59,11 +59,6 @@ function parsePrice(value) {
   return Number(match[1]) * 100 + Number((match[2] || '').padEnd(2, '0'));
 }
 
-function parseStock(value) {
-  if (typeof value === 'string' && /^\d+$/.test(value.trim())) return Number(value.trim());
-  if (typeof value === 'number') return value;
-  throw new Error('Введите целый неотрицательный остаток.');
-}
 
 export function initialCatalog() {
   return structuredClone({ categories: CATEGORIES, products: PRODUCTS });
@@ -84,7 +79,7 @@ export function restoreCatalog(raw) {
   }
   const products = raw.products.map(product => readProduct(product, categories));
   if (new Set(products.map(product => product.id)).size !== products.length ||
-      new Set(products.map(productKey)).size !== products.length) {
+      new Set(products.filter(product => product.sku && product.brand).map(productKey)).size !== products.filter(product => product.sku && product.brand).length) {
     throw new Error('В сохранённом каталоге повторяются товары или артикулы одного бренда.');
   }
   return { categories, products };
@@ -101,10 +96,10 @@ export function createCategory(catalog, input) {
 export function createProduct(catalog, input) {
   const product = readProduct({
     id: crypto.randomUUID(), externalId: '', name: input?.name, sku: input?.sku, brand: input?.brand,
-    category: input?.category, priceKopecks: parsePrice(input?.price), stock: parseStock(input?.stock),
+    category: input?.category, priceKopecks: parsePrice(input?.price), stock: parseQuantity(input?.stock, input?.unit === null ? 'кг' : input?.unit ?? 'шт', { max: MAX_STOCK }), unit: input?.unit,
     image: '', deliveryDays: 0, description: '', specs: {},
   }, catalog.categories);
-  if (catalog.products.some(existing => productKey(existing) === productKey(product))) {
+  if (product.sku && product.brand && catalog.products.some(existing => productKey(existing) === productKey(product))) {
     throw new Error('Товар с таким артикулом и брендом уже существует.');
   }
   return { ...catalog, products: [...catalog.products, product] };

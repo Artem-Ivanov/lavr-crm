@@ -7,9 +7,9 @@ after(() => browser.close());
 const baseUrl = process.env.BASE_URL || 'http://127.0.0.1:5173';
 const now = '2026-10-20T09:00:00Z';
 const ids = ['10000000-0000-4000-8000-000000000001', '10000000-0000-4000-8000-000000000002'];
-const staff = { user: { id: 'manager-1', name: 'Менеджер Тест', role: 'manager' }, csrfToken: 'feedback-browser-csrf-token-1234567890', expiresAt: '2027-01-01T00:00:00Z' };
+const staff = { user: { id: 'manager-1', name: 'Менеджер Тест', email: null, phone: null, emailVerified: false, phoneVerified: false, profileComplete: false }, capabilities: { operate: true, editSite: false, manageUsers: false }, csrfToken: 'feedback-browser-csrf-token-1234567890', expiresAt: '2027-01-01T00:00:00Z' };
 const product = { id: 'part-1', externalId: 'external-1', sku: 'TEST-1', brand: 'LAVR', name: 'Тестовый фильтр', category: 'filters', priceKopecks: 123400, stock: 10, image: '', deliveryDays: 1 };
-const feedback = (id, index = 1) => ({ id, number: `F-00${index}`, createdAt: now, updatedAt: now, type: 'request', name: '', phone: '', email: `buyer${index}@example.com`, messenger: { service: 'Telegram', address: `@buyer${index}` }, message: `Нужен фильтр ${index}`, status: 'new', assignedTo: null, version: 1, resolution: '', order: null, history: [], notification: { state: 'not_configured', code: null } });
+const feedback = (id, index = 1) => ({ id, number: index, createdAt: now, updatedAt: now, type: 'request', name: '', phone: '', email: `buyer${index}@example.com`, messenger: { service: 'Telegram', address: `@buyer${index}` }, message: `Нужен фильтр ${index}`, status: 'new', assignedTo: null, version: 1, resolution: '', order: null, history: [], canManage: true, notification: { state: 'not_configured', code: null } });
 const json = (route, body, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
 const failure = (route, message, status, code = 'TEST_ERROR') => json(route, { code, message, requestId: 'feedback-test' }, status);
 async function open(t, { hash = '', viewport = { width: 1440, height: 1100 }, session = null, handle } = {}) {
@@ -31,8 +31,8 @@ async function open(t, { hash = '', viewport = { width: 1440, height: 1100 }, se
     if (path === '/categories') return json(route, [{ id: 'filters', name: 'Фильтры', position: 0, showInMenu: true }]);
     if (path === '/catalog') return json(route, { items: [product], total: 1, offset: Number(url.searchParams.get('offset') || 0), limit: Number(url.searchParams.get('limit') || 24), catalogUpdatedAt: now, stale: false });
     if (path === '/catalog/part-1') return json(route, { product, catalogUpdatedAt: now, stale: false });
-    if (path === '/feedback' && method === 'POST') { state.submissions.push({ body, key: request.headers()['idempotency-key'] }); return json(route, { id: ids[0], number: 'F-001', createdAt: now, state: 'accepted' }, 202); }
-    if (path === '/manager/session') {
+    if (path === '/feedback' && method === 'POST') { state.submissions.push({ body, key: request.headers()['idempotency-key'] }); return json(route, { id: ids[0], number: 1, createdAt: now, state: 'accepted' }, 202); }
+    if (path === '/manager/session' || path === '/customer/session') {
       if (method === 'POST') { state.session = staff; return json(route, staff); }
       if (method === 'DELETE') { state.session = null; return route.fulfill({ status: 204 }); }
       return state.session ? json(route, state.session) : failure(route, 'Войдите в кабинет', 401);
@@ -55,9 +55,10 @@ async function open(t, { hash = '', viewport = { width: 1440, height: 1100 }, se
   return { page, state };
 }
 async function login(page) {
-  await page.getByLabel('Логин', { exact: true }).fill('manager');
-  await page.getByLabel('Пароль', { exact: true }).fill('test-password');
-  await page.getByRole('button', { name: 'Войти', exact: true }).click();
+  const form = page.locator('.account-form');
+  await form.getByLabel('Email', { exact: true }).fill('manager@example.test');
+  await form.getByLabel('Пароль', { exact: true }).fill('test-password');
+  await form.getByRole('button', { name: 'Войти', exact: true }).click();
 }
 
 test('public form validates every contact, preserves draft and accepts an email-only request', async t => {
@@ -76,7 +77,7 @@ test('public form validates every contact, preserves draft and accepts an email-
   await dialog.getByTestId('feedback-submit').dblclick();
   await dialog.getByTestId('feedback-receipt').waitFor();
   assert.ok(!(await dialog.getByTestId('feedback-receipt').textContent()).includes('Номер обращения'));
-  assert.ok(!(await dialog.getByTestId('feedback-receipt').textContent()).includes('F-001'));
+  assert.ok(!(await dialog.getByTestId('feedback-receipt').textContent()).includes('№1 от'));
   assert.equal(state.submissions.length, 1);
   assert.equal(state.submissions[0].body.type, 'request');
   assert.ok(state.submissions[0].key);
@@ -116,7 +117,7 @@ test('a successful submission allows a fresh request immediately and after reope
   assert.notEqual(state.submissions[2].key, state.submissions[1].key);
 
   await page.keyboard.press('Escape');
-  await page.getByTestId('footer-feedback-request').click();
+  await page.getByTestId('home-feedback-request').click();
   await dialog.getByRole('heading', { name: 'Оставить запрос', exact: true }).waitFor();
   assert.equal(await dialog.getByLabel('Ваш запрос', { exact: true }).inputValue(), '');
   assert.equal(await dialog.getByLabel('Email', { exact: true }).inputValue(), '');
@@ -126,7 +127,7 @@ test('case deep link survives login, notes and closure remain in the same case',
   const { page, state } = await open(t, { hash: `crm-feedback?case=${ids[1]}` });
   await login(page);
   await page.getByTestId('feedback-detail').waitFor();
-  assert.match(await page.getByTestId('feedback-detail').textContent(), /F-002/);
+  assert.match(await page.getByTestId('feedback-detail').textContent(), /№2 от 20-10-2026 12:00/);
   await page.getByRole('button', { name: 'Взять в работу', exact: true }).click();
   await page.getByLabel('Заметка', { exact: true }).fill('Позвонили, вопрос решён');
   await page.getByLabel('Способ связи', { exact: true }).selectOption('email');
@@ -164,6 +165,7 @@ test('case order preparation keeps cart and retry key independent and retains in
 test('late case response cannot replace a newer route or reappear after logout', async t => {
   let release;
   const waiting = new Promise(resolve => { release = resolve; });
+  t.after(() => release());
   const { page } = await open(t, { hash: 'crm-feedback', session: staff, handle: async ({ route, path, method }) => {
     if (path === `/manager/feedback/${ids[0]}` && method === 'GET') { await waiting; await json(route, feedback(ids[0])); return true; }
     return false;
@@ -174,9 +176,9 @@ test('late case response cannot replace a newer route or reappear after logout',
   await page.getByTestId('feedback-detail').waitFor();
   release();
   await page.waitForTimeout(80);
-  assert.match(await page.getByTestId('feedback-detail').textContent(), /F-002/);
+  assert.match(await page.getByTestId('feedback-detail').textContent(), /№2 от 20-10-2026 12:00/);
   await page.getByRole('button', { name: 'Выйти', exact: true }).click();
-  await page.getByRole('heading', { name: 'Вход для сотрудников' }).waitFor();
+  await page.getByRole('heading', { name: 'Войти в личный кабинет' }).waitFor();
   assert.equal(await page.getByTestId('feedback-detail').count(), 0);
 });
 
@@ -189,7 +191,8 @@ for (const width of [320, 390]) test(`public and CRM form controls fit ${width}p
   const managerControls = await page.locator('.feedback-manager').locator('button,input,textarea,select').evaluateAll(elements => elements.filter(element => element.getClientRects().length).map(element => ({ tag: element.tagName, height: element.getBoundingClientRect().height, width: element.getBoundingClientRect().width, font: parseFloat(getComputedStyle(element).fontSize) })));
   for (const item of managerControls) { assert.ok(item.height >= 44 && item.width >= 44, JSON.stringify(item)); if (item.tag !== 'BUTTON') assert.ok(item.font >= 16, JSON.stringify(item)); }
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
-  await page.getByTestId('footer-feedback-request').click();
+  await page.locator('.footer a[href="#home"]').click();
+  await page.getByTestId('home-feedback-request').click();
   await page.getByRole('dialog').waitFor();
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
   const controls = await page.getByRole('dialog').locator('button,input,textarea').evaluateAll(elements => elements.filter(element => element.getClientRects().length).map(element => ({ tag: element.tagName, height: element.getBoundingClientRect().height, width: element.getBoundingClientRect().width, font: parseFloat(getComputedStyle(element).fontSize) })));
@@ -211,7 +214,7 @@ test('failed public delivery keeps phone draft and key; messenger-only contact i
   await dialog.getByTestId('feedback-submit').click();
   await dialog.getByRole('alert').waitFor();
   await page.keyboard.press('Escape');
-  await page.getByTestId('footer-feedback-contact').click();
+  await page.getByTestId('home-feedback-contact').click();
   assert.equal(await dialog.getByLabel('Телефон', { exact: true }).inputValue(), '8 (999) 123-45-67');
   await dialog.getByTestId('feedback-submit').click();
   await dialog.getByTestId('feedback-receipt').waitFor();
@@ -241,7 +244,7 @@ test('a version conflict and rejected navigation preserve a manager note', async
   await page.getByRole('button', { name: 'Взять в работу', exact: true }).click();
   await page.getByLabel('Заметка', { exact: true }).fill('Несохранённый результат');
   page.once('dialog', dialog => dialog.dismiss());
-  await page.getByRole('button', { name: '← Все обращения', exact: true }).click();
+  await page.getByRole('link', { name: '← Все обращения', exact: true }).click();
   await page.waitForFunction(id => location.hash === `#crm-feedback?case=${id}`, ids[0]);
   assert.equal(await page.getByLabel('Заметка', { exact: true }).inputValue(), 'Несохранённый результат');
   await page.getByRole('button', { name: 'Добавить заметку', exact: true }).click();
@@ -271,6 +274,7 @@ test('order deep link opens after login and reload independently of the list pag
 test('a case response arriving after logout stays private', async t => {
   let release;
   const waiting = new Promise(resolve => { release = resolve; });
+  t.after(() => release());
   const { page } = await open(t, { hash: 'crm-feedback', session: staff, handle: async ({ route, path, method }) => {
     if (path === `/manager/feedback/${ids[0]}` && method === 'GET') { await waiting; await json(route, feedback(ids[0])); return true; }
     return false;
@@ -278,7 +282,7 @@ test('a case response arriving after logout stays private', async t => {
   await page.evaluate(id => { location.hash = `crm-feedback?case=${id}`; }, ids[0]);
   await page.getByText('Загружаем обращение…', { exact: true }).waitFor();
   await page.getByRole('button', { name: 'Выйти', exact: true }).click();
-  await page.getByRole('heading', { name: 'Вход для сотрудников' }).waitFor();
+  await page.getByRole('heading', { name: 'Войти в личный кабинет' }).waitFor();
   release();
   await page.waitForTimeout(80);
   assert.equal(await page.getByTestId('feedback-detail').count(), 0);
@@ -289,6 +293,7 @@ test('catalog refresh freezes selected product edits and applies results by prod
   let release;
   let started;
   const waiting = new Promise(resolve => { release = resolve; });
+  t.after(() => release());
   const requested = new Promise(resolve => { started = resolve; });
   const extra = { ...product, id: 'part-2', externalId: 'external-2', sku: 'TEST-2', name: 'Тестовая свеча', priceKopecks: 50000 };
   const { page } = await open(t, { hash: `crm-feedback?case=${ids[0]}`, session: staff, handle: async ({ route, path }) => {
@@ -300,7 +305,6 @@ test('catalog refresh freezes selected product edits and applies results by prod
     if (path === '/catalog/part-2') { await json(route, { product: extra, catalogUpdatedAt: now, stale: false }); return true; }
     return false;
   } });
-  t.after(() => release());
   await page.getByRole('button', { name: 'Взять в работу', exact: true }).click();
   await page.getByRole('button', { name: 'Подготовить заказ', exact: true }).click();
   await page.getByRole('button', { name: 'Добавить Тестовый фильтр', exact: true }).click();
@@ -308,7 +312,7 @@ test('catalog refresh freezes selected product edits and applies results by prod
   await page.getByRole('button', { name: 'Проверить цены и остатки', exact: true }).click();
   await requested;
   assert.equal(await page.getByRole('button', { name: 'Удалить Тестовый фильтр', exact: true }).isDisabled(), true);
-  assert.equal(await page.getByRole('spinbutton', { name: 'Количество Тестовая свеча', exact: true }).isDisabled(), true);
+  assert.equal(await page.getByLabel('Количество Тестовая свеча, шт', { exact: true }).isDisabled(), true);
   release();
   await page.getByRole('button', { name: 'Добавить Тестовый фильтр', exact: true }).waitFor();
   assert.deepEqual(await page.locator('.feedback-selected-product strong').allTextContents(), ['Тестовый фильтр', 'Тестовая свеча']);
@@ -320,13 +324,13 @@ test('an order deep link within CRM does not strand a pending orders list', asyn
   let release;
   let started;
   const waiting = new Promise(resolve => { release = resolve; });
+  t.after(() => release());
   const requested = new Promise(resolve => { started = resolve; });
   const { page } = await open(t, { session: staff, handle: async ({ route, path }) => {
     if (path === '/manager/orders') { started(); await waiting; await json(route, { items: [], total: 0, offset: 0, limit: 24 }); return true; }
     return false;
   } });
-  t.after(() => release());
-  await page.locator('.crm-nav').click();
+  await page.evaluate(() => { location.hash = 'crm'; });
   await requested;
   await page.getByText('Загружаем заказы…', { exact: true }).waitFor();
   await page.evaluate(() => { location.hash = 'crm?order=off-page-order'; });

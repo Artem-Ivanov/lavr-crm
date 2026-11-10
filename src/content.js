@@ -1,7 +1,7 @@
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const text = (value, min, max) => typeof value === 'string' && value.length >= min && value.length <= max && (min === 0 || Boolean(value.trim()));
 const integer = (value, min, max = Number.MAX_SAFE_INTEGER) => Number.isSafeInteger(value) && value >= min && value <= max;
-const id = value => text(value, 1, 128) && !/[\u0000-\u001f\u007f]/.test(value) && value !== '.' && value !== '..';
+const id = value => typeof value === 'string' && Boolean(value.trim()) && [...value].length <= 128 && !/[\u0000-\u001f\u007f]/.test(value) && value !== '.' && value !== '..';
 const exact = (value, keys) => object(value) && Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));
 const pick = (value, keys) => Object.fromEntries(keys.filter(key => Object.hasOwn(value, key)).map(key => [key, value[key]]));
 const list = (value, check, max) => Array.isArray(value) && value.length <= max && value.every(check);

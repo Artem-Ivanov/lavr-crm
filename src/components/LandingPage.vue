@@ -1,8 +1,9 @@
 <script setup>
 import { computed } from 'vue';
 import AppIcon from './AppIcon.vue';
+import { routeHash, targetHash } from '../routes.js';
 const props = defineProps({ categories: { type: Array, required: true }, site: { type: Object, required: true }, demo: Boolean });
-const emit = defineEmits(['category', 'navigate', 'feedback']);
+const emit = defineEmits(['feedback']);
 const categoryIcons = { __proto__: null, oils: 'oil', filters: 'filter', brakes: 'brake', ignition: 'spark', suspension: 'spring', belts: 'belt' };
 const heroLines = computed(() => props.site.hero.title.split('\n'));
 const publicationStyle = publication => publication.style || (publication.kind === 'announcement' ? 'notice' : publication.images.length === 1 ? 'oil' : 'service');
@@ -15,7 +16,7 @@ const publicationLabel = publication => publication.label || ({ offer: 'Акци
       <div class="eyebrow light"><span></span> {{ site.hero.kicker || 'ДЕТАЛИ, КОТОРЫЕ ВАЖНЫ' }}</div>
       <h1 id="hero-title"><template v-for="(line, index) in heroLines" :key="index"><span v-if="heroLines.length > 1 && index === heroLines.length - 1">{{ line }}</span><template v-else>{{ line }}</template><br v-if="index < heroLines.length - 1"></template></h1>
       <p>{{ site.hero.description }}</p>
-      <button v-if="site.hero.target" type="button" class="btn red hero-button" @click="emit('navigate', site.hero.target)">{{ site.hero.buttonText }} <AppIcon name="arrow" /></button>
+      <a v-if="site.hero.target" :href="targetHash(site.hero.target)" class="btn red hero-button">{{ site.hero.buttonText }} <AppIcon name="arrow" /></a>
       <span v-if="site.hero.note" class="hero-note">{{ site.hero.note }}</span>
     </div>
     <div class="hero-corner"><span class="hero-line"></span> {{ site.hero.corner || 'НА ХОДУ. КАЖДЫЙ ДЕНЬ.' }}</div>
@@ -36,7 +37,7 @@ const publicationLabel = publication => publication.label || ({ offer: 'Акци
   <section class="categories container landing-categories" aria-labelledby="categories-title">
     <div class="section-heading"><div><span class="eyebrow">{{ site.settings.categoriesKicker || 'ПРОСТО НАЙТИ. ЛЕГКО ВЫБРАТЬ.' }}</span><h2 id="categories-title">{{ site.settings.categoriesTitle }}</h2></div><a class="text-link" href="#catalog">Весь каталог <AppIcon name="arrow" /></a></div>
     <div class="category-grid">
-      <button v-for="category in categories" :key="category.id" type="button" class="category-card" data-action="category" :data-id="category.id" @click="emit('category', category.id)"><span class="category-art"><AppIcon :name="categoryIcons[category.id] || 'box'" /></span><strong>{{ category.name }}</strong><span>{{ category.productCount === undefined ? 'Открыть категорию' : `Позиций: ${category.productCount}` }} <AppIcon name="arrow" /></span></button>
+      <a v-for="category in categories" :key="category.id" :href="routeHash({ page: 'catalog', categoryId: category.id })" class="category-card" data-action="category" :data-id="category.id"><span class="category-art"><AppIcon :name="categoryIcons[category.id] || 'box'" /></span><strong>{{ category.name }}</strong><span>{{ category.productCount === undefined ? 'Открыть категорию' : `Позиций: ${category.productCount}` }} <AppIcon name="arrow" /></span></a>
     </div>
     <p v-if="!categories.length" class="landing-empty">Категории пока не добавлены. Найдите запчасть по артикулу в поиске.</p>
   </section>
@@ -44,10 +45,10 @@ const publicationLabel = publication => publication.label || ({ offer: 'Акци
   <section v-if="site.publications.length" id="promotions" class="container promotions" aria-labelledby="promotions-title">
     <div class="section-heading"><div><span class="eyebrow">{{ site.settings.promotionsKicker || 'ПОЛЕЗНО ПЕРЕД ПОЕЗДКОЙ' }}</span><h2 id="promotions-title">{{ site.settings.promotionsTitle }}</h2></div><span v-if="demo" class="promotions-note">{{ site.settings.promotionsNote }}</span></div>
     <div class="promotion-grid">
-      <article v-for="publication in site.publications" :key="publication.id" class="promotion-card" :class="`promotion-${publicationStyle(publication)}`" :data-kind="publication.kind">
+      <article v-for="publication in site.publications" :key="publication.id" :id="`publication-${encodeURIComponent(publication.id)}`" :data-publication-id="publication.id" tabindex="-1" class="promotion-card" :class="`promotion-${publicationStyle(publication)}`" :data-kind="publication.kind">
         <div v-if="publicationStyle(publication) === 'notice'" class="notice-top"><span class="promotion-label">{{ publicationLabel(publication) }}</span><div v-if="publication.images.length" class="notice-images"><img v-for="image in publication.images" :key="image.id" :src="image.path" :alt="image.alt" loading="lazy" width="180" height="130"></div><AppIcon v-else name="box" /></div>
         <div v-else class="promotion-art" :class="publicationStyle(publication) === 'oil' ? 'oil-art' : 'filter-art'"><img v-for="image in publication.images" :key="image.id" :src="image.path" :alt="image.alt" loading="lazy" width="180" height="130"><span class="promotion-label">{{ publicationLabel(publication) }}</span></div>
-        <div class="promotion-copy"><span class="promotion-kicker">{{ publication.kicker || publicationLabel(publication) }}</span><h3>{{ publication.title }}</h3><p>{{ publication.description }}</p><button v-if="publication.target" type="button" class="promotion-link" :data-action="publication.target.type === 'category' ? 'category' : undefined" :data-id="publication.target.categoryId" @click="emit('navigate', publication.target)">{{ publication.buttonText }} <AppIcon name="arrow" /></button></div>
+        <div class="promotion-copy"><span class="promotion-kicker">{{ publication.kicker || publicationLabel(publication) }}</span><h3>{{ publication.title }}</h3><p>{{ publication.description }}</p><a v-if="publication.target" :href="targetHash(publication.target)" class="promotion-link" :data-action="publication.target.type === 'category' ? 'category' : undefined" :data-id="publication.target.categoryId">{{ publication.buttonText }} <AppIcon name="arrow" /></a></div>
       </article>
     </div>
     <p v-if="demo" class="promotion-footnote">{{ site.settings.promotionsFootnote }}</p>

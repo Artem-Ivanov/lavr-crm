@@ -43,7 +43,7 @@ def test_visibility_applies_to_search_direct_cards_and_categories(client, catalo
     assert [item['id'] for item in categories] == ['cat-filters', 'cat-oils']
     assert categories[1]['showInMenu'] is False
     assert all(set(item) == {'id', 'name', 'position', 'showInMenu'} for item in categories)
-    assert set(response.json()['items'][0]) == {'id', 'externalId', 'sku', 'brand', 'name', 'category', 'priceKopecks', 'stock', 'image', 'deliveryDays', 'websiteTitle', 'websiteDescription', 'images'}
+    assert set(response.json()['items'][0]) == {'id', 'externalId', 'sku', 'brand', 'name', 'category', 'priceKopecks', 'stock', 'unit', 'image', 'deliveryDays', 'websiteTitle', 'websiteDescription', 'images'}
 
 
 def test_server_filters_sort_pagination_and_literal_search(client, catalog_rows):
@@ -203,3 +203,75 @@ def test_target_visibility_uses_same_product_and_category_rules(db, catalog_rows
     with pytest.raises(ApiError) as error:
         validate_target(db, {'type': 'product', 'productId': 'p-hidden'})
     assert error.value.status == 422
+
+
+def test_fractional_catalog_numbers_and_honest_missing_brand_sku(client, catalog_rows, db, admin_headers):
+    from decimal import Decimal
+
+    product = catalog_rows[0]
+    product.unit = 'кг'
+    product.reserved = 0
+    db.commit()
+    product.stock = Decimal('5.125')
+    product.reserved = Decimal('2.001')
+    product.sku = ''
+    product.brand = ''
+    db.commit()
+    public = client.get('/api/catalog/p-visible').json()['product']
+    assert (public['sku'], public['brand'], public['unit'], public['stock']) == ('', '', 'кг', 3.124)
+    admin = client.get('/api/admin/products', params={'q': product.id}, headers=admin_headers).json()['items'][0]
+    assert (admin['physicalStock'], admin['reservedStock'], admin['stock'], admin['unit']) == (5.125, 2.001, 3.124, 'кг')
+    product.stock = Decimal('1.001')
+    db.commit()
+    assert client.get('/api/catalog/p-visible').json()['product']['stock'] == 0
+
+
+def test_orm_quantity_write_rejects_rounding_before_database(catalog_rows, db):
+    from decimal import Decimal
+
+    product = catalog_rows[1]
+    product.unit = 'кг'
+    product.stock = Decimal('1.0001')
+    with pytest.raises(ValueError):
+        db.commit()
+    db.rollback()
+    db.refresh(product)
+    assert product.stock == 10
+
+
+def test_import_catalog_freshness_uses_observation_not_last_product_write(client, catalog_rows, db):
+    from datetime import timedelta
+    from app.common import utcnow
+
+    observed = utcnow() - timedelta(days=2)
+    for product in catalog_rows:
+        product.accounting_source = 'file:main-stock:retail'
+        product.stock_observed_at = observed
+        product.updated_at = utcnow()
+    db.commit()
+    response = client.get('/api/catalog').json()
+    assert response['stale'] is True
+    assert response['catalogUpdatedAt'] == observed.isoformat()
+
+
+def test_explicit_unknown_unit_is_preserved_instead_of_defaulting_to_pieces(db):
+    from decimal import Decimal
+    from app.catalog import Product
+
+    product = Product(id='unknown-unit', external_id='unknown-source-id', sku='', brand='', name='Неизвестная единица', price_kopecks=1, stock=Decimal('1.125'), unit=None)
+    db.add(product)
+    db.commit()
+    db.refresh(product)
+    assert product.unit is None
+    assert product.stock == Decimal('1.125')
+
+
+@pytest.mark.parametrize('version', [0, 9007199254740992])
+def test_product_accounting_version_matches_migration_bounds(db, version):
+    from sqlalchemy.exc import IntegrityError
+    from app.catalog import Product
+
+    db.add(Product(id='version-bound', external_id='version-bound', sku='', brand='', name='Товар', price_kopecks=1, stock=1, accounting_version=version))
+    with pytest.raises(IntegrityError):
+        db.commit()
+    db.rollback()

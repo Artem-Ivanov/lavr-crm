@@ -23,11 +23,12 @@ backend_image=lavr-crm-backend:local
 env_file=.env.docker
 
 if [ ! -f "$env_file" ]; then
-    if ! docker image inspect "$backend_image" >/dev/null 2>&1; then
-        if [ "$no_build" = true ]; then
+    if [ "$no_build" = true ]; then
+        if ! docker image inspect "$backend_image" >/dev/null 2>&1; then
             printf 'Не найден %s. Сначала выполните docker load или запуск без --no-build.\n' "$backend_image" >&2
             exit 1
         fi
+    else
         docker build --tag "$backend_image" backend
     fi
     env_tmp=$(mktemp "$project_dir/.env.docker.tmp.XXXXXX")
@@ -41,6 +42,8 @@ if [ ! -f "$env_file" ]; then
     rm -f "$env_tmp"
     trap - EXIT HUP INT TERM
     printf 'Создан .env.docker с уникальными паролями. Сохраните его отдельно от образов.\n'
+    printf 'Перед первым запуском укажите в ADMIN_LOGIN действующий email администратора и повторите команду.\n'
+    exit 1
 fi
 chmod 600 "$env_file"
 

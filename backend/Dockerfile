@@ -4,7 +4,7 @@ WORKDIR /app
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt \
     && useradd --uid 1000 --create-home lavr \
-    && mkdir -p /data/media && chown -R lavr:lavr /data
+    && mkdir -p /data/media /data/relay && chown -R lavr:lavr /data
 COPY app ./app
 COPY alembic ./alembic
 COPY alembic.ini entrypoint.sh seed.json ./

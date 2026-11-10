@@ -1,7 +1,7 @@
 const PREFIX = 'lavr.feedback-attempt.v1:';
 
 function storageKey(scope) {
-  if (typeof scope !== 'string' || !/^(?:submission|order:[A-Za-z0-9_-]{1,128})$/.test(scope)) throw new Error('Некорректная область ключа повторной отправки.');
+  if (typeof scope !== 'string' || !/^(?:submission|customer:[A-Za-z0-9_-]{1,128}|order:[A-Za-z0-9_-]{1,128}(?::[A-Za-z0-9_-]{1,128})?)$/.test(scope)) throw new Error('Некорректная область ключа повторной отправки.');
   return `${PREFIX}${scope}`;
 }
 

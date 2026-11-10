@@ -7,6 +7,8 @@ import { initialCatalog, createCategory, createProduct } from '../src/catalog-ad
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
 after(() => browser.close());
+const baseUrl = process.env.BASE_URL || 'http://127.0.0.1:5173';
+const previewDir = process.env.PREVIEW_DIR || 'docs/previews';
 
 async function open(t, width = 1440) {
   const context = await browser.newContext(typeof width === 'number' ? { viewport: { width, height: 1100 } } : width);
@@ -15,8 +17,20 @@ async function open(t, width = 1440) {
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
   t.after(async () => { await context.close(); assert.deepEqual(errors, []); });
-  await page.goto('http://127.0.0.1:5173', { waitUntil: 'networkidle' });
+  await page.goto(`${baseUrl}`, { waitUntil: 'networkidle' });
   return page;
+}
+
+async function signInDemoStaff(page) {
+  if (!new URL(page.url()).hash.startsWith('#crm')) return;
+  await page.locator('.header-account .account-role, .crm-page .account-form').first().waitFor();
+  const form = page.locator('.crm-page .account-form');
+  if (await form.count()) {
+    await form.locator('[name="email"]').fill('admin@example.test');
+    await form.locator('[name="password"]').fill('demonstration');
+    await form.locator('button[type="submit"]').click();
+    await page.locator('.header-account .account-role').waitFor();
+  }
 }
 
 const mobileProfiles = [{ width: 320, height: 740 }, { width: 390, height: 844 }, { width: 844, height: 390 }];
@@ -39,12 +53,14 @@ async function mobileControls(page, targets, fields = []) {
 }
 
 async function pageFits(page, view) {
-  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), `${view} must not scroll horizontally`);
+  const layout = await page.evaluate(() => ({ fits: document.documentElement.scrollWidth <= innerWidth + 1, overflow: [...document.querySelectorAll('body *')].filter(element => element.clientWidth > 0 && element.scrollWidth > element.clientWidth + 1 && getComputedStyle(element).overflowX === 'visible').slice(0, 12).map(element => ({ tag: element.tagName, class: element.className, width: element.clientWidth, scroll: element.scrollWidth })) }));
+  assert.ok(layout.fits, `${view} must not scroll horizontally: ${JSON.stringify(layout.overflow)}`);
 }
 
 test('admin content editor saves the hero, headings and menu without changing the landing template', async t => {
   const page = await open(t);
-  await page.locator('.crm-nav').click();
+  await page.evaluate(() => { location.hash = 'crm'; });
+  await signInDemoStaff(page);
   await page.getByRole('link', { name: 'Контент сайта', exact: true }).click();
   await page.getByTestId('hero-title').fill('Запчасти для вашей машины');
   await page.getByTestId('hero-description').fill('<img src=x onerror=alert(1)> Описание как текст');
@@ -61,16 +77,19 @@ test('admin content editor saves the hero, headings and menu without changing th
   assert.equal(await page.locator('#categories-title').textContent(), 'Категории из редактора');
   assert.equal(await page.locator('.navigation .desktop-menu-item').first().textContent(), 'Наши фильтры');
   await page.reload();
+  await signInDemoStaff(page);
   await page.locator('.hero h1').waitFor();
   assert.equal(await page.locator('.hero h1').textContent(), 'Запчасти для вашей машины');
-  await page.goto('http://127.0.0.1:5173/#crm-content');
+  await page.goto(`${baseUrl}/#crm-content`);
+  await signInDemoStaff(page);
   await page.getByTestId('hero-title').waitFor();
   assert.equal(await page.getByTestId('hero-title').inputValue(), 'Запчасти для вашей машины');
 });
 
 test('content menu section targets work from the catalog and announcement images are displayed', async t => {
   const page = await open(t);
-  await page.goto('http://127.0.0.1:5173/#crm-content');
+  await page.goto(`${baseUrl}/#crm-content`);
+  await signInDemoStaff(page);
   await page.getByTestId('menu-label-0').fill('Объявления магазина');
   await page.getByTestId('menu-0-target-type').selectOption('section');
   await page.getByTestId('menu-0-target-section').selectOption('announcements');
@@ -83,15 +102,16 @@ test('content menu section targets work from the catalog and announcement images
   await page.getByTestId('publication-title').fill('Объявление с фотографиями');
   for (const id of ['demo-brake-disc', 'demo-air-filter', 'demo-spark-plug']) await page.getByTestId(`publication-media-${id}`).click();
   await page.getByTestId('save-publication').click();
-  await page.getByTestId('publication-success').waitFor();
+  await page.waitForFunction(() => new URLSearchParams(location.hash.split('?')[1]).has('publication'));
+  await page.getByTestId('publication-title').waitFor();
   await page.locator('.header-main .logo').click();
   const card = page.locator('.promotion-card').filter({ hasText: 'Объявление с фотографиями' });
   await card.waitFor();
   assert.equal(await card.locator('img').count(), 3);
   await page.getByRole('link', { name: 'Весь каталог', exact: true }).click();
   await page.locator('#catalog-title').waitFor();
-  await page.getByRole('button', { name: 'Объявления магазина', exact: true }).click();
-  await page.waitForURL('**/#home');
+  await page.getByRole('link', { name: 'Объявления магазина', exact: true }).click();
+  await page.waitForURL('**/#home?section=announcements');
   await page.waitForFunction(() => {
     const top = document.querySelector('.promotion-card[data-kind="announcement"]')?.getBoundingClientRect().top;
     return top !== undefined && top >= -1 && top < innerHeight;
@@ -100,13 +120,14 @@ test('content menu section targets work from the catalog and announcement images
 
 test('content forms fit touch screens and maximum valid texts remain readable on the landing', async t => {
   const page = await open(t, { viewport: { width: 1440, height: 1100 }, hasTouch: true });
-  await page.goto('http://127.0.0.1:5173/#crm-content');
+  await page.goto(`${baseUrl}/#crm-content`);
+  await signInDemoStaff(page);
   await page.getByTestId('hero-title').waitFor();
-  await mkdir('docs/previews', { recursive: true });
-  await page.screenshot({ path: 'docs/previews/content-admin-desktop.png' });
+  await mkdir(previewDir, { recursive: true });
+  await page.screenshot({ path: `${previewDir}/content-admin-desktop.png` });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.locator('.content-site-fields').scrollIntoViewIfNeeded();
-  await page.screenshot({ path: 'docs/previews/content-admin-mobile.png' });
+  await page.screenshot({ path: `${previewDir}/content-admin-mobile.png` });
   await page.getByTestId('hero-title').fill('З'.repeat(240));
   await page.getByTestId('hero-description').fill('О'.repeat(2000));
   await page.getByTestId('hero-button-text').fill('К'.repeat(80));
@@ -122,13 +143,14 @@ test('content forms fit touch screens and maximum valid texts remain readable on
   await page.getByTestId('publication-status').selectOption('published');
   for (const id of ['demo-hero', 'demo-motor-oil', 'demo-oil-filter', 'demo-air-filter', 'demo-brake-disc', 'demo-spark-plug']) await page.getByTestId(`publication-media-${id}`).click();
   await page.getByTestId('save-publication').click();
-  await page.getByTestId('publication-success').waitFor();
+  await page.waitForFunction(() => new URLSearchParams(location.hash.split('?')[1]).has('publication'));
+  await page.getByTestId('publication-title').waitFor();
   for (const viewport of mobileProfiles) {
     await page.setViewportSize(viewport);
     for (const tab of ['site', 'publications', 'media']) {
       await page.getByTestId(`content-tab-${tab}`).click();
       await pageFits(page, `${tab} content form ${viewport.width}`);
-      await mobileControls(page, ['.content-manager button:visible'], ['.content-manager input:not([type="checkbox"]):visible', ...(tab === 'media' ? [] : ['.content-manager select:visible', '.content-manager textarea:visible'])]);
+      await mobileControls(page, ['.content-manager button:visible', '.content-tabs a:visible', ...(tab === 'publications' ? ['.publication-list a:visible'] : [])], ['.content-manager input:not([type="checkbox"]):visible', ...(tab === 'media' ? [] : ['.content-manager select:visible', '.content-manager textarea:visible'])]);
     }
   }
   await page.locator('.header-main .logo').click();
@@ -144,7 +166,8 @@ test('content forms fit touch screens and maximum valid texts remain readable on
 
 test('content publication lifecycle, dates and uploaded image bytes survive a mobile reload', async t => {
   const page = await open(t, { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
-  await page.goto('http://127.0.0.1:5173/#crm-content');
+  await page.goto(`${baseUrl}/#crm-content`);
+  await signInDemoStaff(page);
   await page.getByTestId('hero-title').waitFor();
   await page.getByTestId('content-tab-media').tap();
   await page.getByTestId('media-file').setInputFiles({ name: 'fake.png', mimeType: 'image/png', buffer: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"></svg>') });
@@ -167,13 +190,15 @@ test('content publication lifecycle, dates and uploaded image bytes survive a mo
   await page.getByTestId('publication-description').fill('Проверенная картинка и текст');
   await page.getByTestId(`publication-media-${mediaId}`).tap();
   await page.getByTestId('save-publication').tap();
-  await page.getByTestId('publication-success').waitFor();
+  await page.waitForFunction(() => new URLSearchParams(location.hash.split('?')[1]).has('publication'));
+  await page.getByTestId('publication-title').waitFor();
   const entry = page.locator('.publication-list-item').filter({ hasText: 'Горячее предложение из редактора' });
   await entry.waitFor();
   const publicationId = (await entry.getAttribute('data-testid')).slice('edit-publication-'.length);
   await page.locator('.header-main .logo').tap();
   assert.equal(await page.locator('.promotion-copy h3').filter({ hasText: 'Горячее предложение из редактора' }).count(), 0, 'A draft stays private');
-  await page.locator('.crm-nav').tap();
+  await page.evaluate(() => { location.hash = 'crm'; });
+  await signInDemoStaff(page);
   await page.getByRole('link', { name: 'Контент сайта', exact: true }).tap();
   await page.getByTestId('content-tab-publications').tap();
   await page.getByTestId(`edit-publication-${publicationId}`).tap();
@@ -191,11 +216,13 @@ test('content publication lifecycle, dates and uploaded image bytes survive a mo
   await card.waitFor();
   assert.equal(await card.locator('img').evaluate(image => image.complete && image.naturalWidth === 870), true);
   await page.reload();
+  await signInDemoStaff(page);
   await card.waitFor();
   await card.scrollIntoViewIfNeeded();
   await page.waitForFunction(() => [...document.querySelectorAll('.promotion-card img')].some(image => image.naturalWidth === 870));
   await pageFits(page, 'Published upload at 390');
-  await page.locator('.crm-nav').tap();
+  await page.evaluate(() => { location.hash = 'crm'; });
+  await signInDemoStaff(page);
   await page.getByRole('link', { name: 'Контент сайта', exact: true }).tap();
   await page.getByTestId('content-tab-publications').tap();
   await page.getByTestId(`edit-publication-${publicationId}`).tap();
@@ -209,7 +236,8 @@ test('content publication lifecycle, dates and uploaded image bytes survive a mo
 
 test('content drafts survive failed writes, sibling conflicts and rejected navigation', async t => {
   const page = await open(t, { viewport: { width: 320, height: 740 }, isMobile: true, hasTouch: true });
-  await page.goto('http://127.0.0.1:5173/#crm-content');
+  await page.goto(`${baseUrl}/#crm-content`);
+  await signInDemoStaff(page);
   await page.getByTestId('hero-title').fill('Мой несохранённый заголовок');
   const rejectLeave = dialog => dialog.dismiss();
   page.on('dialog', rejectLeave);
@@ -230,7 +258,8 @@ test('content drafts survive failed writes, sibling conflicts and rejected navig
   assert.equal(await page.evaluate(() => localStorage.getItem('lavr.site.v1')), null);
   await page.evaluate(() => { Storage.prototype.setItem = window.originalSiteSetItem; });
   const sibling = await page.context().newPage();
-  await sibling.goto('http://127.0.0.1:5173/#crm-content');
+  await sibling.goto(`${baseUrl}/#crm-content`);
+  await signInDemoStaff(sibling);
   await sibling.getByTestId('hero-title').fill('Заголовок из другой вкладки');
   await sibling.getByTestId('save-site').click();
   await sibling.getByTestId('site-success').waitFor();
@@ -250,7 +279,8 @@ test('content drafts survive failed writes, sibling conflicts and rejected navig
   const damaged = '{"site":';
   await sibling.close();
   await page.evaluate(value => localStorage.setItem('lavr.site.v1', value), damaged);
-  await page.goto('http://127.0.0.1:5173/#crm-content');
+  await page.goto(`${baseUrl}/#crm-content`);
+  await signInDemoStaff(page);
   await page.getByTestId('content-read-only').waitFor();
   assert.equal(await page.getByTestId('save-site').isDisabled(), true);
   await page.getByTestId('content-tab-publications').tap();
@@ -270,9 +300,9 @@ test('mobile menu remains reachable and returns focus; dialog close stays visibl
     assert.equal(await page.locator('.desktop-menu-item:visible').count(), 0);
     await mobileControls(page, ['.mobile-menu summary']);
     await summary.tap();
-    const items = menu.locator('.mobile-menu-items button');
+    const items = menu.locator('.mobile-menu-items a');
     assert.equal(await items.count(), 3);
-    await mobileControls(page, ['.mobile-menu-items button']);
+    await mobileControls(page, ['.mobile-menu-items a']);
     await items.last().tap();
     assert.equal(await menu.evaluate(element => element.open), false);
     assert.equal(await summary.evaluate(element => document.activeElement === element), true);
@@ -323,6 +353,7 @@ test('true mobile SKU search, basket quantities, checkout and CRM use readable t
     assert.equal(await page.evaluate(() => JSON.parse(sessionStorage.getItem('lavr.orders.v1'))[0].totalKopecks), 178000);
     await pageFits(page, `receipt ${viewport.width}`);
     await page.locator('.receipt-actions a').tap();
+    await signInDemoStaff(page);
     await mobileControls(page, ['#order-search-form button', '.status-filter', '.order-number', '.table-action'], ['[name="orderQuery"]']);
     await page.locator('[name="orderQuery"]').fill('Мобильный');
     await page.locator('#order-search-form button').tap();
@@ -339,7 +370,8 @@ test('true mobile SKU search, basket quantities, checkout and CRM use readable t
 test('mobile catalog administration creates and assigns categories through a keyboard-scrollable table', async t => {
   for (const viewport of mobileProfiles) {
     const page = await open(t, { viewport, isMobile: true, hasTouch: true });
-    await page.locator('.crm-nav').tap();
+    await page.evaluate(() => { location.hash = 'crm'; });
+    await signInDemoStaff(page);
     await page.locator('.crm-tabs a[href="#crm-catalog"]').tap();
     await page.locator('#category-form').waitFor();
     await mobileControls(page, ['#category-form button[type="submit"]', '#product-form button[type="submit"]', '.catalog-admin-table select'], ['.catalog-form input', '.catalog-form select', '#catalog-admin-search', '.catalog-admin-table select']);
@@ -416,6 +448,7 @@ test('checkout validates contacts, delivery and saves the order in CRM', async t
   assert.equal(order.fulfillment.method, 'delivery');
   assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('lavr.cart.v1')).length), 0);
   await page.locator('.receipt-actions a').click();
+  await signInDemoStaff(page);
   await page.locator('.order-number').click();
   await page.locator('[data-action="status"][data-status="confirmed"]').focus();
   await page.keyboard.press('Enter');
@@ -434,6 +467,8 @@ test('a second basket can be checked out after leaving confirmation through CRM'
   const page = await open(t);
   await checkout(page);
   await page.locator('.receipt-actions a').click();
+  await signInDemoStaff(page);
+  await page.getByRole('button', { name: 'Выйти', exact: true }).click();
   await page.locator('.catalog-nav').click();
   await page.locator('[data-action="add"][data-id="spark-ngk"]').click();
   await page.locator('.header-cart').click();
@@ -445,7 +480,7 @@ test('a second basket can be checked out after leaving confirmation through CRM'
   await page.locator('.receipt').waitFor();
   assert.equal(await page.evaluate(() => JSON.parse(sessionStorage.getItem('lavr.orders.v1')).length), 2);
   const sibling = await page.context().newPage();
-  await sibling.goto('http://127.0.0.1:5173', { waitUntil: 'networkidle' });
+  await sibling.goto(`${baseUrl}`, { waitUntil: 'networkidle' });
   await sibling.locator('[data-action="add"][data-id="spark-ngk"]').click();
   await page.locator('#checkout-form').waitFor();
   assert.equal(await page.locator('.receipt').count(), 0);
@@ -467,7 +502,8 @@ test('product dialog returns keyboard focus to its opener on Escape and close', 
 
 test('skip link keeps the current route and fulfillment choices keep keyboard focus', async t => {
   const page = await open(t);
-  await page.locator('.crm-nav').click();
+  await page.evaluate(() => { location.hash = 'crm'; });
+  await signInDemoStaff(page);
   await page.locator('.skip-link').focus();
   await page.keyboard.press('Enter');
   assert.equal(new URL(page.url()).hash, '#crm');
@@ -501,42 +537,45 @@ test('stored customer text is escaped and a storage failure preserves the cart',
   await page.locator('.checkout-submit').click();
   await page.locator('.receipt').waitFor();
   await page.locator('.receipt-actions a').click();
+  await signInDemoStaff(page);
   assert.equal(await page.locator('.orders-table img').count(), 0);
   assert.match(await page.locator('.orders-table').textContent(), /<img src=x onerror=alert\(1\)>/);
 });
 
 test('responsive storefront, basket and CRM fit mobile widths; capture design previews', async t => {
   const page = await open(t);
-  await mkdir('docs/previews', { recursive: true });
-  await page.screenshot({ path: 'docs/previews/storefront-desktop.png', fullPage: true });
+  await mkdir(previewDir, { recursive: true });
+  await page.screenshot({ path: `${previewDir}/storefront-desktop.png`, fullPage: true });
   for (const width of [320, 390, 768, 1024]) {
     await page.setViewportSize({ width, height: 844 });
-    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, `home width ${width}`);
+    await pageFits(page, `home width ${width}`);
   }
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.screenshot({ path: 'docs/previews/storefront-mobile.png', fullPage: true });
+  await page.screenshot({ path: `${previewDir}/storefront-mobile.png`, fullPage: true });
   await checkout(page);
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, 'receipt width 390');
   await page.locator('.receipt-actions a').click();
   await page.locator('.crm-page').waitFor();
+  await signInDemoStaff(page);
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, 'CRM width 390');
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.locator('#toast.visible').waitFor({ state: 'hidden' });
-  await page.screenshot({ path: 'docs/previews/crm-desktop.png', fullPage: true });
+  await page.screenshot({ path: `${previewDir}/crm-desktop.png`, fullPage: true });
   await page.getByRole('link', { name: 'Каталог', exact: true }).click();
   await page.locator('#category-form').waitFor();
-  await page.screenshot({ path: 'docs/previews/catalog-admin-desktop.png', fullPage: true });
+  await page.screenshot({ path: `${previewDir}/catalog-admin-desktop.png`, fullPage: true });
   for (const width of [320, 390, 768, 1024]) {
     await page.setViewportSize({ width, height: 844 });
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, `catalog manager width ${width}`);
   }
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.screenshot({ path: 'docs/previews/catalog-admin-mobile.png', fullPage: true });
+  await page.screenshot({ path: `${previewDir}/catalog-admin-mobile.png`, fullPage: true });
 });
 
 test('manager creates a category and a SKU that survives reload and can be ordered', async t => {
   const page = await open(t);
-  await page.locator('.crm-nav').click();
+  await page.evaluate(() => { location.hash = 'crm'; });
+  await signInDemoStaff(page);
   await page.getByRole('link', { name: 'Каталог', exact: true }).click();
   await page.locator('#category-form [name="categoryName"]').fill('Датчики');
   await page.locator('#category-form button[type="submit"]').click();
@@ -552,6 +591,7 @@ test('manager creates a category and a SKU that survives reload and can be order
   assert.equal(product.priceKopecks, 123456);
   assert.equal(stored.categories.find(item => item.id === product.category).name, 'Датчики');
   await page.reload({ waitUntil: 'networkidle' });
+  await signInDemoStaff(page);
   await page.locator('.logo').first().click();
   await page.locator(`.category-card[data-id="${product.category}"]`).waitFor();
   await page.locator('#promotions').waitFor();
@@ -560,6 +600,7 @@ test('manager creates a category and a SKU that survives reload and can be order
   assert.equal(await page.locator('.product-card').count(), 1);
   await page.locator(`[data-action="add"][data-id="${product.id}"]`).click();
   await page.reload({ waitUntil: 'networkidle' });
+  await signInDemoStaff(page);
   await page.locator('.header-cart').click();
   await page.locator('[data-action="quantity"][data-quantity="2"]').click();
   await page.locator('[name="name"]').fill('Тестовый Покупатель');
@@ -574,7 +615,8 @@ test('manager creates a category and a SKU that survives reload and can be order
 
 test('catalog save errors preserve forms and another tab receives catalog changes', async t => {
   const page = await open(t);
-  await page.goto('http://127.0.0.1:5173/#crm-catalog', { waitUntil: 'networkidle' });
+  await page.goto(`${baseUrl}/#crm-catalog`, { waitUntil: 'networkidle' });
+  await signInDemoStaff(page);
   await page.locator('#category-form').waitFor();
   await page.evaluate(() => {
     const original = Storage.prototype.setItem;
@@ -591,9 +633,9 @@ test('catalog save errors preserve forms and another tab receives catalog change
   assert.equal(await page.evaluate(() => localStorage.getItem('lavr.catalog.v1')), null);
   await page.evaluate(() => window.restoreStorage());
   const sibling = await page.context().newPage();
-  await sibling.goto('http://127.0.0.1:5173', { waitUntil: 'networkidle' });
+  await sibling.goto(`${baseUrl}`, { waitUntil: 'networkidle' });
   await page.locator('#category-form button[type="submit"]').click();
-  await sibling.getByRole('button', { name: /Электрика/ }).waitFor();
+  await sibling.getByRole('link', { name: /Электрика/ }).waitFor();
   const category = await page.evaluate(() => JSON.parse(localStorage.getItem('lavr.catalog.v1')).categories.find(item => item.name === 'Электрика'));
   await page.locator('[data-testid="product-category-filter-mann-oil"]').selectOption(category.id);
   await sibling.locator(`.category-card[data-id="${category.id}"]`).click();
@@ -606,8 +648,10 @@ test('a corrupt saved catalog is preserved when a manager tries to add a categor
   const page = await open(t);
   const damaged = '{"categories":';
   await page.evaluate(value => localStorage.setItem('lavr.catalog.v1', value), damaged);
-  await page.goto('http://127.0.0.1:5173/#crm-catalog', { waitUntil: 'networkidle' });
+  await page.goto(`${baseUrl}/#crm-catalog`, { waitUntil: 'networkidle' });
+  await signInDemoStaff(page);
   await page.reload({ waitUntil: 'networkidle' });
+  await signInDemoStaff(page);
   await page.locator('#category-form [name="categoryName"]').fill('Новая категория');
   await page.locator('#category-form button[type="submit"]').click();
   assert.ok(await page.evaluate(value => localStorage.getItem('lavr.catalog.v1') === value, damaged), 'Damaged catalog must remain untouched');
@@ -624,8 +668,10 @@ test('a catalog read error preserves custom cart rows and blocks checkout until 
     localStorage.setItem('lavr.cart.v1', JSON.stringify(cart));
   }, { catalog, cart: originalCart });
   await page.reload({ waitUntil: 'networkidle' });
+  await signInDemoStaff(page);
   await page.evaluate(() => localStorage.setItem('lavr.catalog.v1', '{"categories":'));
   await page.reload({ waitUntil: 'networkidle' });
+  await signInDemoStaff(page);
   await page.locator('[data-action="add"][data-id="filter-mann-oil"]').click();
   assert.deepEqual(await page.evaluate(() => JSON.parse(localStorage.getItem('lavr.cart.v1'))), originalCart);
   await page.locator('.header-cart').click();
@@ -635,7 +681,7 @@ test('a catalog read error preserves custom cart rows and blocks checkout until 
   assert.match(await page.locator('#checkout-error').textContent(), /каталог/);
   assert.equal(await page.evaluate(() => sessionStorage.getItem('lavr.orders.v1')), null);
   const sibling = await page.context().newPage();
-  await sibling.goto('http://127.0.0.1:5173');
+  await sibling.goto(`${baseUrl}`);
   await sibling.evaluate(value => localStorage.setItem('lavr.catalog.v1', JSON.stringify(value)), catalog);
   await page.waitForFunction(() => document.querySelectorAll('.cart-item').length === 2);
   await page.locator('.checkout-submit').click();
@@ -650,6 +696,7 @@ test('long valid catalog names and identifiers remain readable at desktop and mo
   const catalog = createProduct(withCategory, { name: 'Д'.repeat(160), sku: 'S'.repeat(80), brand: 'B'.repeat(80), category: withCategory.categories.at(-1).id, price: '10000000', stock: 2 });
   await page.evaluate(value => localStorage.setItem('lavr.catalog.v1', JSON.stringify(value)), catalog);
   await page.reload({ waitUntil: 'networkidle' });
+  await signInDemoStaff(page);
   for (const width of [1440, 390, 320]) {
     await page.setViewportSize({ width, height: 1000 });
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, `catalog names width ${width}`);
@@ -679,6 +726,7 @@ test('long valid catalog names and identifiers remain readable at desktop and mo
   await page.locator('.checkout-submit').click();
   await page.locator('.receipt').waitFor();
   await page.locator('.receipt-actions a').click();
+  await signInDemoStaff(page);
   await assertViewFits(['.metric-grid article', '.metric-grid article > strong'], 'CRM totals');
   await page.locator('.order-number').click();
   await page.locator('dialog[open]').waitFor();

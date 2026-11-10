@@ -1,11 +1,15 @@
 <script setup>
 import { onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import AppIcon from './AppIcon.vue';
+import CatalogImportDialog from './CatalogImportDialog.vue';
+import { formatQuantity, UNITS } from '../quantity.js';
 
 const props = defineProps({
   api: { type: Object, required: true },
+  storeName: { type: String, required: true },
 });
 const emit = defineEmits(['changed', 'staff-error']);
+const importDialog = ref(null);
 const staffError = error => { if (error.status === 401) emit('staff-error', error); };
 
 const categories = ref([]);
@@ -21,7 +25,7 @@ const categoryName = ref('');
 const categoryError = ref('');
 const categoryMessage = ref('');
 const categoryBusy = ref(false);
-const productDraft = reactive({ name: '', sku: '', brand: '', category: '', price: '', stock: '0' });
+const productDraft = reactive({ name: '', sku: '', brand: '', category: '', price: '', stock: '0', unit: 'шт' });
 const productError = ref('');
 const productMessage = ref('');
 const productBusy = ref(false);
@@ -72,6 +76,7 @@ async function loadProducts(nextOffset = offset.value) {
 }
 
 const reloadLists = () => Promise.all([loadCategories(), loadProducts()]);
+async function catalogImported() { emit('changed'); await reloadLists(); }
 
 watch(query, () => {
   clearTimeout(searchTimer);
@@ -153,7 +158,7 @@ async function changeCategory(product, event) {
 <template>
   <section class="catalog-manager" aria-labelledby="catalog-manager-title">
     <div class="catalog-manager-heading">
-      <div><span class="eyebrow">LAVR / НОМЕНКЛАТУРА</span><h2 id="catalog-manager-title">Каталог под контролем<span class="red-period">.</span></h2><p>{{ api.mode === 'demo' ? 'Создайте категорию, добавьте товар или измените его категорию.' : 'Создайте категорию или измените категорию существующего товара.' }}</p></div>
+      <div><span class="eyebrow">{{ storeName }} / НОМЕНКЛАТУРА</span><h2 id="catalog-manager-title">Каталог под контролем<span class="red-period">.</span></h2><p>{{ api.mode === 'demo' ? 'Создайте категорию, добавьте товар или измените его категорию.' : 'Импортируйте номенклатуру из PDF, создайте категории и распределите товары.' }}</p></div>
       <span class="catalog-count"><AppIcon name="box" /> {{ productsLoading || productsError ? '—' : total }} товаров · {{ categoriesLoading || categoriesError ? '—' : categories.length }} категорий</span>
     </div>
     <div v-if="api.mode === 'demo'" class="demo-notice catalog-local-notice"><AppIcon name="shield" /><div><strong>Локальный демонстрационный каталог</strong><p>Изменения сохраняются в этом браузере и сразу доступны на витрине. Запись в 1С не выполняется.</p></div></div>
@@ -177,11 +182,12 @@ async function changeCategory(product, event) {
         <p class="catalog-form-help">Артикул — основной идентификатор для поиска. Один товар относится к одной категории.</p>
         <div class="catalog-fields">
           <label class="catalog-field full" for="product-name">Наименование <span>*</span><input id="product-name" v-model="productDraft.name" name="productName" required maxlength="160" placeholder="Например, аккумулятор 60 А·ч" data-testid="product-name" :disabled="productBusy"></label>
-          <label class="catalog-field" for="product-sku">Артикул <span>*</span><input id="product-sku" v-model="productDraft.sku" name="sku" required maxlength="80" placeholder="ABC-123" data-testid="product-sku" :disabled="productBusy"></label>
-          <label class="catalog-field" for="product-brand">Бренд <span>*</span><input id="product-brand" v-model="productDraft.brand" name="brand" required maxlength="80" placeholder="Производитель" data-testid="product-brand" :disabled="productBusy"></label>
+          <label class="catalog-field" for="product-sku">Артикул<input id="product-sku" v-model="productDraft.sku" name="sku" maxlength="80" placeholder="ABC-123" data-testid="product-sku" :disabled="productBusy"></label>
+          <label class="catalog-field" for="product-brand">Бренд<input id="product-brand" v-model="productDraft.brand" name="brand" maxlength="80" placeholder="Производитель" data-testid="product-brand" :disabled="productBusy"></label>
           <label class="catalog-field full" for="product-category">Категория <span>*</span><select id="product-category" v-model="productDraft.category" name="category" required data-testid="product-category" :disabled="productBusy || categoriesLoading || !!categoriesError"><option value="" disabled>Выберите категорию</option><option v-for="category in categories" :key="category.id" :value="category.id">{{ category.name }}</option></select></label>
           <label class="catalog-field" for="product-price">Цена, ₽ <span>*</span><input id="product-price" v-model="productDraft.price" name="price" required inputmode="decimal" maxlength="14" pattern="[0-9]+([.,][0-9]{1,2})?" title="Цена в рублях, максимум два знака после запятой" placeholder="0,00" data-testid="product-price" :disabled="productBusy"></label>
-          <label class="catalog-field" for="product-stock">Остаток, шт. <span>*</span><input id="product-stock" v-model="productDraft.stock" name="stock" type="number" required min="0" max="100000" step="1" data-testid="product-stock" :disabled="productBusy"></label>
+          <label class="catalog-field" for="product-unit">Единица <span>*</span><select id="product-unit" v-model="productDraft.unit" data-testid="product-unit" :disabled="productBusy"><option v-for="unit in UNITS" :key="unit" :value="unit">{{ unit }}</option></select></label>
+          <label class="catalog-field" for="product-stock">Остаток, {{ productDraft.unit }} <span>*</span><input id="product-stock" v-model="productDraft.stock" name="stock" inputmode="decimal" required maxlength="14" :pattern="productDraft.unit === 'шт' ? '[0-9]+' : '[0-9]+([.,][0-9]{1,3})?'" :title="productDraft.unit === 'шт' ? 'Целое количество штук' : 'Количество, максимум три знака после запятой'" data-testid="product-stock" :disabled="productBusy"></label>
         </div>
         <p class="catalog-photo-note"><AppIcon name="box" /> Товар без фотографии появится с нейтральной иконкой.</p>
         <button class="btn red" type="submit" data-testid="create-product" :disabled="productBusy || categoriesLoading || !!categoriesError"><AppIcon name="plus" /> Добавить номенклатуру</button>
@@ -191,7 +197,8 @@ async function changeCategory(product, event) {
       </form>
       <div v-else class="catalog-form">
         <div class="catalog-form-heading"><span class="catalog-form-icon"><AppIcon name="box" /></span><h3>Добавление номенклатуры</h3></div>
-        <p class="catalog-form-help">Номенклатура поступает из 1С. Создание товаров будет доступно после согласования адаптера 1С и серверного маршрута для этой операции.</p>
+        <p class="catalog-form-help">Загрузите PDF с ценами и остатками через «Импорт PDF». Перед применением вы увидите сверку и назначите единицы измерения. Обмен с учётной системой появится после подключения адаптера.</p>
+        <button v-if="api.mode === 'api' && api.uploadCatalogImport" type="button" class="btn red" data-testid="catalog-import-open" @click="importDialog.open($event)"><AppIcon name="plus" /> Импорт PDF</button>
       </div>
     </div>
 
@@ -211,11 +218,11 @@ async function changeCategory(product, event) {
           <caption class="sr-only">Номенклатура: артикул, внутренний ID, наименование, категория, цена и остаток</caption>
           <thead><tr><th scope="col">Артикул / ID</th><th scope="col">Номенклатура</th><th scope="col">Категория</th><th scope="col">Цена</th><th scope="col">Остаток</th></tr></thead>
           <tbody><tr v-for="product in visibleProducts" :key="product.id" :data-testid="`catalog-product-${product.id}`">
-            <td class="catalog-identifiers"><strong>{{ product.sku }}</strong><small>ID: {{ product.id }}</small></td>
-            <td class="catalog-product-name"><strong>{{ product.name }}</strong><small>{{ product.brand }}</small></td>
+            <td class="catalog-identifiers"><strong>{{ product.sku || 'Без артикула' }}</strong><small>ID: {{ product.id }}</small></td>
+            <td class="catalog-product-name"><strong>{{ product.name }}</strong><small>{{ product.brand || 'Бренд не указан' }}</small></td>
             <td><select :value="product.category" :aria-label="`Категория ${product.brand} ${product.sku}`" :data-testid="`product-category-${product.id}`" :disabled="assigningProducts.has(product.id) || categoriesLoading || !!categoriesError" :aria-busy="assigningProducts.has(product.id)" @change="changeCategory(product, $event)"><option v-for="category in categories" :key="category.id" :value="category.id">{{ category.name }}</option></select></td>
             <td class="catalog-price">{{ money(product.priceKopecks) }}</td>
-            <td><span class="catalog-stock" :class="{ unavailable: !product.stock }">{{ product.stock }} шт.</span></td>
+            <td><span class="catalog-stock" :class="{ unavailable: !product.stock }">{{ formatQuantity(product.stock, product.unit === undefined ? 'шт' : product.unit) }}</span></td>
           </tr></tbody>
         </table>
       </div>
@@ -227,6 +234,7 @@ async function changeCategory(product, event) {
         <button type="button" class="btn outline" :disabled="offset + pageLimit >= total" @click="loadProducts(offset + pageLimit)">Далее</button>
       </nav>
     </div>
+    <CatalogImportDialog v-if="api.mode === 'api' && api.uploadCatalogImport" ref="importDialog" :api="api" :categories="categories" @changed="catalogImported" @staff-error="emit('staff-error', $event)" />
   </section>
 </template>
 
@@ -240,7 +248,7 @@ async function changeCategory(product, event) {
 .catalog-local-notice { margin: 0 0 25px; }
 .catalog-load-state { padding: 0 24px 20px; font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
 .catalog-load-state .btn { margin-top: 12px; font-size: 12px; max-width: 100%; white-space: normal; }
-.catalog-manager-forms { display: grid; grid-template-columns: minmax(250px, 1fr) minmax(0, 2fr); gap: 20px; align-items: start; margin-bottom: 30px; }
+.catalog-manager-forms { display: grid; grid-template-columns: minmax(250px, 1fr) minmax(0, 2fr); grid-auto-rows: 1fr; gap: 20px; margin-bottom: 30px; }
 .catalog-form { min-width: 0; padding: 25px; border: 1px solid var(--line); border-radius: 7px; background: white; }
 .catalog-form-heading { display: flex; align-items: center; gap: 12px; }
 .catalog-form-heading h3 { min-width: 0; font-size: 18px; font-weight: 600; letter-spacing: -.4px; }

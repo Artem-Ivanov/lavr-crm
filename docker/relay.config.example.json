@@ -1,0 +1,16 @@
+{
+  "sources": [
+    {
+      "id": "mirzap67",
+      "token_sha256": "REPLACE_WITH_SHA256_OF_A_NEW_PRIVATE_SOURCE_TOKEN",
+      "destinations": ["mirzap67.staff"],
+      "allowed_origins": ["https://mirzap67.ru"]
+    }
+  ],
+  "aliases": {
+    "mirzap67.staff": {
+      "chat_id": "-1003744016989",
+      "revision": "mirzap67-staff-v1"
+    }
+  }
+}

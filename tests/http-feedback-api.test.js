@@ -4,9 +4,9 @@ import { createHttpApi } from '../src/data/http-api.js';
 
 const key = '9a55cbe9-3743-4f32-9c83-4c01955ade11';
 const body = { type: 'contact', name: 'Иван', phone: '', email: 'ivan@example.org', messenger: { service: '', address: '' }, message: '' };
-const receipt = { id: key, number: 'F-1', createdAt: '2026-10-20T10:00:00Z', state: 'accepted' };
-const session = { user: { id: 'manager', name: 'Ольга', role: 'manager' }, csrfToken: 'a'.repeat(32), expiresAt: '2026-10-21T10:00:00Z' };
-const feedback = { ...body, id: key, number: receipt.number, createdAt: receipt.createdAt, updatedAt: receipt.createdAt, status: 'new', assignedTo: null, version: 1, resolution: '', order: null, history: [{ id: 'event-1', createdAt: receipt.createdAt, staff: null, action: 'feedback.created', text: '', contactMethod: '' }], notification: { state: 'queued', code: null } };
+const receipt = { id: key, number: 1, createdAt: '2026-10-20T10:00:00Z', state: 'accepted' };
+const session = { user: { id: 'manager', name: 'Ольга', email: null, phone: null, emailVerified: false, phoneVerified: false, profileComplete: false }, capabilities: { operate: true, editSite: false, manageUsers: false }, csrfToken: 'a'.repeat(32), expiresAt: '2026-10-21T10:00:00Z' };
+const feedback = { ...body, id: key, number: receipt.number, createdAt: receipt.createdAt, updatedAt: receipt.createdAt, status: 'new', assignedTo: null, version: 1, resolution: '', order: null, history: [{ id: 'event-1', createdAt: receipt.createdAt, staff: null, action: 'feedback.created', text: '', contactMethod: '' }], canManage: true, notification: { state: 'queued', code: null } };
 const claimed = { ...feedback, status: 'in_progress', assignedTo: { id: 'manager', name: 'Ольга' }, version: 2 };
 const orderBody = { customer: { name: 'Иван', phone: '+79991234567', email: 'ivan@example.org' }, fulfillment: { method: 'pickup', address: '' }, items: [{ productId: 'oil', quantity: 1, expectedUnitPriceKopecks: 389000 }] };
 const order = { id: 'order-1', number: 'L-1', createdAt: receipt.createdAt, totalKopecks: 389000, status: 'new', integrationStatus: 'pending_sync' };
@@ -71,7 +71,7 @@ test('feedback API blocks malformed payloads, nested responses, private public r
   for (const invoke of [
     api => api.submitFeedback({ ...body, phone: 'bad' }, key),
     api => api.getFeedback({ status: 'bogus' }),
-    api => api.getFeedback({ query: 'a'.repeat(121) }),
+    api => api.getFeedback({ query: 'a'.repeat(255) }),
     api => api.updateFeedbackStatus(feedback, { status: 'converted' }),
     api => api.updateFeedbackStatus(feedback, { status: 'closed', resolution: ' ' }),
     api => api.addFeedbackNote(claimed, { text: ' ' }),
@@ -87,4 +87,13 @@ test('feedback API blocks malformed payloads, nested responses, private public r
   for (const response of [json({ ...feedback, history: [{ ...feedback.history[0], staff: { id: 'staff', name: 12 } }] }), json(feedback, 200, { ETag: '"2"' })]) {
     await assert.rejects(setup([response]).api.getFeedbackDetail(key), error => error.code === 'INVALID_RESPONSE');
   }
+});
+
+test('manager contact search accepts the full supported email length', async () => {
+  const query = `${'a'.repeat(242)}@example.org`;
+  assert.equal(query.length, 254);
+  const page = { items: [], total: 0, offset: 0, limit: 24 };
+  const { api, calls } = setup([json(page)]);
+  assert.deepEqual(await api.getFeedback({ query }), page);
+  assert.equal(new URL(calls[0].url, 'http://localhost').searchParams.get('q'), query);
 });

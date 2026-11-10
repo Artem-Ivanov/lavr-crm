@@ -1,0 +1,231 @@
+import { test, after } from 'node:test';
+import assert from 'node:assert/strict';
+const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || 'playwright');
+const browser = await chromium.launch({ channel: 'chrome', headless: true });
+after(() => browser.close());
+const baseUrl = process.env.BASE_URL || 'http://127.0.0.1:5188';
+const now = '2026-10-28T10:00:00Z';
+const session = (role = 'partner', id = role, complete = true) => ({ user: { id, name: '', email: complete ? `${id}@example.test` : null, phone: complete ? '+79991234567' : null, emailVerified: complete, phoneVerified: false, profileComplete: complete }, capabilities: { operate: role !== 'partner', editSite: role === 'admin', manageUsers: role === 'admin' }, csrfToken: `${id}-`.padEnd(40, 'a'), expiresAt: '2027-01-01T00:00:00Z' });
+const product = { id: 'part', externalId: 'external', sku: 'P-1', brand: 'A', name: 'Тестовая деталь', category: 'parts', priceKopecks: 10000, stock: 10, image: '', deliveryDays: 1 };
+const order = id => ({ id: `order-${id}`, number: `PRIVATE-${id}`, createdAt: now, status: 'new', totalKopecks: 10000, fulfillment: { method: 'pickup', address: '' }, items: [{ productId: 'part', sku: 'P-1', brand: 'A', name: 'Тестовая деталь', quantity: 1, unitPriceKopecks: 10000 }] });
+const flow = { flowId: 'opaque-flow', resendAfterSeconds: 0 };
+const adminUser = { id: 'other', name: '', login: 'other@example.test', email: 'other@example.test', phone: '+79991234567', emailVerified: true, phoneVerified: false, role: 'partner', isActive: true, version: 1 };
+async function open(t, { initial = null, hash = '', width = 1440, handle } = {}) {
+ const context = await browser.newContext({ viewport: { width, height: 1000 } }); const page = await context.newPage();
+ page.setDefaultTimeout(5000); const errors = []; const state = { session: initial, calls: [], user: { ...adminUser } };
+ page.on('pageerror', issue => errors.push(issue.message));
+ t.after(async () => { await context.close(); assert.deepEqual(errors, []); });
+ await context.route('**/api/**', async route => {
+  const request = route.request(); const url = new URL(request.url()); const path = url.pathname.slice(4); const method = request.method(); const body = request.postData() ? request.postDataJSON() : undefined;
+  state.calls.push({ path, method, body, headers: request.headers() });
+  const json = (value, status = 200, headers = {}) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(value), headers });
+  if (handle && await handle({ route, path, method, body, state, json })) return;
+  if (path === '/site') return json({ hero: { title: 'MIRZAP67', description: 'Магазин', image: null, target: { type: 'catalog' }, buttonText: 'В каталог' }, settings: { storeName: 'MIRZAP67', phone: '+79991234567', address: 'Тестовый адрес', hours: '9–18', categoriesTitle: 'Категории', promotionsTitle: 'Предложения', catalogTitle: 'Каталог' }, menu: [], publications: [] });
+  if (path === '/categories') return json([{ id: 'parts', name: 'Запчасти', position: 0, showInMenu: true }]);
+  if (path === '/catalog') return json({ items: [product], total: 1, offset: 0, limit: 24, catalogUpdatedAt: now, stale: false });
+  if (path === '/catalog/part') return json({ product, catalogUpdatedAt: now, stale: false });
+  if (['/customer/session', '/manager/session'].includes(path)) {
+   if (method === 'DELETE') { state.session = null; return route.fulfill({ status: 204 }); }
+   if (method === 'POST') { const role = body.email.startsWith('admin') ? 'admin' : body.email.startsWith('operator') ? 'operator' : 'partner'; state.session = session(role, body.email?.split('@')[0] || role); return json(state.session); }
+   return state.session ? json(state.session) : json({ code: 'SESSION_REQUIRED', message: 'Войдите снова' }, 401);
+  }
+  if (['/customer/auth/signup', '/customer/auth/resend', '/customer/auth/password-reset', '/customer/profile/activation'].includes(path)) return json(flow, 202);
+  if (['/customer/auth/activate', '/customer/profile/activation/confirm'].includes(path)) { state.session = session(state.session?.capabilities.operate ? 'operator' : 'partner', state.session?.user.id || 'new-user'); return json(state.session); }
+  if (path === '/customer/auth/password-reset/confirm') return route.fulfill({ status: 204 });
+  if (path === '/customer/orders') {
+   if (method === 'POST') return json(order(state.session.user.id), 201);
+   return json({ items: [order(state.session.user.id)], total: 1, offset: 0, limit: 24 });
+  }
+  if (path.startsWith('/customer/orders/')) return json(order(state.session.user.id));
+  if (path === '/customer/feedback') {
+   const feedback = { id: 'own-feedback', number: 1, createdAt: now, type: 'request', message: body?.message || 'Мой вопрос', status: 'new', order: null };
+   return method === 'POST' ? json(feedback, 201) : json({ items: [feedback], total: 1, offset: 0, limit: 24 });
+  }
+  if (path === '/admin/users') return json({ items: [state.user], total: 1, offset: 0, limit: 24 });
+  if (path.startsWith('/admin/users/')) {
+   if (method === 'PATCH') { Object.assign(state.user, body); state.user.version++; }
+   return json(state.user, 200, { ETag: `"${state.user.version}"` });
+  }
+  if (path === '/manager/orders' || path === '/manager/feedback') return json({ items: [], total: 0, offset: 0, limit: 24 });
+  return json({ code: 'NOT_FOUND', message: `Недоступен ${path}` }, 404);
+ });
+ await page.goto(`${baseUrl}/#${hash}`, { waitUntil: 'networkidle' });
+ return { page, state };
+}
+async function signIn(page, email = 'partner@example.test') {
+ await page.locator('.account-form input[name="email"]').fill(email);
+ await page.locator('.account-form input[name="password"]').fill('long password');
+ await page.locator('.account-form button[type="submit"]').click();
+ await page.getByRole('heading', { name: 'Контакты профиля' }).waitFor();
+}
+test('public auth navigation, signup/code/resend and password reset use accessible real forms', async t => {
+ const { page, state } = await open(t, { hash: 'signup' });
+ await page.locator('.account-form input[name="email"]').fill('new@example.test'); await page.locator('.account-form input[name="phone"]').fill('+79991234567'); await page.locator('.account-form input[name="password"]').fill('long password');
+ await page.getByRole('button', { name: 'Получить код', exact: true }).click();
+ await page.getByLabel('Код из письма').fill('123456'); await page.getByRole('button', { name: 'Отправить код повторно' }).click();
+ await page.getByRole('button', { name: 'Подтвердить код', exact: true }).click(); await page.getByRole('heading', { name: 'Контакты профиля' }).waitFor();
+ assert.equal(state.calls.find(call => call.path === '/customer/auth/signup').body.role, undefined);
+ await page.goto(`${baseUrl}/#password-reset`); await page.locator('.account-form input[name="email"]').fill('new@example.test'); await page.getByRole('button', { name: 'Получить код', exact: true }).click();
+ await page.getByLabel('Код из письма').fill('123456'); await page.getByLabel('Новый пароль', { exact: false }).fill('another password'); await page.getByRole('button', { name: 'Сохранить новый пароль' }).click();
+ await page.waitForFunction(() => !document.querySelector('input[name="newPassword"]'));
+ const stored = await page.evaluate(() => JSON.stringify({ ...localStorage, ...sessionStorage })); assert.ok(!stored.includes('long password')); assert.ok(!stored.includes('123456'));
+});
+test('partner sees only private account data and own checkout uses server contacts without mandatory name', async t => {
+ const { page, state } = await open(t, { hash: 'login' }); await signIn(page);
+ assert.equal(await page.locator('a[href="#admin-users"]').count(), 0); assert.equal(await page.locator('a[href="#crm-content"]').count(), 0);
+ await page.locator('.crm-tabs a[href="#account-orders"]').click(); await page.getByText('№ PRIVATE-partner', { exact: true }).click(); await page.locator('[data-testid="own-detail"]').waitFor();
+ await page.goto(`${baseUrl}/#catalog`); await page.locator('.product-card button[data-action="add"]').first().click(); await page.goto(`${baseUrl}/#cart`);
+ assert.equal(await page.locator('#checkout-form input[name="phone"]').count(), 0); assert.equal(await page.locator('#checkout-form input[name="name"]').getAttribute('required'), null);
+ await page.locator('.checkout-submit').click(); await page.getByRole('heading', { name: 'Заказ создан', exact: true }).waitFor();
+ const create = state.calls.find(call => call.path === '/customer/orders' && call.method === 'POST'); assert.equal(create.body.customer, undefined); assert.equal(create.body.name, undefined); assert.ok(create.headers['x-csrf-token']);
+});
+test('operator keeps operational tabs while direct CMS and users routes stay unavailable', async t => {
+ const { page, state } = await open(t, { initial: session('operator'), hash: 'crm' });
+ await page.locator('.crm-tabs a[href="#crm-feedback"]').waitFor(); assert.equal(await page.locator('.crm-tabs a[href="#crm-content"]').count(), 0);
+ await page.goto(`${baseUrl}/#crm-content`); await page.getByText('Редактор сайта доступен администратору.').waitFor();
+ await page.goto(`${baseUrl}/#admin-users`); await page.getByText('Управление пользователями недоступно.').waitFor(); assert.equal(state.calls.filter(call => call.path === '/admin/users').length, 0);
+});
+test('admin manages versioned roles and status, with stale versions requiring refresh', async t => {
+ let stale = true;
+ const { page, state } = await open(t, { initial: session('admin'), hash: 'admin-users', handle: async ({ path, method, json }) => { if (path.endsWith('/permissions') && method === 'PATCH' && stale) { stale = false; await json({ code: 'VERSION_CONFLICT', message: 'Версия изменилась' }, 412); return true; } } });
+ await page.locator('.account-user-row').click(); await page.locator('[data-testid="user-detail"] select').selectOption('operator'); await page.getByRole('button', { name: 'Сохранить роль' }).click();
+ await page.getByText(/Загрузите актуальную карточку перед изменением/).waitFor(); assert.equal(await page.getByRole('button', { name: 'Сохранить роль' }).isDisabled(), true);
+ await page.getByRole('button', { name: 'Загрузить актуальную карточку', exact: true }).click(); await page.locator('[data-testid="user-detail"] select').selectOption('operator'); await page.getByRole('button', { name: 'Сохранить роль' }).click();
+ await page.waitForFunction(() => document.querySelector('[data-testid="user-detail"]')?.textContent.includes('Версия 2'));
+ await page.getByRole('button', { name: 'Заблокировать', exact: true }).click(); await page.getByRole('button', { name: 'Разблокировать', exact: true }).waitFor();
+ assert.equal(state.calls.findLast(call => call.path.endsWith('/status')).headers['if-match'], '"2"');
+ assert.ok(await page.locator('.crm-tabs a[href="#crm"]').count());
+});
+test('legacy profile completion keeps the same identity', async t => {
+ const { page, state } = await open(t, { initial: session('operator', 'legacy', false), hash: 'account' });
+ await page.locator('.account-form input[name="email"]').fill('legacy@example.test'); await page.locator('.account-form input[name="phone"]').fill('+79991234567'); await page.getByRole('button', { name: 'Получить код', exact: true }).click();
+ await page.getByLabel('Код из письма').fill('123456'); await page.getByRole('button', { name: 'Подтвердить код', exact: true }).click(); await page.getByRole('heading', { name: 'Контакты профиля' }).waitFor(); assert.equal(state.session.user.id, 'legacy');
+});
+test('a slow first-user response is discarded after logout and second-user login', async t => {
+ let release; let held;
+ const { page } = await open(t, { initial: session('partner', 'first'), hash: 'account', handle: async ({ path, route }) => { if (path === '/customer/orders' && !held) { held = true; await new Promise(resolve => { release = resolve; }); await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ items: [order('first')], total: 1, offset: 0, limit: 24 }) }); return true; } } });
+ await page.locator('.crm-tabs a[href="#account-orders"]').click(); await page.getByText('Загружаем ваши данные…').waitFor();
+ await page.getByRole('button', { name: 'Выйти', exact: true }).click(); await page.getByRole('heading', { name: 'Войти в личный кабинет' }).waitFor(); await signIn(page, 'second@example.test'); release();
+ await page.locator('.crm-tabs a[href="#account-orders"]').click(); await page.getByText('№ PRIVATE-second', { exact: true }).waitFor(); assert.equal(await page.getByText('PRIVATE-first', { exact: false }).count(), 0);
+});
+test('expired signed-in checkout requires re-login and never falls back to guest', async t => {
+ const { page, state } = await open(t, { initial: session(), hash: 'catalog', handle: async ({ path, method, json }) => { if (path === '/customer/orders' && method === 'POST') { await json({ code: 'SESSION_EXPIRED', message: 'Войдите снова' }, 401); return true; } } });
+ await page.locator('.product-card button[data-action="add"]').first().click(); await page.goto(`${baseUrl}/#cart`); await page.locator('.checkout-submit').click();
+ await page.getByRole('link', { name: 'Войти снова', exact: true }).waitFor(); assert.equal(await page.locator('.checkout-submit').isDisabled(), true); assert.equal(state.calls.some(call => call.path === '/orders'), false);
+ assert.ok(await page.evaluate(() => localStorage.getItem('lavr.cart.v1').includes('part')));
+});
+for (const width of [320, 390]) test(`keyboard login and account layout fit ${width}px`, async t => {
+ const { page } = await open(t, { hash: 'login', width });
+ await page.locator('.account-form input[name="email"]').focus(); await page.keyboard.type('partner@example.test'); await page.keyboard.press('Tab'); await page.keyboard.type('long password'); await page.keyboard.press('Enter');
+ await page.getByRole('heading', { name: 'Контакты профиля' }).waitFor();
+ assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
+ await page.screenshot({ path: `/tmp/lavr-accounts-mobile-${width}.png`, fullPage: true });
+});
+test('own feedback uses profile contacts, and expiry keeps the draft until the same account logs in', async t => {
+ let fail = true;
+ const { page, state } = await open(t, { initial: session('partner'), hash: 'account-feedback', handle: async ({ path, method, json }) => { if (path === '/customer/feedback' && method === 'POST' && fail) { fail = false; await json({ code: 'SESSION_EXPIRED', message: 'Войдите снова' }, 401); return true; } } });
+ await page.getByRole('button', { name: 'Новое обращение' }).click();
+ const dialog = page.locator('.feedback-dialog');
+ assert.equal(await dialog.locator('input[name="feedbackEmail"]').count(), 0);
+ await dialog.locator('textarea').fill('Сохранённый вопрос'); await dialog.getByRole('button', { name: 'Отправить обращение' }).click();
+ await dialog.getByRole('link', { name: 'Войти снова', exact: true }).click(); await signIn(page);
+ await page.goto(`${baseUrl}/#account-feedback`); await page.getByRole('button', { name: 'Новое обращение' }).click();
+ assert.equal(await dialog.locator('textarea').inputValue(), 'Сохранённый вопрос');
+ await dialog.getByRole('button', { name: 'Отправить обращение' }).click(); await dialog.locator('[data-testid="feedback-receipt"]').waitFor();
+ const call = state.calls.findLast(call => call.path === '/customer/feedback' && call.method === 'POST'); assert.deepEqual(call.body, { type: 'request', message: 'Сохранённый вопрос' });
+});
+test('demo clearly labels simulation, refuses real signup and simulates account feedback', async t => {
+ const context = await browser.newContext({ viewport: { width: 390, height: 844 } }); const page = await context.newPage(); t.after(() => context.close());
+ await page.goto(`${process.env.DEMO_BASE_URL || 'http://127.0.0.1:5189'}/#signup`);
+ await page.locator('.account-form input[name="email"]').fill('fake@example.test'); await page.locator('.account-form input[name="phone"]').fill('+79991234567'); await page.locator('.account-form input[name="password"]').fill('long password'); await page.getByRole('button', { name: 'Получить код', exact: true }).click();
+ await page.getByRole('alert').filter({ hasText: /В демонстрации регистрация, коды и письма недоступны/ }).waitFor(); assert.equal(await page.locator('input[name="code"]').count(), 0);
+ await page.locator('.account-actions a[href="#login"]').click(); await signIn(page);
+ await page.locator('.crm-tabs a[href="#account-feedback"]').click(); await page.getByRole('button', { name: 'Новое обращение' }).click(); await page.locator('.feedback-dialog textarea').fill('Демонстрационный вопрос'); await page.locator('.feedback-dialog button[type="submit"]').click();
+ await page.getByRole('heading', { name: 'Демообращение сохранено' }).waitFor(); assert.ok((await page.locator('.feedback-dialog').textContent()).includes('Магазину они не отправлены'));
+});
+test('checkout recovery restores only the same account and clears address on explicit logout', async t => {
+ const { page } = await open(t, { initial: session('partner', 'first'), hash: 'catalog', handle: async ({ path, method, json }) => { if (path === '/customer/orders' && method === 'POST') { await json({ code: 'SESSION_EXPIRED', message: 'Войдите снова' }, 401); return true; } } });
+ await page.locator('.product-card button[data-action="add"]').first().click(); await page.evaluate(() => { location.hash = 'cart'; });
+ await page.locator('#checkout-form input[name="name"]').fill('Имя для этого заказа'); await page.locator('input[name="method"][value="delivery"]').check(); await page.locator('input[name="address"]').fill('Адрес первого аккаунта');
+ await page.locator('.checkout-submit').click(); await page.getByRole('link', { name: 'Войти снова', exact: true }).click(); await signIn(page, 'first@example.test'); await page.evaluate(() => { location.hash = 'cart'; });
+ assert.equal(await page.locator('#checkout-form input[name="name"]').inputValue(), 'Имя для этого заказа'); assert.equal(await page.locator('input[name="address"]').inputValue(), 'Адрес первого аккаунта');
+ await page.getByRole('button', { name: 'Выйти', exact: true }).click(); await signIn(page, 'second@example.test'); await page.evaluate(() => { location.hash = 'cart'; });
+ assert.equal(await page.locator('input[name="address"]').inputValue(), ''); assert.equal(await page.locator('#checkout-form input[name="name"]').inputValue(), '');
+});
+
+for (const [role, label] of [['admin', 'Администратор'], ['operator', 'Оператор'], ['partner', 'Партнёр']]) test(`${role} account controls appear once beside the cart and disappear on logout`, async t => {
+ const { page } = await open(t, { initial: session(role), hash: 'account' });
+ const account = page.locator('.header-account');
+ const signOut = page.getByRole('button', { name: 'Выйти', exact: true });
+ await account.locator('.account-role').waitFor();
+ assert.equal(await account.locator('.account-role').textContent(), label);
+ assert.equal(await account.locator('.crm-nav').getAttribute('title'), `${role}@example.test`);
+ assert.equal(await account.locator('.crm-nav').getAttribute('href'), '#account');
+ assert.equal(await signOut.count(), 1);
+ assert.equal(await account.getByRole('button', { name: 'Выйти', exact: true }).count(), 1);
+ assert.ok(await account.evaluate(element => element.parentElement.matches('.header-actions') && element.previousElementSibling?.matches('.header-cart')));
+ for (const width of [320, 390, 1440]) {
+  await page.setViewportSize({ width, height: 1000 });
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), `${role} header fits ${width}px`);
+  for (const control of [account.locator('.crm-nav'), signOut]) {
+   const size = await control.boundingBox();
+   assert.ok(size && size.width >= 44 && size.height >= 44, `${role} account touch target at ${width}px: ${JSON.stringify(size)}`);
+  }
+ }
+ await signOut.click();
+ await page.getByRole('heading', { name: 'Войти в личный кабинет', exact: true }).waitFor();
+ assert.equal(await page.locator('.account-role').count(), 0);
+ assert.equal(await signOut.count(), 0);
+ assert.equal(await account.locator('.crm-nav').getAttribute('title'), null);
+ assert.equal(await account.locator('.crm-nav').textContent().then(value => value.trim()), 'Войти');
+});
+
+for (const role of ['admin', 'operator', 'partner']) test(`${role} account stays inside the shared cabinet menu`, async t => {
+ const { page, state } = await open(t, { initial: session(role), hash: 'account' });
+ const cabinet = page.locator('.crm-page');
+ await cabinet.getByRole('heading', { name: 'Контакты профиля' }).waitFor();
+ const menu = cabinet.getByRole('navigation', { name: 'Разделы CRM', exact: true });
+ assert.equal(await menu.getByRole('link', { name: 'Личный кабинет', exact: true }).getAttribute('aria-current'), 'page');
+ assert.equal(await menu.locator('a[href="#crm"]').count(), role === 'partner' ? 0 : 1);
+ assert.equal(await menu.locator('a[href="#crm-content"]').count(), role === 'admin' ? 1 : 0);
+ assert.equal(await menu.locator('a[href="#admin-users"]').count(), role === 'admin' ? 1 : 0);
+ assert.equal(await page.locator('main h1').count(), 1);
+ await cabinet.getByRole('link', { name: 'Мои заказы', exact: true }).click();
+ await cabinet.getByText(`№ PRIVATE-${role}`, { exact: true }).waitFor();
+ assert.equal(await menu.getByRole('link', { name: 'Личный кабинет', exact: true }).getAttribute('aria-current'), 'page');
+ await page.reload({ waitUntil: 'networkidle' });
+ await cabinet.getByText(`№ PRIVATE-${role}`, { exact: true }).waitFor();
+ await cabinet.getByRole('link', { name: 'Мои обращения', exact: true }).click();
+ await cabinet.getByText('Мой вопрос', { exact: true }).waitFor();
+ if (role === 'partner') assert.equal(state.calls.some(call => call.path.startsWith('/admin/') || call.path.startsWith('/manager/') && call.path !== '/manager/session'), false);
+});
+
+test('incomplete admin profile is embedded and leaves staff sections available at 320px', async t => {
+ const { page } = await open(t, { initial: session('admin', 'admin', false), hash: 'account', width: 320 });
+ const cabinet = page.locator('.crm-page');
+ await cabinet.getByRole('heading', { name: 'Завершите профиль' }).waitFor();
+ assert.equal(await page.locator('main h1').count(), 1);
+ assert.equal(await cabinet.getByRole('navigation', { name: 'Вход и регистрация' }).count(), 0);
+ assert.equal(await cabinet.locator('.container').count(), 0);
+ assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true);
+ await cabinet.getByRole('link', { name: 'Обращения', exact: true }).click();
+ await cabinet.getByRole('heading', { name: 'Обращения покупателей.' }).waitFor();
+ await cabinet.getByRole('link', { name: 'Личный кабинет', exact: true }).click();
+ await cabinet.getByRole('heading', { name: 'Завершите профиль' }).waitFor();
+ assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true);
+});
+
+test('guest direct account link keeps login inside the cabinet without duplicate headings', async t => {
+ const { page, state } = await open(t, { hash: 'account-orders?order=private', width: 320 });
+ const cabinet = page.locator('.crm-page');
+ await cabinet.getByRole('heading', { name: 'Войти в личный кабинет', exact: true }).waitFor();
+ assert.equal(await page.locator('main h1').count(), 1);
+ assert.equal(await cabinet.locator('.container').count(), 0);
+ assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true);
+ assert.equal(state.calls.some(call => call.path.startsWith('/customer/orders')), false);
+ await page.locator('.account-form input[name="email"]').fill('partner@example.test');
+ await page.locator('.account-form input[name="password"]').fill('long password');
+ await page.locator('.account-form button[type="submit"]').click();
+ await cabinet.getByTestId('own-detail').waitFor();
+ assert.equal(new URL(page.url()).hash, '#account-orders?order=private');
+});

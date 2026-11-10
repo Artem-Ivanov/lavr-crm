@@ -4,13 +4,14 @@ from uuid import uuid4
 from fastapi import Depends, FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from fastapi.openapi.docs import get_swagger_ui_html
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from starlette.exceptions import HTTPException
 
 from .common import ApiError
-from .config import settings
+from .config import settings, validate_notification_transport
 from .db import get_db
 
 
@@ -42,13 +43,30 @@ class BodyLimitMiddleware:
 
 
 def create_app():
+    from .telegram_api import DeliveryError
+    try:
+        validate_notification_transport()
+    except DeliveryError:
+        raise RuntimeError('NOTIFICATION_TRANSPORT должен быть direct или relay.') from None
     if len(settings.session_secret) < 32:
         raise RuntimeError('SESSION_SECRET должен содержать минимум 32 символа.')
-    from . import auth, catalog, content, orders, integration, feedback
-    app = FastAPI(title='LAVR CRM API', docs_url='/api/docs', openapi_url='/api/openapi.json')
+    if len(settings.challenge_secret) < 32:
+        raise RuntimeError('CHALLENGE_SECRET должен содержать минимум 32 символа.')
+    from .crypto import validate_configuration
+    validate_configuration()
+    from . import auth, catalog, content, orders, integration, feedback, users, customer_records, accounts, catalog_imports
+    app = FastAPI(title='MIRZAP67 CRM API', docs_url=None, redoc_url=None, openapi_url=None)
     app.add_middleware(BodyLimitMiddleware)
-    for module in (auth, catalog, content, orders, integration, feedback):
+    for module in (auth, catalog, content, orders, integration, feedback, users, customer_records, accounts, catalog_imports):
         app.include_router(module.router)
+
+    @app.get('/api/openapi.json', include_in_schema=False)
+    def service_schema(user=Depends(auth.get_current_staff)):
+        return JSONResponse(app.openapi())
+
+    @app.get('/api/docs', include_in_schema=False)
+    def service_docs(user=Depends(auth.get_current_staff)):
+        return get_swagger_ui_html(openapi_url='/api/openapi.json', title='MIRZAP67 API')
 
     @app.middleware('http')
     async def response_headers(request: Request, call_next):

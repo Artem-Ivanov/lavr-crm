@@ -1,0 +1,135 @@
+name: mirzap67-notifier-dev
+
+x-crm-environment: &crm-environment
+  DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:?Run develop/setup.py}:${POSTGRES_PASSWORD:?Run develop/setup.py}@postgres:5432/mirzap67_notifier_test
+  PII_ENCRYPTION_KEYS: ${PII_ENCRYPTION_KEYS:?Run develop/setup.py}
+  PII_ACTIVE_KEY_ID: v1
+  PII_INDEX_KEY: ${PII_INDEX_KEY:?Run develop/setup.py}
+  CHALLENGE_SECRET: ${CHALLENGE_SECRET:?Run develop/setup.py}
+  SESSION_SECRET: ${SESSION_SECRET:?Run develop/setup.py}
+  ADMIN_LOGIN: admin
+  ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Run develop/setup.py}
+  MEDIA_DIR: /data/media
+  CUSTOMER_REGISTRATION_ENABLED: "false"
+  SMTP_HOST: ""
+  SMTP_USERNAME: ""
+  SMTP_PASSWORD: ""
+  SMTP_FROM: ""
+  SEED_DEMO_CATALOG: "false"
+  ALLOWED_ORIGINS: https://crm.test
+  COOKIE_SECURE: "false"
+  TELEGRAM_BOT_TOKEN: ""
+  TELEGRAM_CHAT_ID: ""
+  DEV_TELEGRAM_BOT_TOKEN: ${DEV_TELEGRAM_BOT_TOKEN:?Run develop/setup.py}
+  TELEGRAM_NOTIFICATIONS_ENABLED: "true"
+  NOTIFICATION_TRANSPORT: relay
+  NOTIFICATION_RELAY_TARGET: notifier:50051
+  NOTIFICATION_RELAY_TOKEN: ${NOTIFICATION_RELAY_TOKEN:?Run develop/setup.py}
+  NOTIFICATION_RELAY_CA_FILE: /run/notifier/tls.crt
+  NOTIFICATION_DESTINATION_ALIAS: mirzap67.staff
+  PUBLIC_SITE_URL: https://crm.test
+  TRUSTED_PROXY_HOSTS: ""
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?Run develop/setup.py}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run develop/setup.py}
+      POSTGRES_DB: mirzap67_notifier_test
+    ports: ["127.0.0.1:55442:5432"]
+    volumes: [postgres_data:/var/lib/postgresql/data]
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    restart: "no"
+
+  backend:
+    image: mirzap67-notifier-dev-backend:local
+    build:
+      context: ../backend
+    environment: *crm-environment
+    ports: ["127.0.0.1:8083:8000"]
+    volumes:
+      - media_data:/data/media
+      - ./.runtime/tls.crt:/run/notifier/tls.crt:ro
+      - ./.runtime/relay.json:/run/notifier/relay.json:ro
+      - .:/develop:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    restart: "no"
+
+  notifications:
+    image: mirzap67-notifier-dev-backend:local
+    build:
+      context: ../backend
+    command: [python, -m, app.notification_worker]
+    environment: *crm-environment
+    volumes:
+      - ./.runtime/tls.crt:/run/notifier/tls.crt:ro
+      - ./.runtime/relay.json:/run/notifier/relay.json:ro
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      disable: true
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    restart: "no"
+
+  notifier:
+    image: mirzap67-notifier-dev-service:local
+    build:
+      context: ${NOTIFIER_SOURCE:-../../internal-notifier}
+    user: "${DEV_UID:?Run develop/setup.py}:${DEV_GID:?Run develop/setup.py}"
+    command: [python, /develop/notifier_mock_launcher.py]
+    environment:
+      RELAY_CONFIG_FILE: /run/notifier/relay.json
+      RELAY_DATABASE_PATH: /data/relay/notifications.sqlite
+      RELAY_TLS_CERT_FILE: /run/notifier/tls.crt
+      RELAY_TLS_KEY_FILE: /run/notifier/tls.key
+      RELAY_LISTEN_ADDRESS: "[::]:50051"
+      TELEGRAM_BOT_TOKEN: ${DEV_TELEGRAM_BOT_TOKEN:?Run develop/setup.py}
+    ports: ["127.0.0.1:50052:50051"]
+    volumes:
+      - ./notifier_mock_launcher.py:/develop/notifier_mock_launcher.py:ro
+      - ./.runtime/relay.json:/run/notifier/relay.json:ro
+      - ./.runtime/tls.crt:/run/notifier/tls.crt:ro
+      - ./.runtime/tls.key:/run/notifier/tls.key:ro
+      - ./.runtime/ledger:/data/relay
+    depends_on:
+      telegram-mock:
+        condition: service_healthy
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    restart: "no"
+
+  telegram-mock:
+    image: python:3.13-slim
+    user: "65534:65534"
+    command: [python, -B, /develop/telegram_mock.py]
+    ports: ["127.0.0.1:8093:8080"]
+    volumes:
+      - ./telegram_mock.py:/develop/telegram_mock.py:ro
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=2)"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    read_only: true
+    restart: "no"
+
+networks:
+  default:
+    internal: true
+
+volumes:
+  postgres_data:
+  media_data:

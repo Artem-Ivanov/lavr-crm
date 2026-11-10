@@ -1,0 +1,125 @@
+{
+  "valid": [
+    {
+      "page": "home",
+      "query": {},
+      "hash": "#home"
+    },
+    {
+      "page": "catalog",
+      "query": {
+        "category": "filters"
+      },
+      "hash": "#catalog?category=filters"
+    },
+    {
+      "page": "catalog",
+      "query": {
+        "product": "part ~*?&#% деталь"
+      },
+      "hash": "#catalog?product=part+%7E*%3F%26%23%25+%D0%B4%D0%B5%D1%82%D0%B0%D0%BB%D1%8C"
+    },
+    {
+      "page": "catalog",
+      "query": {
+        "category": "oils",
+        "product": "sku 1"
+      },
+      "hash": "#catalog?category=oils&product=sku+1"
+    },
+    {
+      "page": "home",
+      "query": {
+        "section": "offers"
+      },
+      "hash": "#home?section=offers"
+    },
+    {
+      "page": "home",
+      "query": {
+        "publication": "offer-1"
+      },
+      "hash": "#home?publication=offer-1"
+    },
+    {
+      "page": "crm",
+      "query": {
+        "order": "order 1"
+      },
+      "hash": "#crm?order=order+1"
+    },
+    {
+      "page": "crm-feedback",
+      "query": {
+        "case": "e7435b12-3bf9-4d32-80cb-8f7048f5c610"
+      },
+      "hash": "#crm-feedback?case=e7435b12-3bf9-4d32-80cb-8f7048f5c610"
+    },
+    {
+      "page": "account-orders",
+      "query": {
+        "order": "own-1"
+      },
+      "hash": "#account-orders?order=own-1"
+    },
+    {
+      "page": "account-feedback",
+      "query": {
+        "case": "own-case"
+      },
+      "hash": "#account-feedback?case=own-case"
+    },
+    {
+      "page": "admin-users",
+      "query": {
+        "user": "user-1"
+      },
+      "hash": "#admin-users?user=user-1"
+    },
+    {
+      "page": "crm-content",
+      "query": {
+        "tab": "media"
+      },
+      "hash": "#crm-content?tab=media"
+    },
+    {
+      "page": "crm-content",
+      "query": {
+        "tab": "publications",
+        "publication": "pub-1"
+      },
+      "hash": "#crm-content?tab=publications&publication=pub-1"
+    },
+    {
+      "page": "crm-content",
+      "query": {},
+      "hash": "#crm-content"
+    }
+  ],
+  "invalidHashes": [
+    "#catalog?category=",
+    "#crm?order=a&order=b",
+    "#home?section=invalid",
+    "#home?section=offers&publication=x",
+    "#crm-content?tab=media&publication=x",
+    "#catalog?product=%E0%A4%A",
+    "#crm-feedback?case=%00x",
+    "#admin-users?user=.."
+  ],
+  "validReturnTargets": [
+    "#crm?order=order-1",
+    "#account-feedback?case=own-1",
+    "#catalog?category=filters"
+  ],
+  "invalidReturnTargets": [
+    "https://example.test/",
+    "//example.test/",
+    "/crm?order=x",
+    "#unknown",
+    "#login",
+    "#signup",
+    "#account?returnTo=%23crm",
+    "#crm?order=%0Ax"
+  ]
+}

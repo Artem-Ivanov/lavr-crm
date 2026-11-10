@@ -26,15 +26,32 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-lavr}:${POSTGRES_PASSWORD:?Run scripts/start.sh first}@postgres:5432/${POSTGRES_DB:-lavr}
       MEDIA_DIR: /data/media
-      ADMIN_LOGIN: ${ADMIN_LOGIN:-admin}
+      ADMIN_LOGIN: ${ADMIN_LOGIN:-}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Run scripts/start.sh first}
       SESSION_SECRET: ${SESSION_SECRET:?Run scripts/start.sh first}
+      PII_ENCRYPTION_KEYS: ${PII_ENCRYPTION_KEYS:?Generate and securely back up the PII keys before migration}
+      PII_ACTIVE_KEY_ID: ${PII_ACTIVE_KEY_ID:-v1}
+      PII_INDEX_KEY: ${PII_INDEX_KEY:?Generate the separate PII lookup key}
+      CHALLENGE_SECRET: ${CHALLENGE_SECRET:?Generate the separate verification secret}
+      PII_MIGRATION_MAINTENANCE: ${PII_MIGRATION_MAINTENANCE:-false}
+      CUSTOMER_REGISTRATION_ENABLED: ${CUSTOMER_REGISTRATION_ENABLED:-false}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-465}
+      SMTP_TLS_MODE: ${SMTP_TLS_MODE:-tls}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://127.0.0.1:8080,http://localhost:8080}
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
       SEED_DEMO_CATALOG: ${SEED_DEMO_CATALOG:-true}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
       TELEGRAM_NOTIFICATIONS_ENABLED: ${TELEGRAM_NOTIFICATIONS_ENABLED:-false}
+      NOTIFICATION_TRANSPORT: ${NOTIFICATION_TRANSPORT:-direct}
+      NOTIFICATION_RELAY_TARGET: ${NOTIFICATION_RELAY_TARGET:-}
+      NOTIFICATION_RELAY_TOKEN: ${NOTIFICATION_RELAY_TOKEN:-}
+      NOTIFICATION_RELAY_CA_FILE: ${NOTIFICATION_RELAY_CA_FILE:-}
+      NOTIFICATION_DESTINATION_ALIAS: ${NOTIFICATION_DESTINATION_ALIAS:-mirzap67.staff}
       PUBLIC_SITE_URL: ${PUBLIC_SITE_URL:-}
       TRUSTED_PROXY_HOSTS: ${TRUSTED_PROXY_HOSTS:-172.16.0.0/12}
     volumes:
@@ -47,16 +64,80 @@ services:
     security_opt:
       - no-new-privileges:true
     restart: unless-stopped
+  catalog-imports:
+    image: lavr-crm-backend:local
+    user: "1000:1000"
+    command: ["python", "-m", "app.catalog_import_worker"]
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-lavr}:${POSTGRES_PASSWORD:?Run scripts/start.sh first}@postgres:5432/${POSTGRES_DB:-lavr}
+      SESSION_SECRET: ${SESSION_SECRET:?Run scripts/start.sh first}
+      PII_ENCRYPTION_KEYS: ${PII_ENCRYPTION_KEYS:?Generate and securely back up the PII keys before migration}
+      PII_ACTIVE_KEY_ID: ${PII_ACTIVE_KEY_ID:-v1}
+      PII_INDEX_KEY: ${PII_INDEX_KEY:?Generate the separate PII lookup key}
+      CHALLENGE_SECRET: ${CHALLENGE_SECRET:?Generate the separate verification secret}
+    depends_on:
+      backend:
+        condition: service_healthy
+        restart: true
+    healthcheck:
+      disable: true
+    mem_limit: 768m
+    cpus: 1.0
+    pids_limit: 64
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
   notifications:
     image: lavr-crm-backend:local
     user: "1000:1000"
     command: ["python", "-m", "app.notification_worker"]
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-lavr}:${POSTGRES_PASSWORD:?Run scripts/start.sh first}@postgres:5432/${POSTGRES_DB:-lavr}
+      PII_ENCRYPTION_KEYS: ${PII_ENCRYPTION_KEYS:?Generate and securely back up the PII keys before migration}
+      PII_ACTIVE_KEY_ID: ${PII_ACTIVE_KEY_ID:-v1}
+      PII_INDEX_KEY: ${PII_INDEX_KEY:?Generate the separate PII lookup key}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
       TELEGRAM_NOTIFICATIONS_ENABLED: ${TELEGRAM_NOTIFICATIONS_ENABLED:-false}
+      NOTIFICATION_TRANSPORT: ${NOTIFICATION_TRANSPORT:-direct}
+      NOTIFICATION_RELAY_TARGET: ${NOTIFICATION_RELAY_TARGET:-}
+      NOTIFICATION_RELAY_TOKEN: ${NOTIFICATION_RELAY_TOKEN:-}
+      NOTIFICATION_RELAY_CA_FILE: ${NOTIFICATION_RELAY_CA_FILE:-}
+      NOTIFICATION_DESTINATION_ALIAS: ${NOTIFICATION_DESTINATION_ALIAS:-mirzap67.staff}
       PUBLIC_SITE_URL: ${PUBLIC_SITE_URL:-}
+    depends_on:
+      backend:
+        condition: service_healthy
+        restart: true
+    healthcheck:
+      disable: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+  verification-emails:
+    image: lavr-crm-backend:local
+    profiles: ["customer-email"]
+    user: "1000:1000"
+    command: ["python", "-m", "app.email_worker"]
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-lavr}:${POSTGRES_PASSWORD:?Run scripts/start.sh first}@postgres:5432/${POSTGRES_DB:-lavr}
+      PII_ENCRYPTION_KEYS: ${PII_ENCRYPTION_KEYS:?Generate and securely back up the PII keys before migration}
+      PII_ACTIVE_KEY_ID: ${PII_ACTIVE_KEY_ID:-v1}
+      PII_INDEX_KEY: ${PII_INDEX_KEY:?Generate the separate PII lookup key}
+      CHALLENGE_SECRET: ${CHALLENGE_SECRET:?Generate the separate verification secret}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-465}
+      SMTP_TLS_MODE: ${SMTP_TLS_MODE:-tls}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
     depends_on:
       backend:
         condition: service_healthy

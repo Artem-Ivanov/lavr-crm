@@ -7,7 +7,8 @@ import { isFeedbackCase } from '../src/feedback.js';
 const key = '9a55cbe9-3743-4f32-9c83-4c01955ade11';
 const otherKey = 'bc67f0d1-0615-48bc-9255-c534baefc974';
 const body = { type: 'request', name: 'Иван', email: 'ivan@example.org', message: 'Нужен фильтр', messenger: { service: '', address: '' }, phone: '' };
-const session = { user: { id: 'manager-1', name: 'Ольга', role: 'manager' } };
+const capabilities = { operate: true, editSite: false, manageUsers: false };
+const session = { user: { id: 'manager-1', name: 'Ольга' }, capabilities };
 function storage() {
   const values = new Map();
   return { values, getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value), removeItem: key => values.delete(key) };
@@ -16,10 +17,25 @@ async function claimed(api) {
   const receipt = await api.submitFeedback(body, key);
   return api.updateFeedbackStatus(await api.getFeedbackDetail(receipt.id), { status: 'in_progress' });
 }
+async function signedInDemo(options) {
+  const api = createDemoApi(options);
+  await api.login({ email: 'operator@example.test', password: 'demo' });
+  return api;
+}
+
+test('demo contact and request share numbers and replay keeps the next number free', async () => {
+  const api = createDemoFeedbackApi({ getSession: async () => session });
+  const first = await api.submitFeedback({ ...body, type: 'contact' }, key);
+  assert.equal(first.number, 1);
+  assert.deepEqual(await api.submitFeedback({ ...body, type: 'contact' }, key), first);
+  const second = await api.submitFeedback(body, otherKey);
+  assert.equal(second.number, 2);
+  assert.equal((await api.getFeedback({ query: '2' })).items[0].id, second.id);
+});
 
 test('demo feedback keeps contacts only in memory and public replay stays an accepted immutable receipt', async () => {
   const local = storage(); const session = storage();
-  const api = createDemoApi({ localStorage: local, sessionStorage: session });
+  const api = await signedInDemo({ localStorage: local, sessionStorage: session });
   const receipt = await api.submitFeedback(body, key);
   assert.equal(receipt.state, 'accepted');
   assert.equal(receipt.demo, true);
@@ -35,7 +51,7 @@ test('demo feedback keeps contacts only in memory and public replay stays an acc
   assert.equal(local.values.size, 0);
   assert.equal(session.values.size, 0);
   await assert.rejects(api.submitFeedback({ ...body, message: 'changed' }, key), /ключ/i);
-  assert.equal((await createDemoApi({ localStorage: local, sessionStorage: session }).getFeedback()).total, 0);
+  assert.equal((await (await signedInDemo({ localStorage: local, sessionStorage: session })).getFeedback()).total, 0);
 });
 
 test('demo enforces owner/version/terminal states and searchable paged cases with note history', async () => {
@@ -47,9 +63,9 @@ test('demo enforces owner/version/terminal states and searchable paged cases wit
   assert.equal(listed.total, 1);
   assert.equal(listed.items.length, 1);
   await assert.rejects(api.updateFeedbackStatus({ ...current, version: 1 }, { status: 'closed', resolution: 'Решено' }), error => error.status === 412);
-  session.user = { id: 'manager-2', name: 'Игорь', role: 'manager' };
+  session.user = { id: 'manager-2', name: 'Игорь' };
   await assert.rejects(api.addFeedbackNote(current, { text: 'Чужая заметка' }), error => error.status === 403);
-  session.user = { id: 'manager-1', name: 'Ольга', role: 'manager' };
+  session.user = { id: 'manager-1', name: 'Ольга' };
   const noted = await api.addFeedbackNote(current, { text: ' Написали клиенту ', contactMethod: 'email' });
   assert.equal(noted.history.at(-1).text, 'Написали клиенту');
   assert.equal(noted.history.at(-1).contactMethod, 'email');
@@ -61,7 +77,7 @@ test('demo enforces owner/version/terminal states and searchable paged cases wit
 
 test('demo conversion creates one normal linked order and replays its original manager response', async () => {
   const local = storage(); const saved = storage();
-  const api = createDemoApi({ localStorage: local, sessionStorage: saved });
+  const api = await signedInDemo({ localStorage: local, sessionStorage: saved });
   const current = await claimed(api);
   const product = (await api.getCatalog()).items[0];
   const orderBody = { customer: { name: current.name, phone: '8 (999) 123-45-67', email: current.email }, fulfillment: { method: 'pickup', address: '' }, items: [{ productId: product.id, quantity: 1, expectedUnitPriceKopecks: product.priceKopecks }] };
@@ -94,19 +110,19 @@ test('demo reserves conversion while the order is being created and preserves th
 });
 
 test('demo conversion replay retains ownership checks and accepts reordered order fields', async () => {
-  let user = { id: 'manager-1', name: 'Ольга', role: 'manager' };
-  const api = createDemoFeedbackApi({ getSession: async () => ({ user }), createOrder: async () => ({ id: 'order-1', number: 'L-1', createdAt: '2026-10-20T10:00:00Z', totalKopecks: 100, status: 'new', integrationStatus: 'not_connected' }) });
+  let user = { id: 'manager-1', name: 'Ольга' };
+  const api = createDemoFeedbackApi({ getSession: async () => ({ user, capabilities }), createOrder: async () => ({ id: 'order-1', number: 'L-1', createdAt: '2026-10-20T10:00:00Z', totalKopecks: 100, status: 'new', integrationStatus: 'not_connected' }) });
   const current = await claimed(api);
   const orderBody = { customer: { name: 'Иван', phone: '+79991234567' }, items: [{ productId: 'oil', quantity: 1, expectedUnitPriceKopecks: 100 }], fulfillment: { method: 'pickup', address: '' } };
   const converted = await api.createFeedbackOrder(current, orderBody, otherKey);
   const reordered = { fulfillment: { address: '', method: 'pickup' }, items: [{ quantity: 1, expectedUnitPriceKopecks: 100, productId: 'oil' }], customer: { phone: '+79991234567', name: 'Иван' } };
   assert.deepEqual(await api.createFeedbackOrder(current, reordered, otherKey), converted);
-  user = { id: 'manager-2', name: 'Игорь', role: 'manager' };
+  user = { id: 'manager-2', name: 'Игорь' };
   await assert.rejects(api.createFeedbackOrder(current, orderBody, otherKey), error => error.status === 403);
 });
 
 test('demo conversion keys cannot replay an unrelated public checkout order', async () => {
-  const api = createDemoApi({ localStorage: storage(), sessionStorage: storage() });
+  const api = await signedInDemo({ localStorage: storage(), sessionStorage: storage() });
   const current = await claimed(api);
   const product = (await api.getCatalog()).items[0];
   const orderBody = { customer: { name: 'Иван', phone: '+79991234567', email: 'ivan@example.org' }, fulfillment: { method: 'pickup', address: '' }, items: [{ productId: product.id, quantity: 1, expectedUnitPriceKopecks: product.priceKopecks }] };

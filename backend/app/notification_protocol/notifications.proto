@@ -1,0 +1,47 @@
+syntax = "proto3";
+package notifications.v1;
+
+import "google/protobuf/timestamp.proto";
+
+service NotificationRelay {
+  rpc SubmitNotification(SubmitNotificationRequest) returns (NotificationReceipt);
+  rpc GetNotification(GetNotificationRequest) returns (NotificationReceipt);
+}
+
+message SubmitNotificationRequest {
+  string request_id = 1;
+  google.protobuf.Timestamp request_created_at = 2;
+  string destination_alias = 3;
+  string text = 4;
+  Button button = 5;
+}
+
+message Button {
+  string label = 1;
+  string url = 2;
+}
+
+message GetNotificationRequest {
+  string notification_id = 1;
+}
+
+enum NotificationState {
+  NOTIFICATION_STATE_UNSPECIFIED = 0;
+  QUEUED = 1;
+  SENDING = 2;
+  RETRY_WAIT = 3;
+  UNCERTAIN = 4;
+  TELEGRAM_ACCEPTED = 5;
+  FAILED = 6;
+}
+
+message NotificationReceipt {
+  string notification_id = 1;
+  NotificationState state = 2;
+  google.protobuf.Timestamp accepted_at = 3;
+  google.protobuf.Timestamp updated_at = 4;
+  google.protobuf.Timestamp next_attempt_at = 5;
+  string safe_error_code = 6;
+  optional int64 telegram_message_id = 7;
+  bool duplicate_possible = 8;
+}

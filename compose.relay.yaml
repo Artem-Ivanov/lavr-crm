@@ -1,0 +1,51 @@
+services:
+  relay:
+    image: ${RELAY_IMAGE:-internal-notifier:local}
+    user: "1000:1000"
+    command: ["python", "-m", "internal_notifier.server"]
+    environment:
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:?Configure the relay bot token privately}
+      RELAY_CONFIG_FILE: /run/relay/config.json
+      RELAY_DATABASE_PATH: /data/relay/notifications.sqlite
+      RELAY_TLS_CERT_FILE: /run/relay/tls.crt
+      RELAY_TLS_KEY_FILE: /run/relay/tls.key
+      RELAY_LISTEN_ADDRESS: ${RELAY_LISTEN_ADDRESS:-[::]:50051}
+    ports:
+      - "${RELAY_BIND:-127.0.0.1}:${RELAY_PORT:-50051}:50051"
+    volumes:
+      - relay_data:/data/relay
+      - type: bind
+        source: ${RELAY_CONFIG_FILE:?Set the absolute path to the private relay JSON}
+        target: /run/relay/config.json
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${RELAY_TLS_CERT_FILE:?Set the absolute path to the TLS certificate chain}
+        target: /run/relay/tls.crt
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${RELAY_TLS_KEY_FILE:?Set the absolute path to the TLS private key}
+        target: /run/relay/tls.key
+        read_only: true
+        bind:
+          create_host_path: false
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "python", "-m", "internal_notifier.server", "check-ledger"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+volumes:
+  relay_data:

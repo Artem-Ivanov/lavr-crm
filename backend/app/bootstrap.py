@@ -6,7 +6,7 @@ from pathlib import Path
 from sqlalchemy import select, text
 from sqlalchemy.exc import SQLAlchemyError
 
-from .auth import Staff, hash_password
+from .auth import User, hash_password, normalize_email
 from .catalog import Category, CategoryCreate, Product, ProductPresentation
 from .common import ApiError, new_id, utcnow
 from .config import settings
@@ -23,7 +23,7 @@ def default_site():
     return {
         'hero': {'title': 'Автозапчасти для вашего автомобиля', 'description': 'Найдите нужную деталь по артикулу.',
                  'imageId': None, 'buttonText': 'Открыть каталог', 'target': {'type': 'catalog'}},
-        'settings': {'storeName': 'LAVR', 'phone': '+79990000000', 'address': 'Адрес магазина не указан',
+        'settings': {'storeName': 'MIRZAP67', 'phone': '+79990000000', 'address': 'Адрес магазина не указан',
                      'hours': 'Уточняйте часы работы у менеджера', 'categoriesTitle': 'Категории запчастей',
                      'promotionsTitle': 'Акции и объявления', 'catalogTitle': 'Каталог автозапчастей'},
         'menu': [],
@@ -81,16 +81,19 @@ def bootstrap(db):
         raise ValueError('ADMIN_PASSWORD должен содержать от 16 до 256 символов.')
     if len(settings.session_secret) < 32:
         raise ValueError('SESSION_SECRET должен содержать не менее 32 символов.')
-    login = settings.admin_login.strip()
-    if not 1 <= len(login) <= 120 or re.search(r'[\x00-\x1f\x7f]', login):
-        raise ValueError('Укажите корректный ADMIN_LOGIN.')
     created_files = []
     try:
         db.execute(text('SELECT pg_advisory_xact_lock(:key)'), {'key': BOOTSTRAP_LOCK})
-        if db.scalar(select(Staff.id).where(Staff.role == 'admin').limit(1)) is None:
-            db.add(Staff(id=new_id(), login=login, name='Администратор', role='admin',
-                         password_hash=hash_password(settings.admin_password), is_active=True))
         site = db.get(SiteConfig, 1)
+        if site is None and db.scalar(select(User.id).limit(1)) is None:
+            try:
+                email = normalize_email(settings.admin_login)
+            except ValueError:
+                raise ValueError('Укажите email администратора в ADMIN_LOGIN.') from None
+            admin = User(id=new_id(), name='Администратор', role='admin',
+                         password_hash=hash_password(settings.admin_password), is_active=True, email_verified_at=utcnow())
+            admin.profile = {'email': email}
+            db.add(admin)
         state = db.get(IntegrationState, 1)
         if state is None:
             state = IntegrationState(id=1, state='not_connected')

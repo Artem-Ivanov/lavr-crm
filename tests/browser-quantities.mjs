@@ -1,0 +1,66 @@
+import { test, after } from 'node:test';
+import assert from 'node:assert/strict';
+import { initialCatalog } from '../src/catalog-admin.js';
+const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || 'playwright');
+const browser = await chromium.launch({ channel: 'chrome', headless: true });
+after(() => browser.close());
+const baseUrl = process.env.BASE_URL || 'http://127.0.0.1:5198';
+const catalog = initialCatalog();
+Object.assign(catalog.products[0], { name: 'Разливное тестовое масло', sku: '', brand: '', unit: 'кг', stock: 9.785, priceKopecks: 101 });
+const productId = catalog.products[0].id;
+
+for (const width of [1440, 320]) test(`fractional cart reviews legacy units, accepts comma and renders rounded totals at ${width}px`, async t => {
+  const context = await browser.newContext({ viewport: { width, height: 1000 } });
+  const page = await context.newPage();
+  const errors = []; page.on('pageerror', issue => errors.push(issue.message));
+  t.after(async () => { await context.close(); assert.deepEqual(errors, []); });
+  await page.addInitScript(({ catalog, productId }) => {
+    if (localStorage.getItem('quantity-test-seeded')) return;
+    localStorage.setItem('lavr.catalog.v1', JSON.stringify(catalog));
+    localStorage.setItem('lavr.cart.v1', JSON.stringify([{ productId, quantity: 1 }]));
+    localStorage.setItem('quantity-test-seeded', 'yes');
+  }, { catalog, productId });
+  await page.goto(`${baseUrl}/#cart`, { waitUntil: 'networkidle' });
+  await page.getByText('Единица изменилась:', { exact: false }).waitFor();
+  assert.equal(await page.locator('.checkout-submit').isDisabled(), true);
+  await page.getByRole('button', { name: /Выбрать заново/ }).click();
+  const input = page.locator('.quantity-input');
+  assert.equal(await input.inputValue(), '0,001');
+  await page.getByRole('button', { name: /Увеличить количество/ }).click();
+  assert.equal(await input.inputValue(), '0,002');
+  await input.fill('0,955'); await input.press('Tab');
+  assert.match(await page.locator('.cart-item > strong').innerText(), /0,96/);
+  assert.match(await page.locator('.summary-total strong').innerText(), /0,96/);
+  assert.equal(await page.locator('.cart-count').innerText(), '1');
+  assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('lavr.cart.v1'))[0].quantity), 0.955);
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  await page.locator('[name="name"]').fill('Тестовый покупатель');
+  await page.locator('[name="phone"]').fill('+79991234567');
+  await page.locator('.checkout-submit').click();
+  await page.getByRole('heading', { name: 'Демозаказ создан' }).waitFor();
+  assert.match(await page.locator('.receipt').innerText(), /0,96/);
+  const saved = await page.evaluate(() => JSON.parse(sessionStorage.getItem('lavr.orders.v1'))[0]);
+  assert.equal(saved.items[0].unit, 'кг'); assert.equal(saved.items[0].lineTotalKopecks, 96);
+  if (width === 1440) {
+    await page.evaluate(() => { location.hash = '#crm'; });
+    await page.locator('.crm-page .account-form [name="email"]').fill('admin@example.test');
+    await page.locator('.crm-page .account-form [name="password"]').fill('demonstration');
+    await page.locator('.crm-page .account-form button[type="submit"]').click();
+    await page.locator('.order-number').first().click();
+    await page.locator('.order-detail-items').waitFor();
+    assert.match(await page.locator('.order-detail-items').innerText(), /0,955 кг/);
+    assert.match(await page.locator('.order-detail-items').innerText(), /0,96/);
+    await page.locator('dialog[open] .dialog-close').click();
+    await page.evaluate(() => { location.hash = '#catalog'; });
+    await page.locator(`[data-action="add"][data-id="${productId}"]`).first().click();
+    await page.locator('.header-cart').click();
+    await page.locator('.quantity-input').fill('0,955'); await page.locator('.quantity-input').press('Tab');
+    await page.locator('.checkout-submit').click();
+    await page.getByRole('heading', { name: 'Демозаказ создан' }).waitFor();
+    await page.evaluate(() => { location.hash = '#account-orders'; });
+    await page.locator('.feedback-list a').first().click();
+    await page.locator('.account-items').waitFor();
+    assert.match(await page.locator('.account-items').innerText(), /0,955 кг/);
+    assert.match(await page.locator('.account-items').innerText(), /0,96/);
+  }
+});

@@ -1,6 +1,6 @@
 from alembic import context
 
-from app import auth, catalog, content, integration, orders, feedback  # register all tables
+from app import auth, catalog, content, integration, orders, feedback, accounts, catalog_imports  # register all tables
 from app.config import settings
 from app.db import Base, engine
 

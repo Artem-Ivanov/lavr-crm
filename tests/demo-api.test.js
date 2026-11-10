@@ -241,9 +241,23 @@ test('status mutations use persisted status and leave the saved order unchanged 
   assert.equal((await api.updateOrderStatus(original.id, 'ready')).status, 'ready');
 });
 
-test('demo session is identified as a demonstration', async () => {
+test('demo sessions require explicit email login and both entry points share identity rules', async () => {
   const { api } = setup();
-  assert.equal((await api.getSession()).demo, true);
-  assert.equal((await api.login({ username: 'anything', password: 'anything' })).demo, true);
-  await api.logout();
+  await assert.rejects(api.getSession(), error => error.status === 401);
+  await assert.rejects(api.getUserSession(), error => error.status === 401);
+  for (const method of ['login', 'loginUser']) {
+    await assert.rejects(api[method]({ email: 'admin', password: 'demo' }));
+    await assert.rejects(api[method]({ email: 'unknown@example.test', password: 'demo' }));
+    await assert.rejects(api[method]({ email: 'admin@example.test', password: '' }));
+    const result = await api[method]({ email: ' ADMIN@Example.Test ', password: 'demo' });
+    assert.equal(result.demo, true);
+    assert.equal(result.user.id, 'demo-admin');
+    assert.equal(result.user.email, 'admin@example.test');
+    assert.deepEqual(await api.getSession(), await api.getUserSession());
+    assert.ok((await api.listUsers()).items.every(user => user.login === user.email));
+    await api.logout();
+    await assert.rejects(api.getSession(), error => error.status === 401);
+  }
+  assert.equal((await api.login({ login: 'operator@example.test', password: 'demo' })).user.id, 'demo-operator');
+  await assert.rejects(api.login({ login: 'operator', password: 'demo' }));
 });

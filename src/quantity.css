@@ -1,0 +1,7 @@
+.quantity-control .quantity-input { width: 86px; min-width: 60px; padding: 7px 4px; border: 0; background: transparent; text-align: center; font: inherit; }
+.quantity-control small { padding-right: 6px; white-space: nowrap; }
+.quantity-review { max-width: 340px; margin: 6px 0; font-size: 12px; }
+.quantity-review button { display: block; font: inherit; }
+.unit-price { display: block; font-size: 12px; font-weight: 400; color: var(--muted, #656565); }
+.feedback-selected-product .quantity-input { width: 110px; }
+@media (max-width: 600px) { .quantity-control .quantity-input { width: 72px; min-height: 44px; font-size: 16px; } }

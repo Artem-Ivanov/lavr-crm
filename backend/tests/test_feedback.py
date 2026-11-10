@@ -3,9 +3,10 @@ from uuid import uuid4
 
 import pytest
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 
 from app import integration
-from app.auth import AuditEntry, Staff, hash_password
+from app.auth import AuditEntry, User, hash_password
 from app.common import utcnow
 from app.integration import Outbox
 from app.orders import Order, OrderAttempt
@@ -18,7 +19,7 @@ def feedback_body(**changes):
 
 
 def submit(client, body=None, key=None, **headers):
-    return client.post('/api/feedback', json=body or feedback_body(), headers={'Origin': 'http://testserver', 'Idempotency-Key': key or str(uuid4()), **headers})
+    return client.post('/api/feedback', json=body or feedback_body(), headers={'Cookie': '', 'Origin': 'http://testserver', 'Idempotency-Key': key or str(uuid4()), **headers})
 
 
 def mutation(client, receipt, headers, suffix='status', body=None, version=1, key=None):
@@ -39,11 +40,41 @@ def test_feedback_accepts_each_contact_without_erp_or_bot(client, contact, db):
     receipt = response.json()
     assert set(receipt) == {'id', 'number', 'createdAt', 'state'}
     assert receipt['state'] == 'accepted'
+    assert type(receipt['number']) is int and 0 < receipt['number'] <= 9007199254740991
     event = db.get(Outbox, receipt['id'])
     assert event.event_type == 'feedback_telegram'
     assert event.payload == {'feedbackId': receipt['id']}
     assert event.state == 'queued'
     assert db.scalar(select(func.count()).select_from(Order)) == 0
+
+
+def test_feedback_sequence_is_global_concurrent_and_replay_does_not_allocate(client, manager_headers):
+    def create(index):
+        key = str(uuid4())
+        body = feedback_body(type='request' if index % 2 else 'contact', message='Вопрос', email=f'number{index}@example.test')
+        response = submit(client, body, key)
+        assert response.status_code == 202, response.text
+        return response.json(), body, key
+
+    with ThreadPoolExecutor(max_workers=6) as workers:
+        attempts = list(workers.map(create, range(6)))
+    numbers = [receipt['number'] for receipt, _, _ in attempts]
+    assert sorted(numbers) == list(range(1, 7))
+    for receipt, body, key in attempts:
+        assert submit(client, body, key).json() == receipt
+    next_receipt = submit(client, feedback_body(email='next@example.test')).json()
+    assert next_receipt['number'] == 7
+    found = client.get('/api/manager/feedback', params={'q': '7'}, headers=manager_headers)
+    assert found.status_code == 200, found.text
+    assert [item['id'] for item in found.json()['items']] == [next_receipt['id']]
+
+
+@pytest.mark.parametrize('number', [0, -1, 9007199254740992])
+def test_feedback_number_database_rejects_non_positive_or_unsafe_integers(client, db, number):
+    receipt = submit(client).json()
+    with pytest.raises(IntegrityError), db.begin_nested():
+        from app.feedback import Feedback
+        db.execute(Feedback.__table__.update().where(Feedback.id == receipt['id']).values(number=number))
 
 
 @pytest.mark.parametrize('changes', [
@@ -63,11 +94,11 @@ def test_feedback_rejects_every_invalid_supplied_contact(client, changes, db):
     assert db.scalar(select(func.count()).select_from(Outbox)) == 0
 
 
-def test_feedback_requires_origin_and_uuid_but_ignores_expired_session(client):
+def test_feedback_requires_origin_and_uuid_and_rejects_expired_session(client):
     body = feedback_body(type='request', message=' Нужен фильтр\nдля машины ')
-    assert client.post('/api/feedback', json=body, headers={'Idempotency-Key': str(uuid4())}).status_code == 403
+    assert client.post('/api/feedback', json=body, headers={'Idempotency-Key': str(uuid4()), 'Origin': ''}).status_code == 403
     assert submit(client, body, key='bad').status_code == 400
-    assert submit(client, body, Cookie='lavr_session=expired').status_code == 202
+    assert submit(client, body, Cookie='lavr_session=expired').status_code == 401
 
 
 def test_public_receipt_replays_immutable_after_private_mutation(client, manager_headers, db):
@@ -123,9 +154,15 @@ def test_claim_notes_close_enforce_owner_csrf_version_terminal_and_audit(client,
     assert claimed.json()['version'] == 2
     assert mutation(client, receipt, admin_headers).status_code == 412
     # A different manager may read but cannot mutate the owner's case.
-    db.add(Staff(id='other', login='other', name='Other', role='manager', password_hash=hash_password('test-password-123'), is_active=True))
+    other_user = User(id='other', login='other', name='Other', role='operator', password_hash=hash_password('test-password-123'), is_active=True, email_verified_at=utcnow())
+    other_user.profile = {'email': 'other@example.test', 'phone': '+79990000001'}
+    db.add(other_user)
     db.commit()
     other = login_headers(client, 'other')
+    path = '/api/manager/feedback/' + receipt['id']
+    assert client.get(path, headers=other).json()['canManage'] is False
+    assert client.get(path, headers=manager_headers).json()['canManage'] is True
+    assert client.get(path, headers=admin_headers).json()['canManage'] is True
     assert mutation(client, receipt, other, version=1).status_code == 412
     assert mutation(client, receipt, other, suffix='notes', body={'text': 'Заметка'}, version=2).status_code == 403
     assert mutation(client, receipt, other, body={'status': 'closed', 'resolution': 'Закрыто'}, version=2).status_code == 403
@@ -339,3 +376,44 @@ def test_notification_projection_preserves_sent_and_filters_unsafe_error_codes(c
     db.commit()
     monkeypatch.setattr(settings, 'telegram_bot_token', '')
     assert client.get(path, headers=manager_headers).json()['notification'] == {'state': 'done', 'code': None}
+
+
+def test_historical_conversion_digest_replays_without_new_order(client, order_product, manager_headers, db, monkeypatch):
+    import hashlib
+    import json
+    from app.feedback import Feedback
+
+    receipt = submit(client).json()
+    assert mutation(client, receipt, manager_headers).status_code == 200
+    key = str(uuid4())
+    body = order_body(order_product, 2)
+    first = mutation(client, receipt, manager_headers, suffix='order', body=body, version=2, key=key)
+    assert first.status_code == 201, first.text
+    frozen = {'customer': {'name': 'Покупатель', 'phone': '+79991234567', 'email': ''}, 'fulfillment': {'method': 'pickup', 'address': ''}, 'items': [{'productId': order_product.id, 'quantity': 2, 'expectedUnitPriceKopecks': 12500}]}
+    case = db.get(Feedback, receipt['id'])
+    case.conversion_digest = hashlib.sha256(json.dumps(frozen, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+    db.commit()
+    monkeypatch.setattr(integration, 'get_erp_adapter', lambda: integration.DisabledAdapter())
+    replay = mutation(client, receipt, manager_headers, suffix='order', body=body, version=2, key=key)
+    assert replay.status_code == 200, replay.text
+    assert replay.json() == first.json()
+    assert db.scalar(select(func.count()).select_from(Order)) == 1
+
+
+def test_fractional_feedback_conversion_uses_shared_order_quantities(client, order_product, manager_headers, db):
+    from decimal import Decimal
+
+    order_product.unit = 'м'
+    order_product.price_kopecks = 101
+    db.commit()
+    receipt = submit(client).json()
+    assert mutation(client, receipt, manager_headers).status_code == 200
+    body = order_body(order_product, 0.5)
+    body['items'][0]['expectedUnit'] = 'м'
+    response = mutation(client, receipt, manager_headers, suffix='order', body=body, version=2, key=str(uuid4()))
+    assert response.status_code == 201, response.text
+    order = db.get(Order, response.json()['order']['id'])
+    assert order.total_kopecks == 51
+    assert (order.items[0]['unit'], order.items[0]['lineTotalKopecks']) == ('м', 51)
+    db.refresh(order_product)
+    assert order_product.reserved == Decimal('0.500')

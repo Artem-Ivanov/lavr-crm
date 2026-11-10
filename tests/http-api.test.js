@@ -8,7 +8,7 @@ const product = {
 };
 const category = { id: 'oils', name: 'Масла', position: 0, showInMenu: true };
 const adminCategory = { ...category, isVisible: true, version: 1 };
-const session = { user: { id: 'manager', name: 'Ольга', role: 'admin' }, csrfToken: 'a'.repeat(32), expiresAt: '2026-10-12T10:00:00Z' };
+const session = { user: { id: 'manager', name: 'Ольга', email: null, phone: null, emailVerified: false, phoneVerified: false, profileComplete: false }, capabilities: { operate: true, editSite: true, manageUsers: true }, csrfToken: 'a'.repeat(32), expiresAt: '2026-10-12T10:00:00Z' };
 const receipt = { id: 'order-1', number: 'L-1', createdAt: '2026-10-11T10:00:00Z', totalKopecks: 389000, status: 'new', integrationStatus: 'pending_sync' };
 const order = {
   ...receipt, customer: { name: 'Иван', phone: '+79991234567', email: '' }, fulfillment: { method: 'pickup', address: '' },
@@ -64,6 +64,16 @@ test('catalog filters map to the contract and product detail responses preserve 
   }
 });
 
+test('opaque product IDs count Unicode code points in request and response validation', async () => {
+  const productId = '🚗'.repeat(128);
+  const expected = { product: { ...product, id: productId }, catalogUpdatedAt: '2026-10-11T10:00:00Z', stale: false };
+  const { api, calls } = setup([json(expected)]);
+  assert.deepEqual(await api.getProduct(productId), expected);
+  assert.equal(calls[0].url, `/api/catalog/${encodeURIComponent(productId)}`);
+  await assert.rejects(api.getProduct('🚗'.repeat(129)), /идентификатор/i);
+  assert.equal(calls.length, 1, 'An overlong ID must be rejected before the request');
+});
+
 test('admin categories fetch every page while public categories remain an array', async () => {
   const first = Array.from({ length: 100 }, (_, index) => ({ ...adminCategory, id: `category-${index}`, name: `Категория ${index}`, position: index }));
   const last = { ...adminCategory, id: 'category-100', name: 'Последняя', position: 100 };
@@ -104,13 +114,13 @@ test('session mutations send CSRF and optimistic versions without changing accou
   const saved = { ...presentation, categoryId: 'filters', version: 8 };
   const updatedOrder = { ...order, status: 'cancelled', version: 4 };
   const { api, calls } = setup([json(session), json(adminCategory, 201), json(updatedOrder), json({ product, presentation }, 200, { ETag: '"7"' }), json(saved), new Response(null, { status: 204 })]);
-  assert.deepEqual(await api.login({ login: 'olga', password: 'secret' }), session);
+  assert.deepEqual(await api.login({ login: 'olga@example.test', password: 'secret' }), session);
   assert.deepEqual(await api.createCategory({ name: 'Масла', position: 0, isVisible: true, showInMenu: true }), adminCategory);
   assert.deepEqual(await api.updateOrderStatus(order, 'cancelled'), updatedOrder);
   assert.deepEqual(await api.assignProductCategory('oil', 'filters'), saved);
   await api.logout();
   assert.equal(calls[0].headers['X-CSRF-Token'], undefined);
-  assert.deepEqual(JSON.parse(calls[0].body), { login: 'olga', password: 'secret' });
+  assert.deepEqual(JSON.parse(calls[0].body), { email: 'olga@example.test', password: 'secret' });
   assert.deepEqual(JSON.parse(calls[1].body), { name: 'Масла', position: 0, isVisible: true, showInMenu: true });
   assert.equal(calls[2].url, '/api/manager/orders/order-1/status');
   assert.equal(calls[2].method, 'PATCH');
@@ -221,9 +231,9 @@ test('an older session 401 cannot erase the token from a newer successful login'
     return json(init.method === 'POST' && url.endsWith('/session') ? session : adminCategory);
   } });
   const old = api.getSession();
-  await api.login({ login: 'admin', password: 'test' });
+  await api.login({ login: 'admin@example.test', password: 'test' });
   resolveOld(json({ code: 'EXPIRED', message: 'Expired' }, 401));
-  await assert.rejects(old, error => error.status === 401);
+  await assert.rejects(old, error => error.code === 'SESSION_CHANGED');
   await api.createCategory({ name: 'Масла', position: 0, isVisible: true, showInMenu: true });
   assert.equal(calls.at(-1).headers['X-CSRF-Token'], session.csrfToken);
 });

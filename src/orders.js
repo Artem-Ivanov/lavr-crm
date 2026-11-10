@@ -1,3 +1,4 @@
+import { quantityMilli, addQuantity, productUnit, isUnit, isQuantity, lineTotalKopecks, snapshotLineTotal, sumKopecks, validSnapshotQuantity, formatQuantity } from './quantity.js';
 import { PRODUCTS } from './catalog.js';
 
 import { ORDER_STATUSES } from './order-labels.js';
@@ -16,8 +17,8 @@ function text(value) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
-function validateCustomer(customer) {
-  if (!isRecord(customer) || !text(customer.name)) throw new Error('Укажите имя покупателя.');
+function validateCustomer(customer, allowEmptyName = false) {
+  if (!isRecord(customer) || typeof customer.name !== 'string' || !allowEmptyName && !text(customer.name)) throw new Error('Укажите имя покупателя.');
   if (customer.name.length > 100) throw new Error('Имя должно быть не длиннее 100 символов.');
   const phone = text(customer.phone);
   const digits = phone.replace(/[+\s()-]/g, '');
@@ -37,25 +38,25 @@ function validateFulfillment(fulfillment) {
 }
 
 function totalItems(items) {
-  const total = items.reduce((sum, item) => sum + item.unitPriceKopecks * item.quantity, 0);
-  if (!Number.isSafeInteger(total) || total <= 0) throw new Error('Некорректная сумма заказа.');
-  return total;
+  return sumKopecks(items.map(snapshotLineTotal));
 }
 
-export function createOrder(cart, customer, fulfillment, products = PRODUCTS) {
-  const checkedCustomer = validateCustomer(customer);
+export function createOrder(cart, customer, fulfillment, products = PRODUCTS, { allowEmptyName = false } = {}) {
+  const checkedCustomer = validateCustomer(customer, allowEmptyName);
   const checkedFulfillment = validateFulfillment(fulfillment);
   if (!Array.isArray(cart) || cart.length === 0) throw new Error('Добавьте товары в корзину.');
   const items = [];
   for (const entry of cart) {
-    if (!isRecord(entry) || !Number.isSafeInteger(entry.quantity) || entry.quantity <= 0) throw new Error('Проверьте количество товаров в корзине.');
+    if (!isRecord(entry) || !isQuantity(entry.quantity, entry.expectedUnit ?? 'шт')) throw new Error('Проверьте количество товаров в корзине.');
     const product = products.find(product => product.id === entry.productId);
     if (!product) throw new Error('Товар из корзины больше недоступен.');
+    const unit = productUnit(product);
+    if (!isUnit(unit) || (entry.expectedUnit ?? 'шт') !== unit) throw new Error('Единица измерения товара изменилась. Проверьте корзину.');
     const previous = items.find(item => item.productId === product.id);
-    const quantity = (previous?.quantity || 0) + entry.quantity;
-    if (!Number.isSafeInteger(quantity) || quantity > product.stock) throw new Error(`Недостаточно товара «${product.name}»: доступно ${product.stock} шт.`);
-    if (previous) previous.quantity = quantity;
-    else items.push({ productId: product.id, sku: product.sku, brand: product.brand, name: product.name, quantity, unitPriceKopecks: product.priceKopecks });
+    const quantity = addQuantity(previous?.quantity || 0, entry.quantity);
+    if (!isQuantity(quantity, unit) || quantityMilli(quantity) > quantityMilli(product.stock)) throw new Error(`Недостаточно товара «${product.name}»: доступно ${formatQuantity(product.stock, unit)}.`);
+    if (previous) { previous.quantity = quantity; previous.lineTotalKopecks = lineTotalKopecks(product.priceKopecks, quantity); }
+    else items.push({ productId: product.id, sku: product.sku, brand: product.brand, name: product.name, quantity, unitPriceKopecks: product.priceKopecks, unit, lineTotalKopecks: lineTotalKopecks(product.priceKopecks, quantity) });
   }
   const id = crypto.randomUUID();
   const createdAt = new Date().toISOString();
@@ -86,14 +87,14 @@ export function sanitizeOrders(raw) {
       if (!Object.hasOwn(ORDER_STATUSES, order.status) || order.integrationStatus !== 'not_connected') continue;
       if (!isRecord(order.customer) || typeof order.customer.email !== 'string' || !isRecord(order.fulfillment) || typeof order.fulfillment.address !== 'string') continue;
       if (!Array.isArray(order.items) || order.items.length === 0 || !Number.isSafeInteger(order.totalKopecks)) continue;
-      if (order.items.some(item => !isRecord(item) || !['productId', 'sku', 'brand', 'name'].every(key => text(item[key])) || !Number.isSafeInteger(item.quantity) || item.quantity <= 0 || !Number.isSafeInteger(item.unitPriceKopecks) || item.unitPriceKopecks <= 0)) continue;
+      if (order.items.some(item => !isRecord(item) || !['productId', 'name'].every(key => text(item[key])) || !['sku', 'brand'].every(key => typeof item[key] === 'string') || !validSnapshotQuantity(item) || !Number.isSafeInteger(item.unitPriceKopecks) || item.unitPriceKopecks <= 0)) continue;
       if (totalItems(order.items) !== order.totalKopecks) continue;
       const customer = validateCustomer(order.customer);
       const fulfillment = validateFulfillment(order.fulfillment);
       orders.push({
         id: order.id, number: order.number, createdAt: order.createdAt,
         customer, fulfillment,
-        items: order.items.map(({ productId, sku, brand, name, quantity, unitPriceKopecks }) => ({ productId, sku, brand, name, quantity, unitPriceKopecks })),
+        items: order.items.map(({ productId, sku, brand, name, quantity, unitPriceKopecks, unit, lineTotalKopecks }) => ({ productId, sku, brand, name, quantity, unitPriceKopecks, ...(unit === undefined ? {} : { unit }), ...(lineTotalKopecks === undefined ? {} : { lineTotalKopecks }) })),
         totalKopecks: order.totalKopecks, status: order.status, integrationStatus: 'not_connected',
       });
     } catch {

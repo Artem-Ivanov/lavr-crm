@@ -1,12 +1,20 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import AppIcon from './AppIcon.vue';
 import ContentTarget from './ContentTarget.vue';
 import MediaSelector from './MediaSelector.vue';
+import { routeHash } from '../routes.js';
 
-const props = defineProps({ api: { type: Object, required: true }, categories: { type: Array, default: () => [] } });
-const emit = defineEmits(['changed', 'staff-error', 'dirty']);
-const tab = ref('site');
+const props = defineProps({ api: { type: Object, required: true }, storeName: { type: String, required: true }, categories: { type: Array, default: () => [] }, routeTab: { type: String, default: 'site' }, publicationId: { type: String, default: '' } });
+const emit = defineEmits(['changed', 'staff-error', 'dirty', 'navigate']);
+const tab = computed(() => props.routeTab);
+const contentHash = (tab, publicationId = '') => routeHash({ page: 'crm-content', tab, publicationId });
+function navigate(event, hash, disabled = false) {
+  if (disabled) { event.preventDefault(); return; }
+  if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+  event.preventDefault();
+  emit('navigate', hash);
+}
 const copy = value => JSON.parse(JSON.stringify(value));
 let active = true;
 let siteRequest = 0;
@@ -183,7 +191,9 @@ function acceptPublication(result) {
 }
 const discardPublication = () => !publicationDirty.value || window.confirm('Несохранённые изменения публикации будут потеряны. Продолжить?');
 function newPublication() {
-  if (publicationBusy.value || publicationLoading.value || contentReadOnly.value || !discardPublication()) return;
+  if (publicationBusy.value || publicationLoading.value || contentReadOnly.value) return;
+  if (props.publicationId) { emit('navigate', contentHash('publications')); return; }
+  if (!discardPublication()) return;
   ++detailRequest;
   publicationId.value = null;
   publicationVersion.value = null;
@@ -230,12 +240,14 @@ async function savePublication() {
   input.position = Number(input.position);
   publicationBusy.value = true;
   const request = ++detailRequest;
+  let savedId = '';
   try {
     const result = publicationId.value
       ? await props.api.updatePublication(publicationId.value, input, publicationVersion.value)
       : await props.api.createPublication(input);
     if (!active || request !== detailRequest) return;
     acceptPublication(result);
+    savedId = result.id;
     publicationMessage.value = result.status === 'published' ? 'Публикация сохранена. На витрине она появится в указанные сроки.' : 'Публикация сохранена.';
     emit('changed');
     await loadPublications(0);
@@ -246,6 +258,10 @@ async function savePublication() {
     staffError(error);
   } finally {
     if (active && request === detailRequest) publicationBusy.value = false;
+  }
+  if (active && request === detailRequest && savedId && props.publicationId !== savedId) {
+    await nextTick();
+    if (active && request === detailRequest) emit('navigate', contentHash('publications', savedId));
   }
 }
 
@@ -319,6 +335,7 @@ onMounted(() => {
   loadCategories();
   loadPublications(0);
   loadMedia(0);
+  if (props.publicationId) editPublication(props.publicationId);
   window.addEventListener('beforeunload', warnBeforeUnload);
 });
 onBeforeUnmount(() => {
@@ -331,12 +348,12 @@ onBeforeUnmount(() => {
 <template>
   <section class="content-manager" aria-labelledby="content-manager-title">
     <div class="content-heading">
-      <div><span class="eyebrow">LAVR / СОДЕРЖИМОЕ САЙТА</span><h2 id="content-manager-title">Витрина под контролем<span class="red-period">.</span></h2><p>Редактируйте главную, меню и публикации. Все подписи — обычный текст.</p></div>
+      <div><span class="eyebrow">{{ storeName }} / СОДЕРЖИМОЕ САЙТА</span><h2 id="content-manager-title">Витрина под контролем<span class="red-period">.</span></h2><p>Редактируйте главную, меню и публикации. Все подписи — обычный текст.</p></div>
       <span v-if="dirty" class="content-dirty" role="status">Есть несохранённые изменения</span>
     </div>
     <div v-if="api.mode === 'demo'" class="demo-notice content-notice"><AppIcon name="shield" /><div><strong>Локальный демонстрационный редактор</strong><p>Изменения сохраняются в этом браузере и доступны на витрине после сохранения.</p></div></div>
     <nav class="content-tabs" aria-label="Разделы редактора сайта">
-      <button v-for="item in [{ id: 'site', label: 'Главная и меню' }, { id: 'publications', label: 'Публикации' }, { id: 'media', label: 'Изображения' }]" :key="item.id" type="button" class="btn outline" :class="{ selected: tab === item.id }" :aria-current="tab === item.id ? 'page' : undefined" :data-testid="`content-tab-${item.id}`" @click="tab = item.id">{{ item.label }}</button>
+      <a v-for="item in [{ id: 'site', label: 'Главная и меню' }, { id: 'publications', label: 'Публикации' }, { id: 'media', label: 'Изображения' }]" :key="item.id" :href="contentHash(item.id)" class="btn outline" :class="{ selected: tab === item.id }" :aria-current="tab === item.id ? 'page' : undefined" :data-testid="`content-tab-${item.id}`" @click="navigate($event, contentHash(item.id))">{{ item.label }}</a>
     </nav>
     <div v-if="contentReadOnly" class="content-state form-error" data-testid="content-read-only" role="alert"><strong>Редактор доступен только для чтения.</strong><p>{{ contentIssue || 'Хранилище содержимого недоступно. Сохранение отключено.' }}</p><button type="button" class="btn outline" :disabled="siteLoading || publicationsLoading" @click="loadSite(); loadPublications(0)">Повторить загрузку содержимого</button></div>
     <div v-if="categoriesError" class="content-state form-error" role="alert"><p>{{ categoriesError }}</p><button type="button" class="btn outline" :disabled="categoriesLoading" @click="loadCategories">Повторить загрузку категорий</button></div>
@@ -384,7 +401,7 @@ onBeforeUnmount(() => {
         <button type="button" class="btn outline" data-testid="new-publication" :disabled="publicationBusy || publicationLoading || contentReadOnly" @click="newPublication"><AppIcon name="plus" /> Новая публикация</button>
         <p v-if="publicationsLoading" class="content-help" role="status">Загружаем публикации…</p>
         <div v-else-if="publicationsError" class="content-state form-error" role="alert"><p>{{ publicationsError }}</p><button type="button" class="btn outline" @click="loadPublications()">Повторить загрузку публикаций</button></div>
-        <div v-else-if="publications.length" class="publication-list"><button v-for="item in publications" :key="item.id" type="button" class="publication-list-item" :class="{ selected: publicationId === item.id }" :disabled="publicationBusy || publicationLoading || contentReadOnly" :data-testid="`edit-publication-${item.id}`" @click="editPublication(item.id)"><strong>{{ item.title }}</strong><span>{{ kindLabels[item.kind] }} · {{ statusLabels[item.status] }}</span><small>ID: {{ item.id }}</small></button></div>
+        <div v-else-if="publications.length" class="publication-list"><a v-for="item in publications" :key="item.id" :href="contentHash('publications', item.id)" class="publication-list-item" :class="{ selected: publicationId === item.id }" :aria-disabled="publicationBusy || publicationLoading || contentReadOnly || undefined" :data-testid="`edit-publication-${item.id}`" @click="navigate($event, contentHash('publications', item.id), publicationBusy || publicationLoading || contentReadOnly)"><strong>{{ item.title }}</strong><span>{{ kindLabels[item.kind] }} · {{ statusLabels[item.status] }}</span><small>ID: {{ item.id }}</small></a></div>
         <p v-else class="content-help">Публикаций с выбранными фильтрами пока нет.</p>
         <nav v-if="!publicationsLoading && !publicationsError && publicationsTotal > publicationsLimit" class="content-pagination" aria-label="Страницы публикаций"><button type="button" class="btn outline" :disabled="publicationsOffset === 0" @click="loadPublications(Math.max(0, publicationsOffset - publicationsLimit))">Назад</button><span>{{ publicationsOffset + 1 }}–{{ publicationsOffset + publications.length }} из {{ publicationsTotal }}</span><button type="button" class="btn outline" :disabled="publicationsOffset + publicationsLimit >= publicationsTotal" @click="loadPublications(publicationsOffset + publicationsLimit)">Далее</button></nav>
       </div>

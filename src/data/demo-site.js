@@ -11,7 +11,7 @@ export const demoSite = {
     highlightLastLine: true,
   },
   settings: {
-    storeName: 'LAVR', phone: '', address: '', hours: '',
+    storeName: 'MIRZAP67', phone: '', address: '', hours: '',
     categoriesTitle: 'Что нужно вашему авто?',
     promotionsTitle: 'Акции и объявления',
     catalogTitle: 'Каталог автозапчастей',

@@ -36,7 +36,7 @@ def order_body(product, quantity=1):
 
 
 def submit(client, product, *, quantity=1, key=None, body=None):
-    return client.post('/api/orders', json=body or order_body(product, quantity), headers={'Idempotency-Key': key or str(uuid4())})
+    return client.post('/api/orders', json=body or order_body(product, quantity), headers={'Cookie': '', 'Idempotency-Key': key or str(uuid4())})
 
 
 def test_disabled_erp_rejects_acceptance_and_reports_real_health(client, order_product, monkeypatch, admin_headers, manager_headers, db):
@@ -48,7 +48,7 @@ def test_disabled_erp_rejects_acceptance_and_reports_real_health(client, order_p
     health = client.get('/api/manager/integration/health', headers=admin_headers)
     assert health.status_code == 200
     assert health.json()['state'] == 'not_connected'
-    assert client.get('/api/manager/integration/health', headers=manager_headers).status_code == 403
+    assert client.get('/api/manager/integration/health', headers=manager_headers).status_code == 200
     assert client.post('/api/manager/integration/sync', headers={**admin_headers, 'Idempotency-Key': str(uuid4())}).status_code == 503
 
 
@@ -210,7 +210,7 @@ def test_orders_are_private_and_filtered_by_server(client, order_product, manage
     receipt = submit(client, order_product).json()
     assert client.get('/api/manager/orders', headers={'Cookie': ''}).status_code == 401
     assert client.get(f"/api/manager/orders/{receipt['id']}", headers={'Cookie': ''}).status_code == 401
-    response = client.get('/api/manager/orders?q=Покупатель&status=new&limit=1', headers=manager_headers)
+    response = client.get('/api/manager/orders?q=%2B79991234567&status=new&limit=1', headers=manager_headers)
     assert response.status_code == 200
     assert response.json()['total'] == 1
     assert response.json()['items'][0]['customer']['phone'] == '+79991234567'
@@ -260,8 +260,8 @@ def test_retry_keeps_external_order_id_event_and_uncertainty(client, order_produ
 
 
 def test_idempotency_header_is_required_uuid(client, order_product):
-    assert client.post('/api/orders', json=order_body(order_product)).status_code == 400
-    assert client.post('/api/orders', json=order_body(order_product), headers={'Idempotency-Key': 'bad-key'}).status_code == 400
+    assert client.post('/api/orders', json=order_body(order_product), headers={'Cookie': ''}).status_code == 400
+    assert client.post('/api/orders', json=order_body(order_product), headers={'Cookie': '', 'Idempotency-Key': 'bad-key'}).status_code == 400
 
 
 def test_commit_failure_rolls_back_order_reserve_attempt_and_outbox(client, order_product, db, monkeypatch):
@@ -289,3 +289,125 @@ def test_sum_cannot_exceed_javascript_safe_integer(client, order_product, db):
     db.refresh(order_product)
     assert order_product.reserved == 0
     assert db.scalar(select(func.count()).select_from(Order)) == 0
+
+
+def test_fractional_order_reserve_rounding_and_cancel(client, order_product, db, manager_headers):
+    from decimal import Decimal
+
+    order_product.unit = 'кг'
+    order_product.price_kopecks = 101
+    db.commit()
+    body = order_body(order_product, 0.5)
+    body['items'][0]['expectedUnit'] = 'кг'
+    response = submit(client, order_product, body=body)
+    assert response.status_code == 201, response.text
+    receipt = response.json()
+    assert receipt['totalKopecks'] == 51
+    order = db.get(Order, receipt['id'])
+    assert order.items[0]['quantity'] == 0.5
+    assert order.items[0]['unit'] == 'кг'
+    assert order.items[0]['lineTotalKopecks'] == 51
+    event = db.scalar(select(Outbox).where(Outbox.order_id == order.id))
+    assert event.payload['items'] == order.items
+    db.refresh(order_product)
+    assert order_product.reserved == Decimal('0.5')
+    cancelled = client.patch(f'/api/manager/orders/{order.id}/status', json={'status': 'cancelled'}, headers={**manager_headers, 'If-Match': '"1"'})
+    assert cancelled.status_code == 200, cancelled.text
+    db.refresh(order_product)
+    assert order_product.reserved == 0
+
+
+def test_legacy_unitless_basket_cannot_reinterpret_new_unit(client, order_product, db):
+    order_product.unit = 'кг'
+    db.commit()
+    response = submit(client, order_product)
+    assert response.status_code == 409, response.text
+    assert response.json()['code'] == 'UNIT_CHANGED'
+    assert response.json()['details'] == [{'productId': order_product.id, 'code': 'UNIT_CHANGED', 'currentUnit': 'кг'}]
+    db.refresh(order_product)
+    assert order_product.reserved == 0
+
+
+def test_imported_product_observation_cannot_be_refreshed_by_accounting_update(client, order_product, db):
+    order_product.accounting_source = 'file:stock'
+    order_product.stock_observed_at = utcnow() - timedelta(days=2)
+    order_product.updated_at = utcnow()
+    db.commit()
+    response = submit(client, order_product)
+    assert response.status_code == 503, response.text
+    assert response.json()['code'] == 'CATALOG_STALE'
+
+
+def test_legacy_snapshot_cancellation_uses_normal_units(client, order_product, db, manager_headers):
+    receipt = submit(client, order_product, quantity=2).json()
+    order = db.get(Order, receipt['id'])
+    order.items = [{key: value for key, value in item.items() if key not in {'unit', 'lineTotalKopecks'}} for item in order.items]
+    db.commit()
+    response = client.patch(f'/api/manager/orders/{order.id}/status', json={'status': 'cancelled'}, headers={**manager_headers, 'If-Match': '"1"'})
+    assert response.status_code == 200, response.text
+    db.refresh(order_product)
+    assert order_product.reserved == 0
+
+
+def test_last_thousandth_is_reserved_once_under_real_concurrent_transactions(client, order_product, db):
+    from decimal import Decimal
+
+    order_product.unit = 'кг'
+    order_product.stock = Decimal('0.001')
+    db.commit()
+    body = order_body(order_product, 0.001)
+    body['items'][0]['expectedUnit'] = 'кг'
+    with ThreadPoolExecutor(max_workers=2) as workers:
+        responses = list(workers.map(lambda _: submit(client, order_product, body=body), range(2)))
+    assert sorted(response.status_code for response in responses) == [201, 409]
+    db.refresh(order_product)
+    assert order_product.reserved == Decimal('0.001')
+    assert db.scalar(select(func.count()).select_from(Order)) == 1
+
+
+def test_reserved_product_unit_change_is_rejected(client, order_product, db):
+    assert submit(client, order_product).status_code == 201
+    db.refresh(order_product)
+    order_product.unit = 'кг'
+    with pytest.raises(ApiError) as error:
+        db.commit()
+    assert error.value.code == 'UNIT_RESERVED'
+    db.rollback()
+    db.refresh(order_product)
+    assert order_product.unit == 'шт'
+    assert order_product.reserved == 1
+
+
+@pytest.mark.parametrize('version', [1, 2])
+def test_historical_guest_digest_replays_before_catalog_revalidation(client, order_product, db, monkeypatch, version):
+    import hashlib
+    import json
+
+    key = str(uuid4())
+    body = order_body(order_product, 2)
+    first = submit(client, order_product, body=body, key=key)
+    assert first.status_code == 201
+    frozen = {'customer': {'name': 'Покупатель', 'phone': '+79991234567', 'email': ''}, 'fulfillment': {'method': 'pickup', 'address': ''}, 'items': [{'productId': order_product.id, 'quantity': 2, 'expectedUnitPriceKopecks': 12500}]}
+    payload = frozen if version == 1 else {'actor': 'guest', 'body': frozen}
+    attempt = db.get(OrderAttempt, key)
+    attempt.digest_version = version
+    attempt.digest = hashlib.sha256(json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+    db.commit()
+    monkeypatch.setattr(integration, 'get_erp_adapter', lambda: integration.DisabledAdapter())
+    replay = submit(client, order_product, body=body, key=key)
+    assert replay.status_code == 200, replay.text
+    assert replay.json() == first.json()
+    assert db.scalar(select(func.count()).select_from(Order)) == 1
+
+
+def test_unit_change_guard_loads_expired_previous_unit(client, order_product, db):
+    assert submit(client, order_product).status_code == 201
+    db.expire(order_product)
+    order_product.unit = 'кг'
+    with pytest.raises(ApiError) as error:
+        db.commit()
+    assert error.value.code == 'UNIT_RESERVED'
+    db.rollback()
+    db.refresh(order_product)
+    assert order_product.unit == 'шт'
+    assert order_product.reserved == 1

@@ -1,20 +1,23 @@
 import hashlib
 import json
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
+from decimal import Decimal
 from typing import Annotated, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, Path, Query, Response
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
-from sqlalchemy import BigInteger, CheckConstraint, DateTime, ForeignKey, String, func, or_, select, text
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator, model_serializer, model_validator
+from sqlalchemy import BigInteger, CheckConstraint, DateTime, ForeignKey, Integer, String, func, or_, select, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
-from .auth import get_current_staff, record_audit, require_mutation
+from .auth import get_current_staff, guest_only, record_audit, require_mutation
 from .common import ApiError, check_version, new_id, page_response, utcnow
 from .db import Base, get_db
+from .crypto import encrypted_property, lookup_digest
 from . import integration
+from .quantities import line_total_kopecks, quantity_decimal, quantity_json, quantity_milli, validate_unit_quantity
 
 
 MAX_SAFE_INTEGER = 9007199254740991
@@ -34,8 +37,13 @@ class Order(Base):
     id: Mapped[str] = mapped_column(String(128), primary_key=True, default=new_id)
     number: Mapped[str] = mapped_column(String(80), unique=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
-    customer: Mapped[dict] = mapped_column(JSONB)
-    fulfillment: Mapped[dict] = mapped_column(JSONB)
+    customer_id: Mapped[str | None] = mapped_column(ForeignKey('users.id'), nullable=True, index=True)
+    phone_lookup: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    email_lookup: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    _customer: Mapped[dict] = mapped_column('customer', JSONB)
+    _fulfillment: Mapped[dict] = mapped_column('fulfillment', JSONB)
+    customer = encrypted_property('customer')
+    fulfillment = encrypted_property('fulfillment')
     items: Mapped[list] = mapped_column(JSONB)
     total_kopecks: Mapped[int] = mapped_column(BigInteger)
     status: Mapped[str] = mapped_column(String(30), default='new', index=True)
@@ -50,7 +58,10 @@ class OrderAttempt(Base):
     idempotency_key: Mapped[str] = mapped_column(String(36), primary_key=True)
     digest: Mapped[str] = mapped_column(String(64))
     order_id: Mapped[str] = mapped_column(ForeignKey('orders.id', ondelete='CASCADE'), unique=True)
-    receipt: Mapped[dict] = mapped_column(JSONB)
+    _receipt: Mapped[dict] = mapped_column('receipt', JSONB)
+    receipt = encrypted_property('receipt', id_field='idempotency_key')
+    actor: Mapped[str] = mapped_column(String(128), default='guest')
+    digest_version: Mapped[int] = mapped_column(Integer, default=2)
 
 
 class InputModel(BaseModel):
@@ -115,8 +126,34 @@ class FulfillmentInput(InputModel):
 
 class OrderItemInput(InputModel):
     productId: str = Field(min_length=1, max_length=128, pattern=r'^[^\x00-\x1f\x7f]+$')
-    quantity: int = Field(ge=1, le=999)
+    quantity: Decimal = Field(gt=0, le=999)
     expectedUnitPriceKopecks: int = Field(ge=0, le=MAX_SAFE_INTEGER)
+    expectedUnit: Literal['шт', 'кг', 'л', 'м'] | None = None
+
+    @field_validator('quantity', mode='before', json_schema_input_type=Annotated[float, Field(gt=0, le=999, multiple_of=0.001)])
+    @classmethod
+    def exact_quantity(cls, value):
+        if not isinstance(value, (int, float, Decimal)) or isinstance(value, bool):
+            raise ValueError('Укажите количество числом.')
+        return quantity_decimal(value)
+
+    @field_validator('expectedUnit', mode='before', json_schema_input_type=Literal['шт', 'кг', 'л', 'м'])
+    @classmethod
+    def reject_null_unit(cls, value):
+        if value is None:
+            raise ValueError('Выберите единицу измерения.')
+        return value
+
+    @field_serializer('quantity')
+    def serialize_quantity(self, value):
+        return quantity_json(value)
+
+    @model_serializer(mode='wrap')
+    def legacy_compatible_dump(self, handler):
+        result = handler(self)
+        if self.expectedUnit is None:
+            result.pop('expectedUnit', None)
+        return result
 
 
 class CreateOrderRequest(InputModel):
@@ -175,7 +212,7 @@ def manager_order(db, order):
 router = APIRouter(prefix='/api')
 
 
-def build_order(db: Session, body: CreateOrderRequest) -> Order:
+def build_order(db: Session, body: CreateOrderRequest, *, customer_id=None) -> Order:
     from .catalog import Category, Product, ProductPresentation, catalog_metadata
 
     integration.require_erp()
@@ -194,18 +231,27 @@ def build_order(db: Session, body: CreateOrderRequest) -> Order:
         category = categories.get(presentation.category_id) if presentation else None
         if not product or not product.is_active or not category or not category.is_visible:
             raise ApiError(409, 'PRODUCT_UNAVAILABLE', 'Товар больше недоступен для заказа.', [{'productId': item.productId, 'code': 'PRODUCT_UNAVAILABLE'}])
+        if product.unit != (item.expectedUnit or 'шт'):
+            raise ApiError(409, 'UNIT_CHANGED', 'Единица измерения изменилась. Подтвердите обновлённую корзину.', [{'productId': product.id, 'code': 'UNIT_CHANGED', 'currentUnit': product.unit}])
+        try:
+            validate_unit_quantity(item.quantity, product.unit)
+        except ValueError as error:
+            raise ApiError(422, 'VALIDATION_ERROR', str(error)) from None
+        if (product.accounting_source is not None or product.stock_observed_at is not None) and (product.stock_observed_at is None or utcnow() - product.stock_observed_at > timedelta(days=1)):
+            raise ApiError(503, 'CATALOG_STALE', 'Сведения об остатке товара требуют обновления. Приём заказов временно недоступен.')
         if product.price_kopecks != item.expectedUnitPriceKopecks:
             raise ApiError(409, 'PRICE_CHANGED', 'Цена изменилась. Подтвердите обновлённую корзину.', [{'productId': product.id, 'code': 'PRICE_CHANGED', 'currentPriceKopecks': product.price_kopecks}])
         available = max(0, product.stock - product.reserved)
-        if item.quantity > available:
-            raise ApiError(409, 'OUT_OF_STOCK', 'Недостаточно товара на складе.', [{'productId': product.id, 'code': 'OUT_OF_STOCK', 'availableStock': available}])
-        total += product.price_kopecks * item.quantity
+        if quantity_milli(item.quantity) > quantity_milli(available):
+            raise ApiError(409, 'OUT_OF_STOCK', 'Недостаточно товара на складе.', [{'productId': product.id, 'code': 'OUT_OF_STOCK', 'availableStock': quantity_json(available)}])
+        line_total = line_total_kopecks(product.price_kopecks, item.quantity)
+        total += line_total
         if total > MAX_SAFE_INTEGER:
             raise ApiError(422, 'VALIDATION_ERROR', 'Сумма заказа превышает допустимый предел.')
-        snapshots.append({'productId': product.id, 'sku': product.sku, 'brand': product.brand, 'name': presentation.website_title or product.name, 'quantity': item.quantity, 'unitPriceKopecks': product.price_kopecks})
+        snapshots.append({'productId': product.id, 'sku': product.sku, 'brand': product.brand, 'name': presentation.website_title or product.name, 'quantity': quantity_json(item.quantity), 'unit': product.unit, 'unitPriceKopecks': product.price_kopecks, 'lineTotalKopecks': line_total})
     created_at = utcnow()
     order_id = new_id()
-    order = Order(id=order_id, number=f'L-{created_at:%Y%m%d}-{order_id.upper()}', created_at=created_at, customer=body.customer.model_dump(), fulfillment=body.fulfillment.model_dump(), items=snapshots, total_kopecks=total, status='new', integration_status='pending_sync', version=1)
+    order = Order(id=order_id, customer_id=customer_id, phone_lookup=lookup_digest('phone', body.customer.phone), email_lookup=lookup_digest('email', body.customer.email.strip().lower()) if body.customer.email else None, number=f'L-{created_at:%Y%m%d}-{order_id.upper()}', created_at=created_at, customer=body.customer.model_dump(), fulfillment=body.fulfillment.model_dump(), items=snapshots, total_kopecks=total, status='new', integration_status='pending_sync', version=1)
     db.add(order)
     db.flush()
     for item in body.items:
@@ -214,28 +260,53 @@ def build_order(db: Session, body: CreateOrderRequest) -> Order:
     return order
 
 
-@router.post('/orders')
-def create_order(body: CreateOrderRequest, response: Response, idempotency_key: str | None = Header(default=None), db: Session = Depends(get_db)):
-    key = parse_idempotency_key(idempotency_key)
-    digest = hashlib.sha256(json.dumps(body.model_dump(), ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+def request_digest(body, actor, version=2):
+    payload = body.model_dump()
+    if version == 2:
+        payload = {'actor': actor, 'body': payload}
+    elif version != 1 or actor != 'guest':
+        raise ApiError(409, 'IDEMPOTENCY_CONFLICT', 'С этим ключом уже принят другой запрос.')
+    return hashlib.sha256(json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+
+
+def accept_order(db, body, key, *, customer_id=None, receipt_builder=order_receipt):
+    actor = customer_id or 'guest'
     lock_attempt(db, 'order:' + key)
     previous = db.get(OrderAttempt, key)
-    response.headers['Cache-Control'] = 'no-store'
     if previous:
-        if previous.digest != digest:
+        order = db.get(Order, previous.order_id)
+        if previous.actor != actor or order.customer_id != customer_id or previous.digest != request_digest(body, actor, previous.digest_version):
             raise ApiError(409, 'IDEMPOTENCY_CONFLICT', 'С этим ключом уже принят другой запрос.')
-        response.status_code = 200
-        return previous.receipt
-    order = build_order(db, body)
-    receipt = order_receipt(order)
-    db.add(OrderAttempt(idempotency_key=key, digest=digest, order_id=order.id, receipt=receipt))
+        return previous.receipt, False
+    order = build_order(db, body, customer_id=customer_id)
+    receipt = receipt_builder(order)
+    db.add(OrderAttempt(idempotency_key=key, actor=actor, digest_version=2, digest=request_digest(body, actor), order_id=order.id, receipt=receipt))
     db.commit()
-    response.status_code = 201
+    return receipt, True
+
+
+@router.post('/orders')
+def create_order(body: CreateOrderRequest, response: Response, idempotency_key: str | None = Header(default=None), db: Session = Depends(get_db), guest=Depends(guest_only)):
+    receipt, created = accept_order(db, body, parse_idempotency_key(idempotency_key))
+    response.headers['Cache-Control'] = 'no-store'
+    response.status_code = 201 if created else 200
     return receipt
 
 
+def contact_filters(model, value):
+    value = value.strip()
+    conditions = [model.email_lookup == lookup_digest('email', value.lower())]
+    try:
+        phone = CustomerInput.normalize_phone(value)
+    except ValueError:
+        pass
+    else:
+        conditions.append(model.phone_lookup == lookup_digest('phone', phone))
+    return conditions
+
+
 @router.get('/manager/orders')
-def list_orders(response: Response, status: OrderStatus | None = None, integrationStatus: IntegrationStatus | None = None, q: Annotated[str, Query(max_length=120, pattern=r'^[^\x00]*$')] = '', offset: Annotated[int, Query(ge=0, le=MAX_SAFE_INTEGER)] = 0, limit: Annotated[int, Query(ge=1, le=100)] = 24, db: Session = Depends(get_db), staff=Depends(get_current_staff)):
+def list_orders(response: Response, status: OrderStatus | None = None, integrationStatus: IntegrationStatus | None = None, q: Annotated[str, Query(max_length=254, pattern=r'^[^\x00]*$')] = '', offset: Annotated[int, Query(ge=0, le=MAX_SAFE_INTEGER)] = 0, limit: Annotated[int, Query(ge=1, le=100)] = 24, db: Session = Depends(get_db), staff=Depends(get_current_staff)):
     query = select(Order)
     if status:
         query = query.where(Order.status == status)
@@ -243,7 +314,7 @@ def list_orders(response: Response, status: OrderStatus | None = None, integrati
         query = query.where(Order.integration_status == integrationStatus)
     if q.strip():
         search = '%' + q.strip().replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_') + '%'
-        query = query.where(or_(Order.number.ilike(search, escape='\\'), Order.customer['name'].astext.ilike(search, escape='\\'), Order.customer['phone'].astext.ilike(search, escape='\\')))
+        query = query.where(or_(Order.number.ilike(search, escape='\\'), *contact_filters(Order, q)))
     total = db.scalar(select(func.count()).select_from(query.subquery()))
     orders = db.scalars(query.order_by(Order.created_at.desc(), Order.id.desc()).offset(offset).limit(limit))
     response.headers['Cache-Control'] = 'no-store'
@@ -275,9 +346,10 @@ def update_status(order_id: Annotated[str, Path(min_length=1, max_length=128, pa
         products = {product.id: product for product in db.scalars(select(Product).where(Product.id.in_([item['productId'] for item in order.items])).order_by(Product.id).with_for_update())}
         for item in order.items:
             product = products.get(item['productId'])
-            if product is None or product.reserved < item['quantity']:
+            quantity = quantity_decimal(item['quantity'])
+            if product is None or product.reserved < quantity or product.unit != item.get('unit', 'шт'):
                 raise ApiError(409, 'RESERVE_CONFLICT', 'Локальный резерв требует проверки. Отмена не выполнена.')
-            product.reserved -= item['quantity']
+            product.reserved -= quantity
         event.state = 'cancelled'
         order.integration_status = 'cancelled_before_sync'
     elif not (body.status == 'ready' and order.status == 'confirmed' or body.status == 'completed' and order.status == 'ready') or order.integration_status != 'exported' or not order.external_document_id:

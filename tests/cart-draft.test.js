@@ -16,3 +16,11 @@ test('changing one draft line preserves unresolved neighbours and validates quan
   assert.throws(() => setDraftQuantity(draft, 'known', 1.5, 5), /целое/);
   assert.deepEqual(draft[1], { productId: 'known', quantity: 1 });
 });
+
+test('persisted cart round-trip keeps 128-code-point product IDs and rejects 129', () => {
+  const productId = '🚗'.repeat(128);
+  const saved = setDraftQuantity([], productId, 1, 10);
+  assert.equal(saved.length, 1);
+  assert.deepEqual(parseCartDraft(JSON.parse(JSON.stringify(saved))), saved);
+  assert.deepEqual(parseCartDraft([{ productId: '🚗'.repeat(129), quantity: 1 }]), []);
+});

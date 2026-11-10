@@ -80,7 +80,9 @@ test('live Docker stack stores catalog/content/images in PostgreSQL and serves V
   await request('/api/manager/orders', {}, 401);
   const authentication = await request('/api/manager/session', { method: 'POST', body: { login, password }, headers: { Origin: origin } });
   const session = await authentication.json();
-  assert.equal(session.user.role, 'admin');
+  assert.equal(session.capabilities.manageUsers, true);
+  assert.equal(session.capabilities.operate, true);
+  assert.equal(session.user.role, undefined);
   const cookie = authentication.headers.getSetCookie().find(value => value.startsWith('lavr_session='))?.split(';')[0];
   assert.ok(cookie && session.csrfToken.length >= 32);
   sessionHeaders = { Cookie: cookie, Origin: origin, 'X-CSRF-Token': session.csrfToken };

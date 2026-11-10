@@ -1,17 +1,21 @@
 openapi: 3.1.0
 info:
-  title: LAVR Storefront and CRM API
-  version: 0.1.0-design
+  title: MIRZAP67 Storefront and CRM API
+  version: 0.2.0
   description: >-
-    Проектируемый контракт рабочего backend. Статическое демо не реализует эти
+    Контракт рабочего backend. Статическое демо имитирует аккаунты и не реализует эти
     маршруты, серверную авторизацию или интеграцию с 1С. Все деньги — целые копейки
     RUB; сумма заказа включает только товары. Оплата в MVP отсутствует.
     Vue — тонкий клиент FastAPI: данные сайта, категории, публикации и метаданные
     медиа хранятся в PostgreSQL, файлы — на постоянном дисковом томе вне dist и
     эфемерного слоя контейнера. Формы и API-кеши браузера временные; локальная
     корзина может хранить только productId/quantity. Публичный режим не требует
-    входа. Manager работает с заказами и обращениями; admin также управляет сайтом, каталогом,
-    медиа и интеграцией. Роль проверяется сервером для каждого запроса.
+    входа. Partner видит только свои записи; operator работает с заказами, обращениями
+    и операционным обменом; admin имеет полный доступ, включая возможности operator,
+    сайт, каталог, медиа и пользователей. Сервер проверяет право в каждом запросе.
+    Общая UserSession содержит capabilities без role/isActive; назначенная роль и
+    активность доступны только через admin users API. Swagger /api/docs и runtime
+    /api/openapi.json доступны только operator/admin.
     Все PATCH проверяют текущую version атомарно через If-Match; 412 требует
     перечитать объект. POST создания объекта задаёт version=1, если версия у него
     предусмотрена. POST заметки и конверсии обращения проверяют If-Match и увеличивают
@@ -22,13 +26,15 @@ info:
     Один предикат действует для каталога, оформления, меню, CTA и публичных медиа.
 servers:
   - url: /api
-    description: Будущий API на том же origin, что и витрина
+    description: API на том же origin, что и витрина
 security: []
 tags:
   - name: Catalog
   - name: Orders
   - name: Feedback
-  - name: ManagerSession
+  - name: UserSession
+  - name: CustomerRecords
+  - name: AdminUsers
   - name: ManagerOrders
   - name: ManagerFeedback
   - name: Integration
@@ -115,7 +121,9 @@ paths:
         используются для проверки согласия, но никогда для расчёта суммы.
         Заказ принимает товар только при isActive=true AND category.isVisible=true,
         даже если клиент ранее сохранил id неактивного/скрытого товара.
-        Публичного списка или поиска заказов нет. Действующий ключ с тем же
+        Публичного списка или поиска заказов нет. Гостевой маршрут требует Origin
+        и отсутствие session-cookie: истёкшая cookie даёт 401, действующая —
+        409 CUSTOMER_FLOW_REQUIRED (использовать /customer/orders). Действующий ключ с тем же
         нормализованным телом возвращает исходную квитанцию, с другим — 409.
         Параллельная ещё не завершённая операция возвращает 409
         IDEMPOTENCY_IN_PROGRESS и Retry-After. Ответ не обещает резерв в 1С.
@@ -145,6 +153,8 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/OrderReceipt' }
         '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
         '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/ValidationError' }
         '429': { $ref: '#/components/responses/RateLimited' }
@@ -155,8 +165,9 @@ paths:
       operationId: createFeedback
       summary: Принять контакты или запрос без регистрации
       description: >-
-        Проверяется разрешённый Origin; сессия и CSRF-токен не нужны, cookie не
-        дают привилегий. После нормализации требуется хотя бы один контакт;
+        Проверяется разрешённый Origin; без cookie сессия и CSRF не нужны.
+        Предъявленная истёкшая cookie даёт 401, действующая — 409 CUSTOMER_FLOW_REQUIRED;
+        вошедший пользователь отправляет через /customer/feedback. После нормализации требуется хотя бы один контакт;
         каждый заполненный контакт проверяется независимо. Обращение и одно
         событие feedback_telegram сохраняются одной транзакцией. Ответ 202
         выдаётся после commit и не обещает доставку уведомления или срок ответа.
@@ -188,20 +199,497 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/FeedbackReceipt' }
         '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/ValidationError' }
         '429': { $ref: '#/components/responses/RateLimited' }
+  /customer/session:
+    post:
+      tags: [UserSession]
+      operationId: loginUser
+      summary: Войти по подтверждённому email и паролю
+      description: >-
+        Одинаковая ошибка для неизвестного email, неверного пароля и отключённого аккаунта.
+        Создаёт ту же cookie, что legacy-вход; телефон не используется для входа.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EmailLoginInput' }
+      responses:
+        '200': { $ref: '#/components/responses/UserSession' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+    get:
+      tags: [UserSession]
+      operationId: getUserSession
+      summary: Получить общую сессию
+      security: [{ UserCookie: [] }]
+      x-required-roles: [partner, operator, admin]
+      responses:
+        '200': { $ref: '#/components/responses/UserSession' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    delete:
+      tags: [UserSession]
+      operationId: logoutUser
+      summary: Отозвать общую сессию и удалить cookie
+      security: [{ UserCookie: [] }]
+      x-required-roles: [partner, operator, admin]
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      responses:
+        '204':
+          description: Выполнено, без тела ответа
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /customer/auth/signup:
+    post:
+      tags: [UserSession]
+      operationId: signup
+      summary: Начать регистрацию нового партнёра
+      description: >-
+        Проверяется Origin. Нужен настроенный SMTP; API не возвращает код.
+        Ответ и opaque flow не раскрывают существование email. Continuation-cookie
+        HttpOnly/SameSite=Strict (Secure на HTTPS) привязана к этому flow и браузеру.
+        Нужен CUSTOMER_REGISTRATION_ENABLED=true. Повтор не меняет существующий аккаунт.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SignupInput' }
+      responses:
+        '202': { $ref: '#/components/responses/AccountFlow' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /customer/auth/activate:
+    post:
+      tags: [UserSession]
+      operationId: activate
+      summary: Подтвердить код и активировать партнёра
+      description: >-
+        Нужны Origin и continuation-cookie этого signup flow.
+        Создаёт User только после подтверждения email; новая роль всегда partner.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ConfirmInput' }
+      responses:
+        '200': { $ref: '#/components/responses/UserSession' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /customer/auth/resend:
+    post:
+      tags: [UserSession]
+      operationId: resendCode
+      summary: Повторно отправить код текущего flow
+      description: >-
+        Нужны Origin и continuation-cookie. Не ранее 60 секунд; новый код отменяет старую generation.
+        Не меняет исходные контакты/пароль. Flow живёт 30 минут, код 10 минут; максимум 5 неверных проверок.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FlowInput' }
+      responses:
+        '202': { $ref: '#/components/responses/AccountFlow' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /customer/auth/password-reset:
+    post:
+      tags: [UserSession]
+      operationId: requestPasswordReset
+      summary: Начать восстановление пароля
+      description: >-
+        Проверяется Origin. Нужен настроенный SMTP; API не возвращает код.
+        Ответ и opaque flow не раскрывают существование email. Continuation-cookie
+        HttpOnly/SameSite=Strict (Secure на HTTPS) привязана к этому flow и браузеру.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EmailInput' }
+      responses:
+        '202': { $ref: '#/components/responses/AccountFlow' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /customer/auth/password-reset/confirm:
+    post:
+      tags: [UserSession]
+      operationId: confirmPasswordReset
+      summary: Подтвердить новый пароль и отозвать все сессии
+      description: >-
+        Нужны Origin и continuation-cookie password_reset flow.
+        При успехе меняется Argon2-хэш и отзываются все прежние сессии.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ResetInput' }
+      responses:
+        '204':
+          description: Выполнено, без тела ответа
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /customer/profile/activation:
+    post:
+      tags: [UserSession]
+      operationId: startProfileActivation
+      summary: Начать подтверждение контактов legacy-пользователя
+      description: >-
+        Нужна текущая identity с незавершённым профилем, Origin и CSRF.
+        Подтверждённый профиль в v1 не редактируется.
+      security: [{ UserCookie: [] }]
+      x-required-roles: [partner, operator, admin]
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProfileInput' }
+      responses:
+        '202': { $ref: '#/components/responses/AccountFlow' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /customer/profile/activation/confirm:
+    post:
+      tags: [UserSession]
+      operationId: confirmProfileActivation
+      summary: Подтвердить профиль текущего пользователя
+      description: >-
+        Нужны та же identity, CSRF, Origin и continuation-cookie profile_completion flow.
+        Возвращает обновлённую общую сессию без роли/статуса.
+      security: [{ UserCookie: [] }]
+      x-required-roles: [partner, operator, admin]
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ConfirmInput' }
+      responses:
+        '200': { $ref: '#/components/responses/UserSession' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /customer/orders:
+    get:
+      tags: [CustomerRecords]
+      operationId: listOwnOrders
+      summary: Список собственных заказов
+      description: >-
+        Только записи с customer_id текущего User; чужой ID возвращает 404.
+        Нужен подтверждённый полный профиль; иначе 409 PROFILE_REQUIRED.
+        Совпадение контактов с гостевыми записями не назначает владельца.
+      security: [{ UserCookie: [] }]
+      x-required-roles: [partner, operator, admin]
+      parameters:
+        - $ref: '#/components/parameters/Offset'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Успешный ответ; приватные данные no-store
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CustomerOrderPage' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+    post:
+      tags: [CustomerRecords]
+      operationId: createOwnOrder
+      summary: Создать заказ из профиля
+      description: >-
+        Контакты и customer_id берутся только из серверного профиля; служебные input-поля запрещены.
+        Профиль должен быть подтверждён. Сетевой повтор сохраняет Idempotency-Key и тело.
+        Сохраняются проверки цены, остатков и 1С; без адаптера 503 ERP_NOT_CONFIGURED.
+        Первое создание 201, сохранённый повтор 200 с тем же CustomerOrder.
+      security: [{ UserCookie: [] }]
+      x-required-roles: [partner, operator, admin]
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateCustomerOrderRequest' }
+      responses:
+        '201':
+          description: Успешный ответ; приватные данные no-store
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CustomerOrder' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+        '200':
+          description: Сохранённый повтор собственного заказа
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CustomerOrder' }
+  /customer/orders/{recordId}:
+    get:
+      tags: [CustomerRecords]
+      operationId: getOwnOrder
+      summary: Собственная карточка заказа
+      description: >-
+        Только записи с customer_id текущего User; чужой ID возвращает 404.
+        Нужен подтверждённый полный профиль; иначе 409 PROFILE_REQUIRED.
+        Совпадение контактов с гостевыми записями не назначает владельца.
+      security: [{ UserCookie: [] }]
+      x-required-roles: [partner, operator, admin]
+      parameters:
+        - $ref: '#/components/parameters/RecordId'
+      responses:
+        '200':
+          description: Успешный ответ; приватные данные no-store
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CustomerOrder' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /customer/feedback:
+    get:
+      tags: [CustomerRecords]
+      operationId: listOwnFeedback
+      summary: Список собственных обращений
+      description: >-
+        Только записи с customer_id текущего User; чужой ID возвращает 404.
+        Нужен подтверждённый полный профиль; иначе 409 PROFILE_REQUIRED.
+        Совпадение контактов с гостевыми записями не назначает владельца.
+      security: [{ UserCookie: [] }]
+      x-required-roles: [partner, operator, admin]
+      parameters:
+        - $ref: '#/components/parameters/Offset'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Успешный ответ; приватные данные no-store
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CustomerFeedbackPage' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+    post:
+      tags: [CustomerRecords]
+      operationId: createOwnFeedback
+      summary: Создать обращение из профиля
+      description: >-
+        Контакты и customer_id берутся только из серверного профиля; служебные input-поля запрещены.
+        Профиль должен быть подтверждён. Сетевой повтор сохраняет Idempotency-Key и тело.
+        Сохраняется транзакционный Telegram outbox; 202 не обещает доставку уведомления.
+      security: [{ UserCookie: [] }]
+      x-required-roles: [partner, operator, admin]
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateCustomerFeedbackRequest' }
+      responses:
+        '202':
+          description: Успешный ответ; приватные данные no-store
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CustomerFeedback' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /customer/feedback/{recordId}:
+    get:
+      tags: [CustomerRecords]
+      operationId: getOwnFeedback
+      summary: Собственная карточка обращения
+      description: >-
+        Только записи с customer_id текущего User; чужой ID возвращает 404.
+        Нужен подтверждённый полный профиль; иначе 409 PROFILE_REQUIRED.
+        Совпадение контактов с гостевыми записями не назначает владельца.
+      security: [{ UserCookie: [] }]
+      x-required-roles: [partner, operator, admin]
+      parameters:
+        - $ref: '#/components/parameters/RecordId'
+      responses:
+        '200':
+          description: Успешный ответ; приватные данные no-store
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CustomerFeedback' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /admin/users:
+    get:
+      tags: [AdminUsers]
+      operationId: listUsers
+      summary: Список пользователей для администратора
+      description: >-
+        Только здесь и в admin user detail/patch выдаются назначенная role и isActive.
+        Поиск по полному нормализованному email/телефону или точному legacy-логину.
+        Пароли, хэши, lookup, ciphertext, challenge-коды и session token не выдаются.
+      security: [{ UserCookie: [] }]
+      x-required-roles: [admin]
+      parameters:
+        - $ref: '#/components/parameters/UserSearch'
+        - $ref: '#/components/parameters/Offset'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Успешный ответ; приватные данные no-store
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminUserPage' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /admin/users/{userId}:
+    get:
+      tags: [AdminUsers]
+      operationId: getUser
+      summary: Карточка пользователя для администратора
+      security: [{ UserCookie: [] }]
+      x-required-roles: [admin]
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '200':
+          description: Успешный ответ; приватные данные no-store
+          headers:
+            ETag: { $ref: '#/components/headers/ResourceETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminUser' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /admin/users/{userId}/permissions:
+    patch:
+      tags: [AdminUsers]
+      operationId: updateUserRole
+      summary: Назначить canonical роль
+      description: >-
+        Только администратор; проверяются Origin, CSRF и If-Match версии пользователя.
+        Изменение повышает auth_version и отзывает старые сессии.
+        Последний активный admin защищён от блокировки/понижения: 409 LAST_ACTIVE_ADMIN.
+      security: [{ UserCookie: [] }]
+      x-required-roles: [admin]
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UserRoleInput' }
+      responses:
+        '200':
+          description: Успешный ответ; приватные данные no-store
+          headers:
+            ETag: { $ref: '#/components/headers/ResourceETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminUser' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '412': { $ref: '#/components/responses/VersionConflict' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /admin/users/{userId}/status:
+    patch:
+      tags: [AdminUsers]
+      operationId: updateUserStatus
+      summary: Заблокировать или включить пользователя
+      description: >-
+        Только администратор; проверяются Origin, CSRF и If-Match версии пользователя.
+        Изменение повышает auth_version и отзывает старые сессии.
+        Последний активный admin защищён от блокировки/понижения: 409 LAST_ACTIVE_ADMIN.
+      security: [{ UserCookie: [] }]
+      x-required-roles: [admin]
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UserStatusInput' }
+      responses:
+        '200':
+          description: Успешный ответ; приватные данные no-store
+          headers:
+            ETag: { $ref: '#/components/headers/ResourceETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminUser' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '412': { $ref: '#/components/responses/VersionConflict' }
+        '422': { $ref: '#/components/responses/ValidationError' }
   /manager/session:
     post:
-      tags: [ManagerSession]
+      tags: [UserSession]
       operationId: loginManager
-      summary: Создать серверную сессию сотрудника
+      summary: Совместимый вход по email в общую серверную сессию
       description: >-
         Вход проверяет Origin и ограничивает частоту попыток. Ошибка не раскрывает,
-        существует ли логин. Пароль и тело запроса не логируются. Cookie:
+        существует ли email. Поле login содержит подтверждённый email, нормализуется
+        и использует ту же проверку и throttling, что /customer/session;
+        прежние имена пользователя не принимаются. Пароль и тело запроса не логируются. Cookie:
         HttpOnly; Secure; SameSite=Strict; Path=/api. Один cookie обслуживает
-        /manager и /admin; выход удаляет его с тем же Path. Ответы no-store.
+        /customer, /manager и /admin; выход удаляет его с тем же Path. Доступ к
+        служебным данным проверяется отдельно от входа. Ответы no-store.
       requestBody:
         required: true
         content:
@@ -211,7 +699,7 @@ paths:
               additionalProperties: false
               required: [login, password]
               properties:
-                login: { type: string, minLength: 1, maxLength: 120 }
+                login: { type: string, format: email, minLength: 1, maxLength: 254 }
                 password: { type: string, minLength: 1, maxLength: 256, writeOnly: true }
       responses:
         '200':
@@ -221,18 +709,18 @@ paths:
             Cache-Control: { schema: { type: string, const: no-store } }
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/ManagerSession' }
+              schema: { $ref: '#/components/schemas/UserSession' }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '422': { $ref: '#/components/responses/ValidationError' }
         '429': { $ref: '#/components/responses/RateLimited' }
     get:
-      tags: [ManagerSession]
+      tags: [UserSession]
       operationId: getManagerSession
-      summary: Текущая сессия и роль сотрудника
-      security: [{ ManagerCookie: [] }]
-      x-required-roles: [manager, admin]
+      summary: Общая сессия и capabilities без роли/активности
+      security: [{ UserCookie: [] }]
+      x-required-roles: [partner, operator, admin]
       responses:
         '200':
           description: Действующая сессия, no-store
@@ -240,14 +728,14 @@ paths:
             Cache-Control: { schema: { type: string, const: no-store } }
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/ManagerSession' }
+              schema: { $ref: '#/components/schemas/UserSession' }
         '401': { $ref: '#/components/responses/Unauthorized' }
     delete:
-      tags: [ManagerSession]
+      tags: [UserSession]
       operationId: logoutManager
       summary: Отозвать серверную сессию и удалить cookie
-      security: [{ ManagerCookie: [] }]
-      x-required-roles: [manager, admin]
+      security: [{ UserCookie: [] }]
+      x-required-roles: [partner, operator, admin]
       parameters:
         - $ref: '#/components/parameters/CsrfToken'
       responses:
@@ -263,10 +751,10 @@ paths:
       operationId: listManagerOrders
       summary: Закрытый список заказов с контактными данными
       description: >-
-        Роли manager/admin. Сортировка createdAt DESC, id DESC. Ответы no-store;
+        Роли operator/admin. Сортировка createdAt DESC, id DESC. Ответы no-store;
         контакты из ответа и текст поиска не попадают в журналы запросов.
-      security: [{ ManagerCookie: [] }]
-      x-required-roles: [manager, admin]
+      security: [{ UserCookie: [] }]
+      x-required-roles: [operator, admin]
       parameters:
         - name: status
           in: query
@@ -276,8 +764,8 @@ paths:
           schema: { $ref: '#/components/schemas/IntegrationStatus' }
         - name: q
           in: query
-          description: Номер заказа, имя или телефон; фильтр только закрытого API
-          schema: { type: string, maxLength: 120 }
+          description: Подстрока номера заказа либо полный нормализованный телефон/email; фильтр только закрытого API
+          schema: { type: string, maxLength: 254 }
         - $ref: '#/components/parameters/Offset'
         - $ref: '#/components/parameters/Limit'
       responses:
@@ -304,9 +792,9 @@ paths:
     get:
       tags: [ManagerOrders]
       operationId: getManagerOrder
-      summary: Заказ для manager/admin
-      security: [{ ManagerCookie: [] }]
-      x-required-roles: [manager, admin]
+      summary: Заказ для operator/admin
+      security: [{ UserCookie: [] }]
+      x-required-roles: [operator, admin]
       parameters:
         - $ref: '#/components/parameters/OrderId'
       responses:
@@ -327,14 +815,14 @@ paths:
       operationId: changeOrderStatus
       summary: Изменить бизнес-статус с проверкой текущей версии
       description: >-
-        Роли manager/admin. Допустимы confirmed -> ready и ready -> completed.
+        Роли operator/admin. Допустимы confirmed -> ready и ready -> completed.
         new -> cancelled допустим только при canCancel=true: отправка ещё не
         началась или однозначно отвергнута 1С. Экспортированную заявку отменяют
         в 1С; результат импортируется в CRM. completed — терминальный статус.
         confirmed устанавливается только по подтверждённому ответу 1С.
         Строки заказа и цены этим endpoint не редактируются.
-      security: [{ ManagerCookie: [] }]
-      x-required-roles: [manager, admin]
+      security: [{ UserCookie: [] }]
+      x-required-roles: [operator, admin]
       parameters:
         - $ref: '#/components/parameters/OrderId'
         - $ref: '#/components/parameters/CsrfToken'
@@ -382,21 +870,22 @@ paths:
       operationId: listManagerFeedback
       summary: Закрытый список обращений с контактами
       description: >-
-        Любой действующий manager/admin читает все обращения. Фильтры объединяются
+        Любой действующий operator/admin читает все обращения. Фильтры объединяются
         AND; без status возвращаются все статусы, включая терминальные. Поиск без
-        учёта регистра по номеру, имени, телефону, email и сервису/адресу мессенджера;
+        учёта регистра по номеру; контакты ищутся только по полному нормализованному
+        телефону/email, без поиска по имени или мессенджеру;
         пробелы по краям q обрезаются, %, _ и обратная косая черта ищутся буквально.
         Сортировка createdAt DESC, id DESC. Чтение не назначает ответственного и
         не меняет статус. Контакты и текст поиска не попадают в журналы.
-      security: [{ ManagerCookie: [] }]
-      x-required-roles: [manager, admin]
+      security: [{ UserCookie: [] }]
+      x-required-roles: [operator, admin]
       parameters:
         - name: status
           in: query
           schema: { $ref: '#/components/schemas/FeedbackStatus' }
         - name: q
           in: query
-          schema: { type: string, maxLength: 120, default: '', pattern: '^[^\x00-\x1f\x7f]*$' }
+          schema: { type: string, maxLength: 254, default: '', pattern: '^[^\x00-\x1f\x7f]*$' }
         - $ref: '#/components/parameters/Offset'
         - $ref: '#/components/parameters/Limit'
       responses:
@@ -416,9 +905,9 @@ paths:
       summary: Карточка обращения, история и состояние уведомления
       description: >-
         Читается напрямую по ID независимо от страницы списка. Требует сессию
-        manager/admin, но не владение обращением. Открытие не меняет данные.
-      security: [{ ManagerCookie: [] }]
-      x-required-roles: [manager, admin]
+        operator/admin, но не владение обращением. Открытие не меняет данные.
+      security: [{ UserCookie: [] }]
+      x-required-roles: [operator, admin]
       parameters:
         - $ref: '#/components/parameters/FeedbackId'
       responses:
@@ -439,7 +928,7 @@ paths:
       operationId: changeFeedbackStatus
       summary: Взять обращение в работу или закрыть с результатом
       description: >-
-        Проверяются сессия manager/admin, Origin, CSRF, блокировка строки и If-Match.
+        Проверяются сессия operator/admin, Origin, CSRF, блокировка строки и If-Match.
         new -> in_progress назначает текущего сотрудника ответственным; new ->
         closed и in_progress -> closed требуют непустой resolution. Назначенное
         обращение меняет только ответственный либо admin. Два одновременных
@@ -448,8 +937,8 @@ paths:
         недопустимы. Изменение, увеличение версии и аудит — одна транзакция.
         Отсутствующий/некорректный If-Match — 400, чужой владелец — 403,
         запрещённый переход — 409. Переназначения и повторного открытия нет.
-      security: [{ ManagerCookie: [] }]
-      x-required-roles: [manager, admin]
+      security: [{ UserCookie: [] }]
+      x-required-roles: [operator, admin]
       parameters:
         - $ref: '#/components/parameters/FeedbackId'
         - $ref: '#/components/parameters/CsrfToken'
@@ -488,8 +977,8 @@ paths:
         Чужой владелец — 403, другой статус — 409, старая версия — 412,
         отсутствующий/неверный If-Match — 400. Ключа идемпотентности нет;
         повтор после успеха со старой версией не добавляет вторую заметку.
-      security: [{ ManagerCookie: [] }]
-      x-required-roles: [manager, admin]
+      security: [{ UserCookie: [] }]
+      x-required-roles: [operator, admin]
       parameters:
         - $ref: '#/components/parameters/FeedbackId'
         - $ref: '#/components/parameters/CsrfToken'
@@ -521,7 +1010,7 @@ paths:
       operationId: createFeedbackOrder
       summary: Создать обычный заказ и атомарно связать его с обращением
       description: >-
-        Сессия manager/admin, разрешённый Origin и CSRF обязательны. Менять
+        Сессия operator/admin, разрешённый Origin и CSRF обязательны. Менять
         назначенное обращение может ответственный либо admin. Новая конверсия
         требует in_progress и текущий If-Match. Используется общая логика
         CreateOrderRequest: нужны имя, российский телефон, товары, актуальные
@@ -541,8 +1030,8 @@ paths:
         попытка — 409 IDEMPOTENCY_IN_PROGRESS и Retry-After. Второй заказ из
         одного обращения не создаётся. Ключ независим от публичного приёма и
         покупательского оформления; исходная форма обращения не изменяется.
-      security: [{ ManagerCookie: [] }]
-      x-required-roles: [manager, admin]
+      security: [{ UserCookie: [] }]
+      x-required-roles: [operator, admin]
       parameters:
         - $ref: '#/components/parameters/FeedbackId'
         - $ref: '#/components/parameters/CsrfToken'
@@ -582,10 +1071,10 @@ paths:
     get:
       tags: [Integration]
       operationId: getIntegrationHealth
-      summary: Состояние обмена, только admin
-      description: Проверяется роль admin; не возвращает URL, пароли, токены и необработанный ответ 1С
-      security: [{ ManagerCookie: [] }]
-      x-required-roles: [admin]
+      summary: Состояние обмена, operator/admin
+      description: Проверяется право оператора или администратора; не возвращает URL, пароли, токены и необработанный ответ 1С
+      security: [{ UserCookie: [] }]
+      x-required-roles: [operator, admin]
       responses:
         '200':
           description: Состояние обмена; недоступность 1С отражается в теле ответа
@@ -600,13 +1089,13 @@ paths:
     post:
       tags: [Integration]
       operationId: enqueueCatalogSync
-      summary: Поставить импорт в очередь, только admin
+      summary: Поставить импорт в очередь, operator/admin
       description: >-
         Проверяются роль, Origin и CSRF. Повтор с прежним Idempotency-Key
         возвращает тот же jobId. Уже запущенный цикл не запускает параллельный
         импорт; ответ указывает существующую задачу.
-      security: [{ ManagerCookie: [] }]
-      x-required-roles: [admin]
+      security: [{ UserCookie: [] }]
+      x-required-roles: [operator, admin]
       parameters:
         - $ref: '#/components/parameters/CsrfToken'
         - $ref: '#/components/parameters/IdempotencyKey'
@@ -626,14 +1115,14 @@ paths:
     post:
       tags: [Integration]
       operationId: retryOrderExport
-      summary: Поставить ошибочный экспорт на повтор, только admin
+      summary: Поставить ошибочный экспорт на повтор, operator/admin
       description: >-
         Не создаёт новое событие/внешнюю ссылку заказа. Если результат предыдущей
         отправки неизвестен, worker сначала выполняет сверку с 1С по Order.id.
         Повтор того же ключа возвращает прежнюю задачу. exported, cancelled и
         completed не допускают повторного создания документа; конфликт — 409.
-      security: [{ ManagerCookie: [] }]
-      x-required-roles: [admin]
+      security: [{ UserCookie: [] }]
+      x-required-roles: [operator, admin]
       parameters:
         - $ref: '#/components/parameters/OrderId'
         - $ref: '#/components/parameters/CsrfToken'
@@ -707,7 +1196,7 @@ paths:
       operationId: getAdminSite
       summary: Настройки фиксированного шаблона, только admin
       description: Роль admin проверяется сервером; объект включает текущую version
-      security: [{ ManagerCookie: [] }]
+      security: [{ UserCookie: [] }]
       x-required-roles: [admin]
       responses:
         '200':
@@ -729,7 +1218,7 @@ paths:
         сохраняются; переданная hero/settings/menu заменяется целиком. Изменение
         сразу обновляет публичную проекцию. Сервер проверяет ссылки на готовые
         медиа и внутренние цели; конструктор HTML-страниц отсутствует.
-      security: [{ ManagerCookie: [] }]
+      security: [{ UserCookie: [] }]
       x-required-roles: [admin]
       parameters:
         - $ref: '#/components/parameters/CsrfToken'
@@ -759,7 +1248,7 @@ paths:
       operationId: listAdminPublications
       summary: Публикации всех состояний, только admin
       description: Роль admin проверяется сервером; сортировка position ASC, id ASC
-      security: [{ ManagerCookie: [] }]
+      security: [{ UserCookie: [] }]
       x-required-roles: [admin]
       parameters:
         - name: kind
@@ -799,7 +1288,7 @@ paths:
         для товара это isActive=true AND category.isVisible=true.
         При двух непустых границах startsAt < endsAt; проверка выполняется также
         над итоговым объектом после PATCH. Тексты — обычный текст, без HTML.
-      security: [{ ManagerCookie: [] }]
+      security: [{ UserCookie: [] }]
       x-required-roles: [admin]
       parameters:
         - $ref: '#/components/parameters/CsrfToken'
@@ -830,7 +1319,7 @@ paths:
       operationId: getAdminPublication
       summary: Публикация и версия, только admin
       description: Роль admin проверяется сервером, включая чтение черновиков и архива
-      security: [{ ManagerCookie: [] }]
+      security: [{ UserCookie: [] }]
       x-required-roles: [admin]
       parameters:
         - $ref: '#/components/parameters/PublicationId'
@@ -856,7 +1345,7 @@ paths:
         Проверки содержимого и окна действуют над итоговым объектом, как при POST.
         Архивирование или скрытие цели прекращает публичную выдачу и доступ к
         файлам, если больше нет других текущих публичных ссылок на эти медиа.
-      security: [{ ManagerCookie: [] }]
+      security: [{ UserCookie: [] }]
       x-required-roles: [admin]
       parameters:
         - $ref: '#/components/parameters/PublicationId'
@@ -890,7 +1379,7 @@ paths:
       description: >-
         Роль admin проверяется сервером. Сортировка position ASC, id ASC.
         version каждого элемента позволяет собрать If-Match в двойных кавычках.
-      security: [{ ManagerCookie: [] }]
+      security: [{ UserCookie: [] }]
       x-required-roles: [admin]
       parameters:
         - $ref: '#/components/parameters/Offset'
@@ -921,7 +1410,7 @@ paths:
         Проверяются роль admin, Origin и CSRF. Название нормализуется через trim
         и свёртку пробелов, уникально без учёта регистра; совпадение — 409.
         Не создаёт группу или номенклатуру в 1С. Сервер выдаёт id и version=1.
-      security: [{ ManagerCookie: [] }]
+      security: [{ UserCookie: [] }]
       x-required-roles: [admin]
       parameters:
         - $ref: '#/components/parameters/CsrfToken'
@@ -958,7 +1447,7 @@ paths:
         скрывает категорию и её товары из публичного API и оформления; showInMenu
         влияет только на меню категорий. Включение категории не открывает товары
         с isActive=false. Учётные данные 1С не изменяются.
-      security: [{ ManagerCookie: [] }]
+      security: [{ UserCookie: [] }]
       x-required-roles: [admin]
       parameters:
         - $ref: '#/components/parameters/CategoryId'
@@ -998,7 +1487,7 @@ paths:
         Неактивные товары проекции также включаются. isVisible вычисляется как
         isActive=true AND category.isVisible=true. Сортировка name ASC,
         id ASC. Ответ не содержит путей файлов или учётных данных 1С.
-      security: [{ ManagerCookie: [] }]
+      security: [{ UserCookie: [] }]
       x-required-roles: [admin]
       parameters:
         - name: q
@@ -1037,7 +1526,7 @@ paths:
         товары скрытых категорий.
         Учётные поля product только для чтения; presentation — отдельные
         серверные данные витрины, которые импорт из 1С не перезаписывает.
-      security: [{ ManagerCookie: [] }]
+      security: [{ UserCookie: [] }]
       x-required-roles: [admin]
       parameters:
         - $ref: '#/components/parameters/ProductId'
@@ -1069,7 +1558,7 @@ paths:
         изображение либо пустую строку. categoryId и готовые mediaId должны существовать.
         sku, учётное name, brand, externalId, priceKopecks и stock не принимаются
         и не отправляются в 1С. Создание номенклатуры ждёт отдельного контракта адаптера.
-      security: [{ ManagerCookie: [] }]
+      security: [{ UserCookie: [] }]
       x-required-roles: [admin]
       parameters:
         - $ref: '#/components/parameters/ProductId'
@@ -1101,7 +1590,7 @@ paths:
       operationId: listAdminMedia
       summary: Библиотека готовых медиа, только admin
       description: Роль admin проверяется сервером; сортировка createdAt DESC, id DESC
-      security: [{ ManagerCookie: [] }]
+      security: [{ UserCookie: [] }]
       x-required-roles: [admin]
       parameters:
         - $ref: '#/components/parameters/Offset'
@@ -1138,7 +1627,7 @@ paths:
         state=ready. При неудаче записи метаданных файл убирается. Новый файл
         приватный до появления текущей публичной ссылки; статическая раздача
         дискового каталога uploads запрещена. Файл после загрузки неизменяемый.
-      security: [{ ManagerCookie: [] }]
+      security: [{ UserCookie: [] }]
       x-required-roles: [admin]
       parameters:
         - $ref: '#/components/parameters/CsrfToken'
@@ -1202,7 +1691,7 @@ paths:
       operationId: getAdminMediaFile
       summary: Закрытый предпросмотр готового файла, только admin
       description: Роль admin проверяется сервером, в том числе для неопубликованного медиа
-      security: [{ ManagerCookie: [] }]
+      security: [{ UserCookie: [] }]
       x-required-roles: [admin]
       parameters:
         - $ref: '#/components/parameters/MediaId'
@@ -1213,16 +1702,32 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
 components:
   securitySchemes:
-    ManagerCookie:
+    UserCookie:
       type: apiKey
       in: cookie
       name: lavr_session
       description: >-
-        Серверная сессия сотрудника. Роль проверяется backend на каждом запросе;
-        наличие вкладки CRM в frontend не даёт доступа. Cookie Path=/api;
-        /admin/* и /manager/integration/* требуют admin, /manager/orders/* и /manager/feedback/* —
-        manager/admin. Публичные запросы никогда не расширяют доступ по cookie.
+        Общая серверная UserSession; cookie HttpOnly, SameSite=Strict, Secure на HTTPS,
+        Path=/api. Права проверяются backend на каждом запросе. /admin/* требует admin;
+        операционные /manager/* — operator/admin, session — любой активный User.
+        Собственные записи требуют подтверждённый профиль. Публичное создание
+        с действующей cookie отклоняется 409 CUSTOMER_FLOW_REQUIRED; с истёкшей — 401.
   parameters:
+    RecordId:
+      name: recordId
+      in: path
+      required: true
+      schema: { $ref: '#/components/schemas/Id', pattern: '^[^\x00-\x1f\x7f]+$' }
+    UserId:
+      name: userId
+      in: path
+      required: true
+      schema: { $ref: '#/components/schemas/Id', pattern: '^[^\x00-\x1f\x7f]+$' }
+    UserSearch:
+      name: q
+      in: query
+      description: Полный email/телефон или точный legacy-логин; не подстрока
+      schema: { type: string, maxLength: 254, default: '', pattern: '^[^\x00-\x1f\x7f]*$' }
     ProductId:
       name: productId
       in: path
@@ -1757,6 +2262,16 @@ components:
             required: [message]
             properties:
               message: { minLength: 1 }
+    FeedbackNumber:
+      type: integer
+      minimum: 1
+      maximum: 9007199254740991
+      description: Общая последовательность для обращений обоих типов; пропуски после rollback допустимы
+    FeedbackSnapshotNumber:
+      anyOf:
+        - $ref: '#/components/schemas/FeedbackNumber'
+        - { type: string, minLength: 1, maxLength: 80 }
+      description: Строка допускается только в неизменяемой квитанции или ответе, сохранённом до миграции 0006
     FeedbackReceipt:
       type: object
       additionalProperties: false
@@ -1764,7 +2279,7 @@ components:
       description: Неизменяемая публичная квитанция без контактов, приватного статуса и связи с заказом
       properties:
         id: { $ref: '#/components/schemas/Id' }
-        number: { type: string, minLength: 1, maxLength: 80 }
+        number: { $ref: '#/components/schemas/FeedbackSnapshotNumber' }
         createdAt: { type: string, format: date-time }
         state: { type: string, const: accepted }
     ChangeFeedbackStatusRequest:
@@ -1835,22 +2350,23 @@ components:
         state:
           type: string
           enum: [not_configured, queued, running, done, error, uncertain]
-          description: not_configured — ждёт настройки; done — отправлено; uncertain допускает повтор уведомления
+          description: not_configured — ждёт настройки; done — Telegram подтвердил положительный message_id; при relay принятие в очередь ещё не done; uncertain допускает дубль
         code: { type: [string, 'null'], pattern: '^[A-Z][A-Z0-9_]{0,79}$' }
     ManagerFeedback:
       type: object
       additionalProperties: false
-      required: [id, number, createdAt, updatedAt, type, name, phone, email, messenger, message, status, assignedTo, version, resolution, order, history, notification]
+      required: [id, number, createdAt, updatedAt, type, name, phone, email, messenger, message, status, assignedTo, version, resolution, order, history, notification, canManage]
       description: >-
         Полная закрытая карточка. Исходные контакты/запрос сохраняются независимо
         от реквизитов созданного заказа. assignedTo=null до взятия в работу;
         при in_progress ответственный обязателен. order заполнен только при
         converted и содержит квитанцию заказа. История объединяет создание,
         аудит статусов/конверсии и заметки, сортируется createdAt ASC, id ASC;
-        staff=null только для публичного создания.
+        staff=null только для публичного создания. Текущий number целочисленный;
+        сохранённый идемпотентный ответ до миграции 0006 может содержать старую строку.
       properties:
         id: { $ref: '#/components/schemas/Id' }
-        number: { type: string, minLength: 1, maxLength: 80 }
+        number: { $ref: '#/components/schemas/FeedbackSnapshotNumber' }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
         type: { $ref: '#/components/schemas/FeedbackType' }
@@ -1877,6 +2393,9 @@ components:
           minItems: 1
           items: { $ref: '#/components/schemas/FeedbackHistoryEntry' }
         notification: { $ref: '#/components/schemas/FeedbackNotification' }
+        canManage:
+          type: boolean
+          description: Сервер разрешает управление администратору, ответственному или для ещё не назначенного обращения
     FeedbackPage:
       type: object
       additionalProperties: false
@@ -2006,19 +2525,208 @@ components:
             externalDocumentId:
               type: [string, 'null']
               description: Полученная ссылка документа 1С; null до подтверждения экспорта
-    ManagerSession:
+    UserSession:
       type: object
-      required: [user, csrfToken, expiresAt]
+      additionalProperties: false
+      required: [user, capabilities, csrfToken, expiresAt]
+      description: Общий DTO для customer и legacy session; назначенная роль и активность не выдаются
       properties:
         user:
           type: object
-          required: [id, name, role]
+          additionalProperties: false
+          required: [id, name, email, phone, emailVerified, phoneVerified, profileComplete]
           properties:
             id: { $ref: '#/components/schemas/Id' }
             name: { type: string }
-            role: { type: string, enum: [manager, admin] }
+            email: { type: [string, 'null'] }
+            phone: { type: [string, 'null'] }
+            emailVerified: { type: boolean }
+            phoneVerified: { type: boolean, const: false }
+            profileComplete: { type: boolean }
+        capabilities:
+          type: object
+          additionalProperties: false
+          required: [operate, editSite, manageUsers]
+          properties:
+            operate: { type: boolean }
+            editSite: { type: boolean }
+            manageUsers: { type: boolean }
         csrfToken: { type: string, minLength: 32, maxLength: 256 }
         expiresAt: { type: string, format: date-time }
+    EmailInput:
+      type: object
+      additionalProperties: false
+      required: [email]
+      properties:
+        email: { type: string, minLength: 1, maxLength: 254, format: email }
+      description: Email обрезается по краям и приводится к lowercase перед проверкой/поиском
+    ProfileInput:
+      type: object
+      additionalProperties: false
+      required: [email, phone]
+      properties:
+        email: { type: string, minLength: 1, maxLength: 254, format: email }
+        phone: { type: string, minLength: 10, maxLength: 30 }
+      description: Нормализованный российский телефон +7 и 10 цифр; номер не подтверждён
+    SignupInput:
+      type: object
+      additionalProperties: false
+      required: [email, phone, password]
+      properties:
+        email: { type: string, minLength: 1, maxLength: 254, format: email }
+        phone: { type: string, minLength: 10, maxLength: 30 }
+        password: { type: string, minLength: 12, maxLength: 256, writeOnly: true }
+      description: Пароль не trim; role/capabilities/isActive/customerId и прочие служебные поля запрещены
+    EmailLoginInput:
+      type: object
+      additionalProperties: false
+      required: [email, password]
+      properties:
+        email: { type: string, minLength: 1, maxLength: 254, format: email }
+        password: { type: string, minLength: 1, maxLength: 256, writeOnly: true }
+    FlowInput:
+      type: object
+      additionalProperties: false
+      required: [flowId]
+      properties:
+        flowId: { type: string, format: uuid, pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' }
+    ConfirmInput:
+      type: object
+      additionalProperties: false
+      required: [flowId, code]
+      properties:
+        flowId: { type: string, format: uuid, pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' }
+        code: { type: string, pattern: '^[0-9]{6}$', writeOnly: true }
+    ResetInput:
+      type: object
+      additionalProperties: false
+      required: [flowId, code, newPassword]
+      properties:
+        flowId: { type: string, format: uuid, pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' }
+        code: { type: string, pattern: '^[0-9]{6}$', writeOnly: true }
+        newPassword: { type: string, minLength: 12, maxLength: 256, writeOnly: true }
+    AccountFlow:
+      type: object
+      additionalProperties: false
+      required: [flowId, resendAfterSeconds]
+      properties:
+        flowId: { type: string, format: uuid }
+        resendAfterSeconds: { type: integer, const: 60 }
+    CreateCustomerOrderRequest:
+      type: object
+      additionalProperties: false
+      required: [fulfillment, items]
+      properties:
+        name: { type: string, maxLength: 100, default: '' }
+        fulfillment: { $ref: '#/components/schemas/Fulfillment' }
+        items:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items: { $ref: '#/components/schemas/OrderItemInput' }
+      description: Имя необязательно; повтор productId запрещён. Контакты/владелец только из серверного профиля
+    CreateCustomerFeedbackRequest:
+      type: object
+      additionalProperties: false
+      required: [type]
+      properties:
+        type: { $ref: '#/components/schemas/FeedbackType' }
+        message: { type: string, maxLength: 2000, default: '' }
+      description: Для type=request требуется непустой message после очистки; контакты/владелец только из профиля
+    CustomerOrderReceipt:
+      type: object
+      additionalProperties: false
+      required: [id, number, createdAt, totalKopecks, status]
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        number: { type: string }
+        createdAt: { type: string, format: date-time }
+        totalKopecks: { $ref: '#/components/schemas/MoneyKopecks' }
+        status: { $ref: '#/components/schemas/OrderStatus' }
+      description: Собственная квитанция без внутренних полей ERP и контактов
+    CustomerOrder:
+      type: object
+      additionalProperties: false
+      required: [id, number, createdAt, totalKopecks, status, items, fulfillment]
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        number: { type: string }
+        createdAt: { type: string, format: date-time }
+        totalKopecks: { $ref: '#/components/schemas/MoneyKopecks' }
+        status: { $ref: '#/components/schemas/OrderStatus' }
+        items: { type: array, items: { $ref: '#/components/schemas/OrderItem' } }
+        fulfillment: { $ref: '#/components/schemas/Fulfillment' }
+    CustomerFeedback:
+      type: object
+      additionalProperties: false
+      required: [id, number, createdAt, type, message, status, order]
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        number: { $ref: '#/components/schemas/FeedbackNumber' }
+        createdAt: { type: string, format: date-time }
+        type: { $ref: '#/components/schemas/FeedbackType' }
+        message: { type: string }
+        status: { $ref: '#/components/schemas/FeedbackStatus' }
+        order:
+          anyOf:
+            - $ref: '#/components/schemas/CustomerOrderReceipt'
+            - type: 'null'
+      description: Без заметок сотрудников, ответственного, контактов и внутренних статусов доставки/ERP
+    UserRoleInput:
+      type: object
+      additionalProperties: false
+      required: [role]
+      properties:
+        role: { type: string, enum: [partner, operator, admin] }
+    UserStatusInput:
+      type: object
+      additionalProperties: false
+      required: [isActive]
+      properties:
+        isActive: { type: boolean }
+    AdminUser:
+      type: object
+      additionalProperties: false
+      required: [id, name, login, email, phone, emailVerified, phoneVerified, isActive, role, version]
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        name: { type: string }
+        login: { type: [string, 'null'], format: email, maxLength: 254, description: Совместимый alias поля email с тем же значением }
+        email: { type: [string, 'null'] }
+        phone: { type: [string, 'null'] }
+        emailVerified: { type: boolean }
+        phoneVerified: { type: boolean, const: false }
+        isActive: { type: boolean }
+        role: { type: string, enum: [partner, operator, admin] }
+        version: { type: integer, minimum: 1 }
+      description: Только admin users API; version равна auth_version для If-Match, секреты не возвращаются
+    CustomerOrderPage:
+      type: object
+      additionalProperties: false
+      required: [items, total, offset, limit]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/CustomerOrder' } }
+        total: { type: integer, minimum: 0 }
+        offset: { type: integer, minimum: 0, maximum: 9007199254740991 }
+        limit: { type: integer, minimum: 1, maximum: 100 }
+    CustomerFeedbackPage:
+      type: object
+      additionalProperties: false
+      required: [items, total, offset, limit]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/CustomerFeedback' } }
+        total: { type: integer, minimum: 0 }
+        offset: { type: integer, minimum: 0, maximum: 9007199254740991 }
+        limit: { type: integer, minimum: 1, maximum: 100 }
+    AdminUserPage:
+      type: object
+      additionalProperties: false
+      required: [items, total, offset, limit]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/AdminUser' } }
+        total: { type: integer, minimum: 0 }
+        offset: { type: integer, minimum: 0, maximum: 9007199254740991 }
+        limit: { type: integer, minimum: 1, maximum: 100 }
     SyncHealth:
       type: object
       required: [state, catalogUpdatedAt, lastOrderExportAt, catalogStale, pendingCount, errorCount]
@@ -2064,6 +2772,22 @@ components:
               currentPriceKopecks: { $ref: '#/components/schemas/MoneyKopecks' }
               availableStock: { type: integer, minimum: 0 }
   responses:
+    UserSession:
+      description: Общая сессия создана/обновлена; no-store, без роли и активности
+      headers:
+        Set-Cookie: { schema: { type: string }, description: Общая lavr_session; при подтверждении continuation-cookie удаляется }
+        Cache-Control: { schema: { type: string, const: no-store } }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/UserSession' }
+    AccountFlow:
+      description: Generic результат без раскрытия существования email; код в ответе отсутствует
+      headers:
+        Set-Cookie: { schema: { type: string }, description: При начале flow выдаётся отдельная lavr_flow_<UUID без дефисов> HttpOnly continuation-cookie }
+        Cache-Control: { schema: { type: string, const: no-store } }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/AccountFlow' }
     BadRequest:
       description: Некорректный JSON, обязательный заголовок отсутствует/имеет неверный формат
       content:

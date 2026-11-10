@@ -1,10 +1,11 @@
 import re
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Header, Path, Query, Response
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator, model_validator
-from sqlalchemy import BigInteger, Boolean, CheckConstraint, DateTime, ForeignKey, Integer, String, Text, case, event, func, or_, select
+from sqlalchemy import BigInteger, Boolean, CheckConstraint, DateTime, ForeignKey, Integer, Numeric, String, Text, case, event, func, inspect, or_, select
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Mapped, Session, mapped_column
@@ -12,6 +13,7 @@ from sqlalchemy.orm import Mapped, Session, mapped_column
 from .auth import record_audit, require_admin, require_admin_mutation
 from .common import ApiError, check_version, new_id, page_response, utcnow
 from .db import Base, get_db
+from .quantities import quantity_json, validate_unit_quantity
 
 
 class Category(Base):
@@ -36,6 +38,9 @@ class Product(Base):
         CheckConstraint('price_kopecks BETWEEN 0 AND 9007199254740991'),
         CheckConstraint('stock BETWEEN 0 AND 2147483647'),
         CheckConstraint('reserved BETWEEN 0 AND 2147483647'),
+        CheckConstraint('accounting_version BETWEEN 1 AND 9007199254740991', name='products_accounting_version'),
+        CheckConstraint("unit IS NULL OR unit IN ('шт', 'кг', 'л', 'м')", name='product_unit'),
+        CheckConstraint("unit IS DISTINCT FROM 'шт' OR (stock = trunc(stock) AND reserved = trunc(reserved))", name='product_piece_quantities'),
         CheckConstraint('delivery_days BETWEEN 0 AND 365'),
     )
 
@@ -45,8 +50,12 @@ class Product(Base):
     brand: Mapped[str] = mapped_column(String(80))
     name: Mapped[str] = mapped_column(String(240))
     price_kopecks: Mapped[int] = mapped_column(BigInteger)
-    stock: Mapped[int] = mapped_column(Integer)
-    reserved: Mapped[int] = mapped_column(Integer, default=0)
+    stock: Mapped[Decimal] = mapped_column(Numeric(13, 3))
+    reserved: Mapped[Decimal] = mapped_column(Numeric(13, 3), default=0)
+    unit: Mapped[str | None] = mapped_column(String(8).evaluates_none(), nullable=True, default='шт', server_default='шт', active_history=True)
+    stock_observed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    accounting_source: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    accounting_version: Mapped[int] = mapped_column(BigInteger, default=1, server_default='1')
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     delivery_days: Mapped[int] = mapped_column(Integer, default=0)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
@@ -72,6 +81,17 @@ def normalize_search(value):
 @event.listens_for(Product, 'before_insert')
 @event.listens_for(Product, 'before_update')
 def update_search_index(mapper, connection, product):
+    # Validate before NUMERIC's scale could silently round a value supplied by an ORM writer.
+    from .quantities import quantity_decimal
+
+    unit_history = inspect(product).attrs.unit.history
+    if unit_history.has_changes() and unit_history.deleted and product.reserved:
+        raise ApiError(409, 'UNIT_RESERVED', 'Нельзя изменить единицу товара с действующим резервом.')
+    for value in (product.stock, product.reserved if product.reserved is not None else 0):
+        if product.unit is None:
+            quantity_decimal(value)
+        else:
+            validate_unit_quantity(value, product.unit)
     product.search_normalized = ' '.join(normalize_search(value) for value in [product.sku, product.name, product.brand])
 
 
@@ -169,21 +189,23 @@ def public_product(db, product, presentation, category):
         media = {row.id: row for row in db.scalars(select(Media).where(Media.id.in_(presentation.image_ids), Media.state == 'ready'))}
         images = [public_media(media[media_id]) for media_id in presentation.image_ids if media_id in media]
     return {'id': product.id, 'externalId': product.external_id, 'sku': product.sku, 'brand': product.brand, 'name': product.name,
-            'category': presentation.category_id, 'priceKopecks': product.price_kopecks, 'stock': max(0, product.stock - product.reserved),
+            'category': presentation.category_id, 'priceKopecks': product.price_kopecks, 'stock': quantity_json(max(0, product.stock - product.reserved)), 'unit': product.unit,
             'image': images[0]['path'] if images else '', 'images': images, 'websiteTitle': presentation.website_title,
             'websiteDescription': presentation.website_description, 'deliveryDays': product.delivery_days}
 
 
 def admin_product(product, presentation, category):
     return {'id': product.id, 'sku': product.sku, 'brand': product.brand, 'name': product.name, 'category': presentation.category_id,
-            'priceKopecks': product.price_kopecks, 'stock': max(0, product.stock - product.reserved), 'isVisible': product.is_active and category.is_visible}
+            'priceKopecks': product.price_kopecks, 'stock': quantity_json(max(0, product.stock - product.reserved)), 'unit': product.unit,
+            'physicalStock': quantity_json(product.stock), 'reservedStock': quantity_json(product.reserved), 'isVisible': product.is_active and category.is_visible and product.unit is not None}
 
 
 def catalog_metadata(db):
     from .integration import IntegrationState
 
     state = db.get(IntegrationState, 1)
-    updated_at = state.catalog_updated_at if state and state.catalog_updated_at else db.scalar(select(func.max(Product.updated_at)))
+    observation = case((Product.accounting_source.is_not(None), Product.stock_observed_at), else_=func.coalesce(Product.stock_observed_at, Product.updated_at))
+    updated_at = state.catalog_updated_at if state and state.catalog_updated_at else db.scalar(select(func.max(observation)))
     stale = updated_at is None or utcnow() - updated_at > timedelta(days=1)
     return {'catalogUpdatedAt': (updated_at or datetime(1970, 1, 1, tzinfo=timezone.utc)).isoformat(), 'stale': stale}
 
@@ -202,7 +224,7 @@ def is_target_available(db, target):
     if target.get('type') == 'category' and set(target) == {'type', 'categoryId'} and isinstance(target.get('categoryId'), str):
         return db.scalar(select(Category.id).where(Category.id == target['categoryId'], Category.is_visible)) is not None
     if target.get('type') == 'product' and set(target) == {'type', 'productId'} and isinstance(target.get('productId'), str):
-        return db.execute(catalog_query().where(Product.id == target['productId'], Product.is_active, Category.is_visible)).first() is not None
+        return db.execute(catalog_query().where(Product.id == target['productId'], Product.is_active, Product.unit.is_not(None), Category.is_visible)).first() is not None
     return False
 
 
@@ -267,7 +289,7 @@ def list_public_categories(response: Response, db: Session = Depends(get_db)):
 def list_products(q: str = Query(default='', max_length=120, pattern=r'^[^\x00]*$'), category: Id | None = None, brand: str = Query(default='', max_length=80, pattern=r'^[^\x00]*$'),
                   inStock: bool = False, sort: Literal['relevance', 'price_asc', 'price_desc'] = 'relevance',
                   offset: int = Query(default=0, ge=0, le=9007199254740991), limit: int = Query(default=24, ge=1, le=100), db: Session = Depends(get_db)):
-    statement = catalog_query().where(Product.is_active, Category.is_visible)
+    statement = catalog_query().where(Product.is_active, Product.unit.is_not(None), Category.is_visible)
     if q.strip():
         statement = statement.where(search_conditions(q))
     if category:
@@ -292,7 +314,7 @@ def list_products(q: str = Query(default='', max_length=120, pattern=r'^[^\x00]*
 @router.get('/catalog/{productId}')
 def get_public_product(productId: Id = Path(min_length=1, max_length=128), db: Session = Depends(get_db)):
     row = get_product_rows(db, productId)
-    if not row.Product.is_active or not row.Category.is_visible:
+    if not row.Product.is_active or row.Product.unit is None or not row.Category.is_visible:
         raise ApiError(404, 'NOT_FOUND', 'Товар не найден.')
     return {'product': public_product(db, *row), **catalog_metadata(db)}
 

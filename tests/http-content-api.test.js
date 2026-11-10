@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHttpApi } from '../src/data/http-api.js';
 
-const session = { user: { id: 'admin', name: 'Ольга', role: 'admin' }, csrfToken: 'a'.repeat(32), expiresAt: '2026-10-12T10:00:00Z' };
+const session = { user: { id: 'admin', name: 'Ольга', email: null, phone: null, emailVerified: false, phoneVerified: false, profileComplete: false }, capabilities: { operate: true, editSite: true, manageUsers: true }, csrfToken: 'a'.repeat(32), expiresAt: '2026-10-12T10:00:00Z' };
 const settings = { storeName: 'LAVR', phone: '+79991234567', address: 'Москва', hours: '9–18', categoriesTitle: 'Категории', promotionsTitle: 'Акции', catalogTitle: 'Каталог' };
 const hero = { title: 'Автозапчасти', description: 'Для вашего авто', imageId: 'hero', buttonText: 'В каталог', target: { type: 'catalog' } };
 const menu = [{ label: 'Масла', target: { type: 'category', categoryId: 'oils' }, position: 0, isVisible: true }];

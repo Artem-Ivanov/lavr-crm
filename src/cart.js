@@ -1,43 +1,31 @@
 import { PRODUCTS } from './catalog.js';
+import { setDraftQuantity } from './cart-draft.js';
+import { quantityMilli, fromMilli, productUnit, isQuantity, expectedUnitFields, stepQuantity, lineTotalKopecks, sumKopecks } from './quantity.js';
 
 export function sanitizeCart(raw, products = PRODUCTS) {
   if (!Array.isArray(raw)) return [];
-  const quantities = new Map();
+  const entries = new Map();
   for (const item of raw) {
-    if (!item || !Number.isSafeInteger(item.quantity) || item.quantity <= 0) continue;
-    const product = products.find(product => product.id === item.productId);
-    if (!product || product.stock <= 0) continue;
-    quantities.set(product.id, Math.min(product.stock, (quantities.get(product.id) || 0) + item.quantity));
+    const product = products.find(product => product.id === item?.productId);
+    if (!product || !isQuantity(item.quantity, productUnit(product)) || (item.expectedUnit ?? 'шт') !== productUnit(product) || product.stock <= 0) continue;
+    const milli = Math.min(quantityMilli(product.stock), 999000, quantityMilli(entries.get(product.id)?.quantity || 0) + quantityMilli(item.quantity));
+    entries.set(product.id, { productId: product.id, quantity: fromMilli(milli), ...expectedUnitFields(productUnit(product)) });
   }
-  return Array.from(quantities, ([productId, quantity]) => ({ productId, quantity }));
+  return [...entries.values()];
 }
-
 export function setCartQuantity(cart, productId, quantity, products = PRODUCTS) {
   const product = products.find(product => product.id === productId);
   if (!product) throw new Error('Товар не найден.');
-  if (!Number.isSafeInteger(quantity) || quantity < 0) throw new Error('Введите целое неотрицательное количество.');
-  if (quantity > product.stock) throw new Error(`Доступно только ${product.stock} шт.`);
-  const result = sanitizeCart(cart, products);
-  const index = result.findIndex(item => item.productId === productId);
-  if (quantity === 0) return result.filter(item => item.productId !== productId);
-  if (index === -1) result.push({ productId, quantity });
-  else result[index] = { productId, quantity };
-  return result;
+  if (typeof quantity !== 'number') throw new Error('Введите корректное количество.');
+  return setDraftQuantity(sanitizeCart(cart, products), productId, quantity, product.stock, productUnit(product));
 }
-
 export function addCartItem(cart, productId, products = PRODUCTS) {
+  const product = products.find(product => product.id === productId);
+  if (!product) throw new Error('Товар не найден.');
+  const existing = cart.find(item => item.productId === productId);
+  if (existing && (existing.expectedUnit ?? 'шт') !== productUnit(product)) throw new Error('Единица измерения изменилась. Проверьте корзину.');
   const result = sanitizeCart(cart, products);
-  const quantity = result.find(item => item.productId === productId)?.quantity || 0;
-  return setCartQuantity(result, productId, quantity + 1, products);
+  return setCartQuantity(result, productId, stepQuantity(result.find(item => item.productId === productId)?.quantity || 0, productUnit(product)), products);
 }
-
-export function cartTotal(cart, products = PRODUCTS) {
-  const total = sanitizeCart(cart, products).reduce((sum, item) =>
-    sum + products.find(product => product.id === item.productId).priceKopecks * item.quantity, 0);
-  if (!Number.isSafeInteger(total)) throw new Error('Не удалось рассчитать сумму корзины.');
-  return total;
-}
-
-export function cartCount(cart) {
-  return cart.reduce((sum, item) => sum + item.quantity, 0);
-}
+export const cartTotal = (cart, products = PRODUCTS) => sumKopecks(sanitizeCart(cart, products).map(item => lineTotalKopecks(products.find(product => product.id === item.productId).priceKopecks, item.quantity)));
+export const cartCount = cart => cart.length;

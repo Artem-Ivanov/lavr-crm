@@ -12,6 +12,7 @@ from app.integration import Outbox
 def notification_settings(monkeypatch):
     from app.config import settings
 
+    monkeypatch.setattr(settings, 'notification_transport', 'direct', raising=False)
     monkeypatch.setattr(settings, 'telegram_bot_token', 'test-bot-token', raising=False)
     monkeypatch.setattr(settings, 'telegram_chat_id', '-1000000000000', raising=False)
     monkeypatch.setattr(settings, 'public_site_url', 'https://shop.example', raising=False)
@@ -36,8 +37,8 @@ def test_worker_delivers_private_case_link_once_and_ignores_erp(client, db_engin
     db.commit()
     sent = []
     factory = lambda: Session(db_engine)
-    assert process_once(session_factory=factory, send=sent.append)
-    assert not process_once(session_factory=factory, send=sent.append)
+    assert process_once(session_factory=factory, send=lambda payload: (sent.append(payload), 101)[1])
+    assert not process_once(session_factory=factory, send=lambda payload: (sent.append(payload), 101)[1])
     db.expire_all()
     assert db.get(Outbox, feedback_id).state == 'done'
     assert db.get(Outbox, unrelated_id).state == 'queued'
@@ -90,7 +91,7 @@ def test_rate_limit_pauses_other_notifications_across_worker_sessions(client, db
     assert db.get(Outbox, first_id).state == 'error'
     assert db.get(Outbox, second_id).state == 'queued'
     assert db.get(Outbox, second_id).attempts == 0
-    assert process_once(session_factory=factory, send=lambda _: None, now=now + timedelta(seconds=71))
+    assert process_once(session_factory=factory, send=lambda _: 101, now=now + timedelta(seconds=71))
 
 
 def test_explicit_test_sends_one_technical_message_without_a_case(db_engine, db, monkeypatch, notification_settings):
@@ -162,7 +163,7 @@ def test_worker_persists_retry_after_and_does_not_retry_early(client, db_engine,
     assert event.state == 'error' and event.last_error_code == 'TELEGRAM_RATE_LIMIT'
     assert event.next_attempt_at >= now + timedelta(seconds=70)
     assert not process_once(session_factory=factory, send=lambda _: pytest.fail('Early retry'), now=now + timedelta(seconds=20))
-    assert process_once(session_factory=factory, send=lambda _: None, now=now + timedelta(seconds=71))
+    assert process_once(session_factory=factory, send=lambda _: 101, now=now + timedelta(seconds=71))
 
 
 def test_worker_recovers_expired_lease_but_not_live_lease(client, db_engine, db, notification_settings):
@@ -175,7 +176,7 @@ def test_worker_recovers_expired_lease_but_not_live_lease(client, db_engine, db,
     db.commit()
     factory = lambda: Session(db_engine)
     assert not process_once(session_factory=factory, send=lambda _: pytest.fail('Live lease'), now=now)
-    assert process_once(session_factory=factory, send=lambda _: None, now=now + timedelta(seconds=21))
+    assert process_once(session_factory=factory, send=lambda _: 101, now=now + timedelta(seconds=21))
     db.expire_all()
     assert db.get(Outbox, feedback_id).state == 'done'
     assert db.get(Outbox, feedback_id).attempts == 2
@@ -193,6 +194,7 @@ def test_old_worker_cannot_finish_a_reclaimed_attempt(client, db_engine, db, not
             event.attempts += 1
             event.lease_until = now + timedelta(seconds=120)
             other.commit()
+        return 101
 
     assert process_once(session_factory=lambda: Session(db_engine), send=reclaimed, now=now)
     db.expire_all()
@@ -232,3 +234,49 @@ def test_transport_rejects_invalid_telegram_reply_and_obeys_429(monkeypatch, not
     with pytest.raises(DeliveryError) as caught:
         send_telegram({'text': 'Тест'})
     assert caught.value.code == 'TELEGRAM_INVALID_RESPONSE'
+
+
+@pytest.mark.parametrize('transport', ['unknown', '', 'RELAY'])
+def test_unknown_transport_cannot_be_ready_or_send_a_technical_message(monkeypatch, notification_settings, transport):
+    from app.config import settings
+    from app.notification_worker import DeliveryError, is_configured, send_test_notification
+
+    monkeypatch.setattr(settings, 'notification_transport', transport)
+    assert not is_configured()
+    assert not is_configured(transport)
+    with pytest.raises(DeliveryError, match='^NOTIFICATION_TRANSPORT_INVALID$'):
+        send_test_notification(session_factory=lambda: pytest.fail('Unknown transport opened DB'),
+                               send=lambda _: pytest.fail('Unknown transport sent directly'))
+
+
+def test_unknown_transport_worker_leaves_event_pending(client, db_engine, db, monkeypatch, notification_settings):
+    from app.config import settings
+    from app.notification_worker import process_once
+
+    feedback_id = queued_feedback(client)
+    monkeypatch.setattr(settings, 'notification_transport', 'unknown')
+    assert not process_once(session_factory=lambda: Session(db_engine),
+                            send=lambda _: pytest.fail('Unknown transport sent directly'))
+    db.expire_all()
+    event = db.get(Outbox, feedback_id)
+    assert event.state == 'queued' and event.attempts == 0
+
+
+def test_disabled_worker_stays_paused_with_unknown_transport(monkeypatch, notification_settings):
+    from app.config import settings
+    from app.notification_worker import process_once
+
+    monkeypatch.setattr(settings, 'notification_transport', 'unknown')
+    monkeypatch.setattr(settings, 'telegram_notifications_enabled', False)
+    assert not process_once(session_factory=lambda: pytest.fail('Paused worker opened DB'))
+
+
+@pytest.mark.parametrize('command', ['check', 'test'])
+def test_cli_rejects_unknown_transport_before_any_probe(monkeypatch, capsys, notification_settings, command):
+    from app.config import settings
+    import app.telegram_cli as cli
+
+    monkeypatch.setattr(settings, 'notification_transport', 'unknown')
+    monkeypatch.setattr(cli, 'check_connection', lambda: pytest.fail('Unknown transport probed direct API'))
+    assert cli.main([command]) == 1
+    assert 'NOTIFICATION_TRANSPORT_INVALID' in capsys.readouterr().err
