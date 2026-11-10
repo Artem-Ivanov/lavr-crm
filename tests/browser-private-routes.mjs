@@ -323,14 +323,14 @@ for (const width of [1440, 390, 320]) test(`manager request columns and long con
   assert.equal(await page.getByText('Подготовлено к интеграции с 1С', { exact: true }).count(), 0);
 });
 
-for (const width of [1440, 390]) test(`utility sign-in and header sign-out share computed button styling at ${width}px`, async t => {
+for (const width of [1440, 390]) test(`header sign-in and sign-out share computed button styling at ${width}px`, async t => {
   const { page } = await open(t, { hash: '#login', initial: null });
   await page.setViewportSize({ width, height: 1000 });
   const buttonStyle = locator => locator.evaluate(element => {
     const style = getComputedStyle(element);
     return Object.fromEntries(['height', 'backgroundColor', 'color', 'fontSize', 'fontWeight', 'lineHeight', 'padding', 'borderRadius', 'borderWidth', 'borderStyle', 'borderColor'].map(property => [property, style[property]]));
   });
-  const signIn = await buttonStyle(page.locator('.utility-right a.btn'));
+  const signIn = await buttonStyle(page.locator('.header-account a.btn'));
   await page.locator('.account-form input[name="email"]').fill('admin@example.test');
   await page.locator('.account-form input[name="password"]').fill('long password');
   await page.locator('.account-form button[type="submit"]').click();

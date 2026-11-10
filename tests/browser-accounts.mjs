@@ -58,6 +58,28 @@ async function signIn(page, email = 'partner@example.test') {
  await page.locator('.account-form button[type="submit"]').click();
  await page.getByRole('heading', { name: 'Контакты профиля' }).waitFor();
 }
+test('guest home has one sign-in entry and registration is reached from the login form', async t => {
+ const { page } = await open(t);
+ const login = page.getByRole('link', { name: 'Войти', exact: true });
+ for (const width of [1440, 390, 320]) {
+  await page.setViewportSize({ width, height: 1000 });
+  assert.equal(await login.count(), 1);
+  assert.equal(await page.getByRole('link', { name: 'Зарегистрироваться', exact: true }).count(), 0);
+  assert.equal(await page.locator('.header-account').getByRole('link', { name: 'Войти', exact: true }).count(), 1);
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
+ }
+ await login.click();
+ await page.getByRole('heading', { name: 'Войти в личный кабинет', exact: true }).waitFor();
+ const registration = page.locator('.account-card').getByRole('link', { name: 'Зарегистрироваться', exact: true });
+ assert.equal(await registration.count(), 1);
+ await registration.click();
+ await page.getByRole('heading', { name: 'Регистрация', exact: true }).waitFor();
+ await page.locator('.account-actions').getByRole('link', { name: 'Войти', exact: true }).click();
+ await signIn(page);
+ await page.getByRole('button', { name: 'Выйти', exact: true }).click();
+ await page.getByRole('heading', { name: 'Войти в личный кабинет', exact: true }).waitFor();
+ assert.equal(await page.locator('.header-account').getByRole('link', { name: 'Войти', exact: true }).count(), 1);
+});
 test('public auth navigation, signup/code/resend and password reset use accessible real forms', async t => {
  const { page, state } = await open(t, { hash: 'signup' });
  await page.locator('.account-form input[name="email"]').fill('new@example.test'); await page.locator('.account-form input[name="phone"]').fill('+79991234567'); await page.locator('.account-form input[name="password"]').fill('long password');
@@ -176,8 +198,9 @@ for (const [role, label] of [['admin', 'Администратор'], ['operator
  await page.getByRole('heading', { name: 'Войти в личный кабинет', exact: true }).waitFor();
  assert.equal(await page.locator('.account-role').count(), 0);
  assert.equal(await signOut.count(), 0);
- assert.equal(await account.locator('.crm-nav').getAttribute('title'), null);
- assert.equal(await account.locator('.crm-nav').textContent().then(value => value.trim()), 'Войти');
+ const login = account.getByRole('link', { name: 'Войти', exact: true });
+ assert.equal(await login.getAttribute('title'), null);
+ assert.equal(await login.getAttribute('href'), '#login');
 });
 
 for (const role of ['admin', 'operator', 'partner']) test(`${role} account stays inside the shared cabinet menu`, async t => {

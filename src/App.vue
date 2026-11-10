@@ -417,7 +417,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="utility"><div class="container utility-inner"><span>Ваш автомобиль. Наши детали.</span><span v-if="isDemo || !session" class="utility-right"><span v-if="isDemo" class="demo-label">Демонстрационный MVP</span><template v-if="!session"><a :href="authHash('login')" class="btn red">Войти</a><a :href="authHash('signup')">Зарегистрироваться</a></template></span></div></div>
+  <div class="utility"><div class="container utility-inner"><span>Ваш автомобиль. Наши детали.</span><span v-if="isDemo" class="utility-right"><span class="demo-label">Демонстрационный MVP</span></span></div></div>
   <header class="header">
     <div class="container header-main">
       <a class="logo" href="#home" :aria-label="`${storeName} — на главную`">{{ storeName }}<span class="logo-square"></span><small>АВТОЗАПЧАСТИ</small></a>
@@ -425,7 +425,8 @@ onUnmounted(() => {
       <div class="header-actions">
         <a href="#cart" class="header-cart" :class="{ active: page === 'cart' }" :aria-current="page === 'cart' ? 'page' : undefined" :aria-label="`Корзина, ${count} позиций`"><AppIcon name="cart" /><span>Корзина<small>{{ count ? money(total) : 'Пока пусто' }}</small></span><b class="cart-count">{{ count }}</b></a>
         <div class="header-account">
-          <a class="crm-nav" :class="{ selected: isAccount || isAuth }" :aria-current="isAccount || isAuth ? 'page' : undefined" :href="session ? '#account' : authHash('login')" :title="session?.user.name || session?.user.email || undefined"><AppIcon name="user" /><span>{{ session ? 'Личный кабинет' : 'Войти' }}<small v-if="session" class="account-role">{{ USER_ROLES[isAdmin || canManageUsers ? 'admin' : canOperate ? 'operator' : 'partner'] }}</small></span></a>
+          <a v-if="session" class="crm-nav" :class="{ selected: isAccount || isAuth }" :aria-current="isAccount || isAuth ? 'page' : undefined" href="#account" :title="session.user.name || session.user.email || undefined"><AppIcon name="user" /><span>Личный кабинет<small class="account-role">{{ USER_ROLES[isAdmin || canManageUsers ? 'admin' : canOperate ? 'operator' : 'partner'] }}</small></span></a>
+          <a v-else :href="authHash('login')" class="btn red" :aria-current="isAuth ? 'page' : undefined">Войти</a>
           <button v-if="session" type="button" class="btn red" :disabled="logoutBusy" @click="logout">Выйти</button>
         </div>
       </div>
@@ -526,7 +527,7 @@ onUnmounted(() => {
     </section>
   </main>
 
-  <footer class="footer"><div class="container footer-top"><a class="logo" href="#home">{{ storeName }}<span class="logo-square"></span><small>АВТОЗАПЧАСТИ</small></a><p>Детали для дороги.<br>Внимание к вашему автомобилю.</p><div><strong>На сайте</strong><a href="#catalog">Каталог запчастей</a><a href="#cart">Корзина</a><a :href="session ? '#account' : authHash('login')">{{ session ? 'Личный кабинет' : 'Войти' }}</a></div><div v-if="isDemo"><strong>Об этом MVP</strong><span>Тестовые цены и остатки</span><span>Оформление без оплаты</span><span>Интеграция 1С: спроектирована</span></div><div><strong>Контакты</strong><template v-if="site"><span>{{ site.settings.phone }}</span><span>{{ site.settings.address }}</span><span>{{ site.settings.hours }}</span></template></div></div><div class="container footer-bottom"><span>© 2026 {{ storeName }}</span><span>Фото иллюстративные · <button type="button" class="footer-link" data-action="credits" data-focus-key="credits" @click="openModal('credits', null, $event)">Источники изображений</button></span></div></footer>
+  <footer class="footer"><div class="container footer-top"><a class="logo" href="#home">{{ storeName }}<span class="logo-square"></span><small>АВТОЗАПЧАСТИ</small></a><p>Детали для дороги.<br>Внимание к вашему автомобилю.</p><div><strong>На сайте</strong><a href="#catalog">Каталог запчастей</a><a href="#cart">Корзина</a><a v-if="session" href="#account">Личный кабинет</a></div><div v-if="isDemo"><strong>Об этом MVP</strong><span>Тестовые цены и остатки</span><span>Оформление без оплаты</span><span>Интеграция 1С: спроектирована</span></div><div><strong>Контакты</strong><template v-if="site"><span>{{ site.settings.phone }}</span><span>{{ site.settings.address }}</span><span>{{ site.settings.hours }}</span></template></div></div><div class="container footer-bottom"><span>© 2026 {{ storeName }}</span><span>Фото иллюстративные · <button type="button" class="footer-link" data-action="credits" data-focus-key="credits" @click="openModal('credits', null, $event)">Источники изображений</button></span></div></footer>
 
   <FeedbackForm ref="feedbackForm" :api="api" :session="session" :needs-relogin="needsRelogin" :auth-loading="authLoading" @staff-error="handleStaffError" />
 
