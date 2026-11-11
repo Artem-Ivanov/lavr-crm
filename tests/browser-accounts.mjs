@@ -98,7 +98,7 @@ test('partner sees only private account data and own checkout uses server contac
  await page.locator('.crm-tabs a[href="#account-orders"]').click(); await page.getByText('№ PRIVATE-partner', { exact: true }).click(); await page.locator('[data-testid="own-detail"]').waitFor();
  await page.goto(`${baseUrl}/#catalog`); await page.locator('.product-card button[data-action="add"]').first().click(); await page.goto(`${baseUrl}/#cart`);
  assert.equal(await page.locator('#checkout-form input[name="phone"]').count(), 0); assert.equal(await page.locator('#checkout-form input[name="name"]').getAttribute('required'), null);
- await page.locator('.checkout-submit').click(); await page.getByRole('heading', { name: 'Заказ создан', exact: true }).waitFor();
+ await page.locator('.checkout-submit').click(); await page.getByRole('heading', { name: 'Заказ на самовывоз принят', exact: true }).waitFor();
  const create = state.calls.find(call => call.path === '/customer/orders' && call.method === 'POST'); assert.equal(create.body.customer, undefined); assert.equal(create.body.name, undefined); assert.ok(create.headers['x-csrf-token']);
 });
 test('operator keeps operational tabs while direct CMS and users routes stay unavailable', async t => {
@@ -106,6 +106,96 @@ test('operator keeps operational tabs while direct CMS and users routes stay una
  await page.locator('.crm-tabs a[href="#crm-feedback"]').waitFor(); assert.equal(await page.locator('.crm-tabs a[href="#crm-content"]').count(), 0);
  await page.goto(`${baseUrl}/#crm-content`); await page.getByText('Редактор сайта доступен администратору.').waitFor();
  await page.goto(`${baseUrl}/#admin-users`); await page.getByText('Управление пользователями недоступно.').waitFor(); assert.equal(state.calls.filter(call => call.path === '/admin/users').length, 0);
+ assert.equal(await page.getByRole('button', { name: 'Создать пользователя', exact: true }).count(), 0);
+});
+test('admin creates another administrator without storing credentials or changing the current identity', async t => {
+ let release; const held = new Promise(resolve => { release = resolve; }); t.after(release);
+ const { page, state } = await open(t, { initial: session('admin'), hash: 'admin-users', handle: async ({ path, method, body, state, json }) => {
+  if (path !== '/admin/users' || method !== 'POST') return false;
+  await held;
+  state.user = { ...adminUser, id: 'created-admin', name: body.name, login: body.email, email: body.email, phone: body.phone, role: body.role };
+  await json(state.user, 201, { ETag: '"1"' }); return true;
+ } });
+ await page.getByRole('button', { name: 'Создать пользователя', exact: true }).click();
+ const form = page.getByTestId('user-create-form');
+ assert.deepEqual(await form.locator('select[name="role"] option').evaluateAll(options => options.map(option => option.value)), ['partner', 'operator', 'admin']);
+ assert.equal(await form.locator('[name="role"]').inputValue(), 'partner');
+ assert.equal(await form.locator('[name="password"]').getAttribute('type'), 'password');
+ assert.equal(await form.locator('[name="password"]').getAttribute('autocomplete'), 'new-password');
+ const password = ' Strong admin password 123 ';
+ await form.locator('[name="name"]').fill('  Новый администратор  ');
+ await form.locator('[name="email"]').fill('New.Admin@Example.test');
+ await form.locator('[name="phone"]').fill('8 (999) 123-45-67');
+ await form.locator('[name="password"]').fill(password);
+ await form.locator('[name="role"]').selectOption('admin');
+ await form.getByRole('button', { name: 'Создать пользователя', exact: true }).click();
+ await page.waitForFunction(() => document.querySelector('[data-testid="user-create-form"] button[type="submit"]')?.disabled === true);
+ assert.equal(state.calls.filter(call => call.path === '/admin/users' && call.method === 'POST').length, 1);
+ const create = state.calls.find(call => call.path === '/admin/users' && call.method === 'POST');
+ assert.deepEqual(create.body, { name: 'Новый администратор', email: 'new.admin@example.test', phone: '+79991234567', password, role: 'admin' });
+ assert.equal(create.headers['x-csrf-token'], session('admin').csrfToken);
+ release(); await page.getByTestId('user-detail').getByRole('heading', { name: 'Новый администратор', exact: true }).waitFor();
+ assert.equal(new URL(page.url()).hash, '#admin-users?user=created-admin');
+ assert.equal(state.session.user.id, 'admin');
+ assert.equal(await page.getByTestId('user-detail').locator('select').inputValue(), 'admin');
+ assert.equal(await page.getByTestId('user-create-form').count(), 0);
+ const stored = await page.evaluate(() => JSON.stringify({ ...localStorage, ...sessionStorage }));
+ for (const secret of [password, 'new.admin@example.test']) { assert.ok(!stored.includes(secret)); assert.ok(!page.url().includes(secret)); }
+ await page.getByRole('link', { name: 'К списку пользователей', exact: true }).click();
+ await page.getByRole('button', { name: 'Создать пользователя', exact: true }).click();
+ assert.equal(await form.locator('[name="password"]').inputValue(), '');
+});
+test('admin can correct a duplicate-email error and cancelling clears the creation password', async t => {
+ const { page, state } = await open(t, { initial: session('admin'), hash: 'admin-users', width: 390, handle: async ({ path, method, body, state, json }) => {
+  if (path !== '/admin/users' || method !== 'POST') return false;
+  if (body.email === 'other@example.test') { await json({ code: 'EMAIL_ALREADY_EXISTS', message: 'Email уже существует.' }, 409); return true; }
+  state.user = { ...adminUser, id: 'created-operator', name: body.name, login: body.email, email: body.email, phone: body.phone || null, role: body.role };
+  await json(state.user, 201, { ETag: '"1"' }); return true;
+ } });
+ await page.getByRole('button', { name: 'Создать пользователя', exact: true }).click();
+ const form = page.getByTestId('user-create-form'); const password = 'new operator password';
+ await form.locator('[name="email"]').fill('other@example.test'); await form.locator('[name="password"]').fill(password); await form.locator('[name="role"]').selectOption('operator');
+ await form.getByRole('button', { name: 'Создать пользователя', exact: true }).click();
+ await page.getByRole('alert').filter({ hasText: 'Email уже существует.' }).waitFor();
+ assert.equal(await form.locator('[name="email"]').inputValue(), 'other@example.test'); assert.equal(await form.locator('[name="password"]').inputValue(), password);
+ assert.equal(await form.locator('[name="role"]').inputValue(), 'operator');
+ await form.locator('[name="email"]').fill('operator.new@example.test'); await form.getByRole('button', { name: 'Создать пользователя', exact: true }).click();
+ await page.getByTestId('user-detail').waitFor(); assert.equal(await page.getByTestId('user-detail').locator('select').inputValue(), 'operator');
+ assert.equal(state.calls.filter(call => call.path === '/admin/users' && call.method === 'POST').length, 2);
+ await page.getByRole('link', { name: 'К списку пользователей', exact: true }).click(); await page.getByRole('button', { name: 'Создать пользователя', exact: true }).click();
+ assert.equal(await form.locator('[name="password"]').inputValue(), '');
+ await form.locator('[name="password"]').fill('discard this password'); await form.getByRole('button', { name: 'Отмена', exact: true }).click();
+ await page.getByRole('button', { name: 'Создать пользователя', exact: true }).click(); assert.equal(await form.locator('[name="password"]').inputValue(), '');
+ assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
+ assert.equal(state.calls.filter(call => call.path === '/admin/users' && call.method === 'POST').length, 2);
+});
+test('a late admin creation response cannot restore a previous identity or its password draft', async t => {
+ let release; const held = new Promise(resolve => { release = resolve; }); t.after(release);
+ const { page, state } = await open(t, { initial: session('admin'), hash: 'admin-users', handle: async ({ path, method, body, state, json }) => {
+  if (path !== '/admin/users' || method !== 'POST') return false;
+  await held;
+  state.user = { ...adminUser, id: 'created-late', name: body.name, login: body.email, email: body.email, phone: null, role: body.role };
+  await json(state.user, 201, { ETag: '"1"' }); return true;
+ } });
+ await page.getByRole('button', { name: 'Создать пользователя', exact: true }).click();
+ const form = page.getByTestId('user-create-form'); const password = 'late admin creation password';
+ await form.locator('[name="name"]').fill('Поздний пользователь'); await form.locator('[name="email"]').fill('late.created@example.test'); await form.locator('[name="password"]').fill(password); await form.locator('[name="role"]').selectOption('admin');
+ await form.getByRole('button', { name: 'Создать пользователя', exact: true }).click();
+ await page.waitForFunction(() => document.querySelector('[data-testid="user-create-form"] button[type="submit"]')?.disabled === true);
+ await page.getByRole('button', { name: 'Выйти', exact: true }).click();
+ await page.getByRole('heading', { name: 'Войти в личный кабинет', exact: true }).waitFor();
+ await page.goto(`${baseUrl}/#login?returnTo=%23account`);
+ await signIn(page, 'admin-next@example.test');
+ const finished = page.waitForResponse(response => new URL(response.url()).pathname === '/api/admin/users' && response.request().method() === 'POST');
+ release(); await finished;
+ assert.equal(state.session.user.id, 'admin-next'); assert.equal(new URL(page.url()).hash, '#account');
+ assert.equal(await page.getByTestId('user-detail').count(), 0);
+ await page.locator('.crm-tabs a[href="#admin-users"]').click(); await page.getByRole('button', { name: 'Создать пользователя', exact: true }).click();
+ for (const field of ['name', 'email', 'phone', 'password']) assert.equal(await form.locator(`[name="${field}"]`).inputValue(), '');
+ assert.equal(await form.locator('[name="role"]').inputValue(), 'partner');
+ const stored = await page.evaluate(() => JSON.stringify({ ...localStorage, ...sessionStorage }));
+ assert.ok(!stored.includes(password)); assert.ok(!stored.includes('late.created@example.test')); assert.ok(!page.url().includes('late.created'));
+ assert.equal(state.calls.filter(call => call.path === '/admin/users' && call.method === 'POST').length, 1);
 });
 test('admin manages versioned roles and status, with stale versions requiring refresh', async t => {
  let stale = true;
@@ -114,8 +204,12 @@ test('admin manages versioned roles and status, with stale versions requiring re
  await page.getByText(/Загрузите актуальную карточку перед изменением/).waitFor(); assert.equal(await page.getByRole('button', { name: 'Сохранить роль' }).isDisabled(), true);
  await page.getByRole('button', { name: 'Загрузить актуальную карточку', exact: true }).click(); await page.locator('[data-testid="user-detail"] select').selectOption('operator'); await page.getByRole('button', { name: 'Сохранить роль' }).click();
  await page.waitForFunction(() => document.querySelector('[data-testid="user-detail"]')?.textContent.includes('Версия 2'));
+ await page.locator('[data-testid="user-detail"] select').selectOption('admin'); await page.getByRole('button', { name: 'Сохранить роль' }).click();
+ await page.waitForFunction(() => document.querySelector('[data-testid="user-detail"]')?.textContent.includes('Версия 3'));
+ assert.deepEqual(state.calls.findLast(call => call.path.endsWith('/permissions')).body, { role: 'admin' });
+ assert.equal(state.calls.findLast(call => call.path.endsWith('/permissions')).headers['if-match'], '"2"');
  await page.getByRole('button', { name: 'Заблокировать', exact: true }).click(); await page.getByRole('button', { name: 'Разблокировать', exact: true }).waitFor();
- assert.equal(state.calls.findLast(call => call.path.endsWith('/status')).headers['if-match'], '"2"');
+ assert.equal(state.calls.findLast(call => call.path.endsWith('/status')).headers['if-match'], '"3"');
  assert.ok(await page.locator('.crm-tabs a[href="#crm"]').count());
 });
 test('legacy profile completion keeps the same identity', async t => {

@@ -29,7 +29,7 @@ export function createDemoApi({ localStorage = globalThis.localStorage, sessionS
   const users = ['partner', 'operator', 'admin'].map((role, index) => ({ id: `demo-${role}`, name: `Демо ${role}`, login: `${role}@example.test`, email: `${role}@example.test`, phone: `+7999000000${index + 1}`, emailVerified: true, phoneVerified: false, isActive: true, role, version: 1 }));
   function demoSession(user) {
     const { id, name, email, phone, emailVerified, phoneVerified } = user;
-    return { user: { id, name, email, phone, emailVerified, phoneVerified, profileComplete: true }, capabilities: { operate: user.role !== 'partner', editSite: user.role === 'admin', manageUsers: user.role === 'admin' }, csrfToken: 'demo-no-authentication-000000000000', expiresAt: new Date(Date.now() + 86400000).toISOString(), demo: true };
+    return { user: { id, name, email, phone, emailVerified, phoneVerified, profileComplete: Boolean(emailVerified && email && phone) }, capabilities: { operate: user.role !== 'partner', editSite: user.role === 'admin', manageUsers: user.role === 'admin' }, csrfToken: 'demo-no-authentication-000000000000', expiresAt: new Date(Date.now() + 86400000).toISOString(), demo: true };
   }
   function signedIn() { if (!currentSession) throw Object.assign(new Error('Войдите в демонстрационный аккаунт.'), { status: 401 }); return currentSession; }
   function loginWithEmail(input) {
@@ -188,6 +188,14 @@ export function createDemoApi({ localStorage = globalThis.localStorage, sessionS
     },
     async listUsers({ query = '' } = {}, paging) { adminUser(signedIn().user.id); return page(structuredClone(users.filter(user => !query || [user.email, user.phone, user.login].includes(query))), paging); },
     async getUser(id) { return structuredClone(adminUser(id)); },
+    async createUser(input) {
+      adminUser(signedIn().user.id);
+      const body = normalizeAccountInput(input, 'admin-user');
+      if (users.some(user => user.email === body.email)) throw Object.assign(new Error('Пользователь с этим email уже существует.'), { status: 409, code: 'EMAIL_ALREADY_EXISTS' });
+      const user = { id: crypto.randomUUID(), name: body.name, login: body.email, email: body.email, phone: body.phone || null, emailVerified: true, phoneVerified: false, isActive: true, role: body.role, version: 1 };
+      users.push(user);
+      return structuredClone(user);
+    },
     async updateUserRole(id, role, version) { const user = adminUser(id); if (!['partner', 'operator', 'admin'].includes(role)) throw new Error('Недопустимая роль.'); return updateUser(user, { role }, version); },
     async updateUserStatus(id, isActive, version) { const user = adminUser(id); if (typeof isActive !== 'boolean') throw new Error('Недопустимый статус.'); return updateUser(user, { isActive }, version); },
   };

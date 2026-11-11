@@ -105,6 +105,38 @@ test('public account inputs reject unknown fields and weak passwords without net
 });
 
 const adminUser = { id: 'customer-1', name: '', login: 'buyer@example.org', email: 'buyer@example.org', phone: '+79991234567', emailVerified: true, phoneVerified: false, isActive: true, role: 'partner', version: 1 };
+test('admin creation normalizes contacts, preserves password and checks the returned version', async () => {
+  const created = { ...adminUser, name: 'Новый администратор', role: 'admin' };
+  const { api, calls } = setup([json(session), json(created, 201, { ETag: '"1"' })]);
+  await api.getUserSession();
+  assert.deepEqual(await api.createUser({ name: ' Новый администратор ', email: ' Buyer@Example.org ', phone: '8 (999) 123-45-67', password: ' password1234 ', role: 'admin' }), created);
+  assert.equal(calls[1].url, '/api/admin/users');
+  assert.equal(calls[1].method, 'POST');
+  assert.equal(calls[1].headers['X-CSRF-Token'], session.csrfToken);
+  assert.equal(calls[1].headers['If-Match'], undefined);
+  assert.deepEqual(JSON.parse(calls[1].body), { name: 'Новый администратор', email: 'buyer@example.org', phone: '+79991234567', password: ' password1234 ', role: 'admin' });
+});
+
+test('admin creation rejects invalid input without a request and requires a session', async () => {
+  const body = { email: 'new@example.test', password: 'new password123', role: 'partner' };
+  const { api, calls } = setup([json(session)]); await api.getUserSession();
+  for (const change of [{ role: 'manager' }, { email: 'bad' }, { phone: '123' }, { password: 'short' }, { password: 'long\0password' }, { name: '\nInvalid' }, { isActive: true }, { version: 1 }])
+    await assert.rejects(api.createUser({ ...body, ...change }));
+  assert.equal(calls.length, 1);
+  await assert.rejects(setup([]).api.createUser(body), error => error.code === 'SESSION_REQUIRED');
+});
+
+test('admin creation accepts omitted optional fields but rejects leaked secrets and mismatched ETag', async () => {
+  const created = { ...adminUser, name: '', phone: null };
+  const { api, calls } = setup([json(session), json(created, 201, { ETag: '"1"' })]);
+  await api.getUserSession(); await api.createUser({ email: created.email, password: 'new password123' });
+  assert.deepEqual(JSON.parse(calls[1].body), { name: '', email: created.email, phone: '', password: 'new password123', role: 'partner' });
+  for (const response of [json({ ...created, password: 'new password123' }, 201), json(created, 201, { ETag: '"2"' })]) {
+    const { api } = setup([json(session), response]); await api.getUserSession();
+    await assert.rejects(api.createUser({ email: created.email, password: 'new password123' }), error => error.code === 'INVALID_RESPONSE');
+  }
+});
+
 test('only admin user endpoints expose roles and use versioned exact mutations', async () => {
   const changed = { ...adminUser, role: 'operator', version: 2 };
   const blocked = { ...changed, isActive: false, version: 3 };

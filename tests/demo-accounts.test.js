@@ -24,6 +24,33 @@ test('demo never claims that registration or recovery sends a real email', async
  await assert.rejects(api.signup({ email:'a@example.test',phone:'+79991234567',password:'long password' }),/демонстрац|симуляц/i);
  await assert.rejects(api.requestPasswordReset({ email:'a@example.test' }),/демонстрац|симуляц/i);
 });
+test('demo admin creates every role without retaining passwords or overwriting duplicate email', async () => {
+ const api = create(); await api.loginUser({ email: 'admin@example.test', password: 'demonstration' });
+ for (const role of ['partner', 'operator', 'admin']) {
+  const user = await api.createUser({ name: ' Новый пользователь ', email: ` NEW-${role}@Example.test `, password: 'test password123', role });
+  assert.equal(user.role, role); assert.equal(user.name, 'Новый пользователь'); assert.equal(user.email, `new-${role}@example.test`);
+  assert.equal(user.phone, null); assert.equal(user.emailVerified, true); assert.equal(user.isActive, true); assert.equal(user.version, 1);
+  assert.equal(user.password, undefined); assert.equal(user.passwordHash, undefined);
+  assert.deepEqual(await api.getUser(user.id), user);
+  await assert.rejects(api.createUser({ email: user.email.toUpperCase(), password: 'other password123', role: 'partner' }), error => error.status === 409);
+  assert.deepEqual(await api.getUser(user.id), user);
+ }
+ assert.equal((await api.listUsers()).total, 6);
+ await api.logout(); await api.loginUser({ email: 'new-admin@example.test', password: 'demonstration' });
+ assert.equal((await api.getUserSession()).capabilities.manageUsers, true);
+ assert.equal((await api.getUserSession()).user.profileComplete, false);
+});
+test('demo refuses user creation without administrator access and validates input', async () => {
+ const api = create(), body = { email: 'new@example.test', password: 'test password123', role: 'admin' };
+ await assert.rejects(api.createUser(body), error => error.status === 401);
+ for (const role of ['partner', 'operator']) {
+  await api.loginUser({ email: `${role}@example.test`, password: 'demonstration' });
+  await assert.rejects(api.createUser(body), error => error.status === 403);
+ }
+ await api.loginUser({ email: 'admin@example.test', password: 'demonstration' });
+ await assert.rejects(api.createUser({ ...body, role: 'manager' }));
+ assert.equal((await api.listUsers()).total, 3);
+});
 test('demo operator conversion keeps the original customer owner', async () => {
  const api = create(); await api.loginUser({ email: 'partner@example.test', password: 'demonstration' });
  const own = await api.createOwnFeedback({ type: 'request', message: 'Демо' }, crypto.randomUUID());

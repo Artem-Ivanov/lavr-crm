@@ -304,6 +304,9 @@ export function createHttpApi({ baseUrl = '/api', fetchImpl = globalThis.fetch }
       return getPage('/admin/users', { q: query }, requested, isAdminUser);
     },
     async getUser(userId) { return checkedVersion(await request(`/admin/users/${pathId(userId)}`, { identityBound: true }), isAdminUser); },
+    async createUser(input) {
+      return checkedVersion(await request('/admin/users', { method: 'POST', body: normalizeAccountInput(input, 'admin-user'), protectedMutation: true, identityBound: true }), isAdminUser);
+    },
     async updateUserRole(userId, role, version) {
       if (!Object.hasOwn(USER_ROLES, role)) throw new Error('Выберите допустимую роль.');
       return checkedVersion(await request(`/admin/users/${pathId(userId)}/permissions`, { method: 'PATCH', body: { role }, headers: { 'If-Match': versionHeader(version) }, protectedMutation: true, identityBound: true }), isAdminUser);

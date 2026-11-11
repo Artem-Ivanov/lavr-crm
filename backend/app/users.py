@@ -1,14 +1,17 @@
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Header, Path, Query, Request, Response
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import func, or_, select, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from .auth import User, record_audit, require_admin, require_admin_mutation
-from .common import ApiError, page_response, version_header
+from .accounts import _email_lock
+from .auth import EmailLoginInput, User, hash_password, record_audit, require_admin, require_admin_mutation
+from .common import ApiError, new_id, page_response, utcnow, version_header
 from .crypto import lookup_digest
 from .db import get_db
+from .orders import CustomerInput
 
 router = APIRouter(prefix='/api/admin/users')
 USER_PERMISSIONS_LOCK = 0x4D49525A55534552
@@ -23,6 +26,23 @@ class PermissionsInput(BaseModel):
 class StatusInput(BaseModel):
     model_config = ConfigDict(extra='forbid', strict=True)
     isActive: bool
+
+
+class CreateUserInput(EmailLoginInput):
+    password: Annotated[str, Field(min_length=12, max_length=256)]
+    role: Literal['partner', 'operator', 'admin'] = 'partner'
+    name: str = Field(default='', max_length=240, pattern=r'^[^\x00-\x1f\x7f]*$')
+    phone: str = Field(default='', max_length=30)
+
+    @field_validator('name')
+    @classmethod
+    def strip_name(cls, value):
+        return value.strip()
+
+    @field_validator('phone')
+    @classmethod
+    def normalize_phone(cls, value):
+        return CustomerInput.normalize_phone(value) if value else ''
 
 
 def user_response(user):
@@ -65,12 +85,40 @@ def get_user(user_id: UserId, response: Response, db: Session = Depends(get_db),
     return user_response(user)
 
 
-def _change_user(db, admin, target_id, request, if_match, *, role=None, active=None):
-    version = version_header(if_match)
+def _lock_admin(db, admin, request):
     db.execute(text('SELECT pg_advisory_xact_lock(:key)'), {'key': USER_PERMISSIONS_LOCK})
     db.refresh(admin)
     if not admin.is_active or admin.role != 'admin' or admin.auth_version != request.state.user_session.auth_version:
         raise ApiError(401, 'UNAUTHORIZED', 'Сессия завершена. Войдите снова.')
+
+
+@router.post('', status_code=201, operation_id='createUser')
+def create_user(body: CreateUserInput, request: Request, response: Response,
+                db: Session = Depends(get_db), admin: User = Depends(require_admin_mutation)):
+    _lock_admin(db, admin, request)
+    digest = lookup_digest('email', body.email)
+    _email_lock(db, digest)
+    if db.scalar(select(User.id).where(User.email_lookup == digest)) is not None:
+        raise ApiError(409, 'EMAIL_ALREADY_EXISTS', 'Пользователь с таким email уже существует.')
+    user = User(id=new_id(), name=body.name, role=body.role, password_hash=hash_password(body.password),
+                is_active=True, email_verified_at=utcnow())
+    user.profile = {'email': body.email, **({'phone': body.phone} if body.phone else {})}
+    db.add(user)
+    record_audit(db, admin, 'user.created', user.id, 1, {'role': body.role, 'isActive': True})
+    try:
+        db.commit()
+    except IntegrityError as error:
+        db.rollback()
+        if getattr(getattr(error.orig, 'diag', None), 'constraint_name', None) == 'users_email_lookup_key':
+            raise ApiError(409, 'EMAIL_ALREADY_EXISTS', 'Пользователь с таким email уже существует.') from None
+        raise
+    response.headers['ETag'] = f'"{user.auth_version}"'
+    return user_response(user)
+
+
+def _change_user(db, admin, target_id, request, if_match, *, role=None, active=None):
+    version = version_header(if_match)
+    _lock_admin(db, admin, request)
     user = _user(db, target_id, lock=True)
     if user.auth_version != version:
         raise ApiError(412, 'VERSION_CONFLICT', 'Запись уже изменена. Загрузите актуальную версию.')

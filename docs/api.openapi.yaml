@@ -573,6 +573,37 @@ paths:
         '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/ValidationError' }
   /admin/users:
+    post:
+      tags: [AdminUsers]
+      operationId: createUser
+      summary: Создать пользователя с выбранной ролью
+      description: >-
+        Только действующий администратор; обязательны Origin и CSRF.
+        Создаёт активного пользователя с ролью partner, operator или admin.
+        Email подтверждает создающий администратор, вход доступен сразу без письма.
+        Нормализованный email уникален; существующая учётная запись не изменяется.
+        Пароль сохраняется только как хэш и не возвращается; текущая сессия администратора сохраняется.
+      security: [{ UserCookie: [] }]
+      x-required-roles: [admin]
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateUserInput' }
+      responses:
+        '201':
+          description: Пользователь создан; ETag содержит начальную версию 1
+          headers:
+            ETag: { $ref: '#/components/headers/ResourceETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminUser' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationError' }
     get:
       tags: [AdminUsers]
       operationId: listUsers
@@ -2692,6 +2723,16 @@ components:
       required: [role]
       properties:
         role: { type: string, enum: [partner, operator, admin] }
+    CreateUserInput:
+      type: object
+      additionalProperties: false
+      required: [email, password]
+      properties:
+        name: { type: string, maxLength: 240, default: '', description: Необязательное имя без управляющих символов }
+        email: { type: string, format: email, minLength: 1, maxLength: 254 }
+        phone: { type: string, maxLength: 30, default: '', description: Необязательный российский телефон; пустая строка означает отсутствие }
+        password: { type: string, minLength: 12, maxLength: 256, writeOnly: true, description: Пароль сохраняет пробелы; нулевой символ запрещён }
+        role: { type: string, enum: [partner, operator, admin], default: partner }
     UserStatusInput:
       type: object
       additionalProperties: false
