@@ -20,7 +20,7 @@ const productsLoading = ref(true);
 const productsError = ref('');
 const total = ref(0);
 const offset = ref(0);
-const pageLimit = ref(24);
+const pageLimit = ref(10);
 const categoryName = ref('');
 const categoryError = ref('');
 const categoryMessage = ref('');
@@ -61,7 +61,7 @@ async function loadProducts(nextOffset = offset.value) {
   productsLoading.value = true;
   productsError.value = '';
   try {
-    const page = await props.api.getAdminProducts({ query: query.value }, { offset: nextOffset, limit: 24 });
+    const page = await props.api.getAdminProducts({ query: query.value }, { offset: nextOffset, limit: pageLimit.value });
     if (request !== productRequest) return;
     visibleProducts.value = page.items;
     total.value = page.total;
@@ -205,7 +205,10 @@ async function changeCategory(product, event) {
     <div class="catalog-manager-list" :aria-busy="productsLoading">
       <div class="catalog-list-toolbar">
         <div><h3>Номенклатура <span class="heading-count">{{ productsLoading || productsError ? '—' : total }}</span></h3><p>Категорию существующего товара можно изменить в таблице.</p></div>
-        <label class="catalog-admin-search" for="catalog-admin-search"><AppIcon name="search" /><span class="sr-only">Поиск номенклатуры</span><input id="catalog-admin-search" v-model="query" name="catalogQuery" type="search" maxlength="120" placeholder="Артикул, название, бренд или ID" data-testid="catalog-admin-search"></label>
+        <div class="catalog-list-controls">
+          <label class="catalog-admin-search" for="catalog-admin-search"><AppIcon name="search" /><span class="sr-only">Поиск номенклатуры</span><input id="catalog-admin-search" v-model="query" name="catalogQuery" type="search" maxlength="120" placeholder="Артикул, название, бренд или ID" data-testid="catalog-admin-search"></label>
+          <label class="catalog-page-size" for="catalog-page-size">Записей на странице<select id="catalog-page-size" v-model.number="pageLimit" data-testid="catalog-page-size" @change="loadProducts(0)"><option v-for="limit in [10, 20, 50]" :key="limit" :value="limit">{{ limit }}</option></select></label>
+        </div>
       </div>
       <p v-if="assignmentError" class="catalog-assignment-message form-error" role="alert">{{ assignmentError }}</p>
       <p v-if="assignmentMessage" class="catalog-assignment-message catalog-success" role="status">{{ assignmentMessage }}</p>
@@ -269,6 +272,9 @@ async function changeCategory(product, event) {
 .catalog-list-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 23px 24px; }
 .catalog-list-toolbar h3 { font-size: 18px; font-weight: 600; letter-spacing: -.4px; }
 .catalog-list-toolbar p { color: var(--muted); font-size: 10px; line-height: 1.6; margin-top: 7px; }
+.catalog-list-controls { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 12px; min-width: 0; }
+.catalog-page-size { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; }
+.catalog-page-size select { min-width: 70px; min-height: 44px; padding: 8px 10px; border: 1px solid #dadfe6; background: white; color: var(--ink); }
 .catalog-admin-search { display: flex; align-items: center; gap: 10px; width: 320px; min-height: 42px; flex-shrink: 0; border: 1px solid #e1e5eb; padding: 9px 11px; border-radius: 5px; background: white; }
 .catalog-admin-search > .icon { width: 17px; height: 17px; color: #919aa6; }
 .catalog-admin-search input { width: 100%; min-width: 0; padding: 3px 0; border: 0; color: var(--ink); background: transparent; font-size: 11px; }
@@ -309,7 +315,7 @@ async function changeCategory(product, event) {
   .catalog-load-state { padding-inline: 16px; }
 }
 @media (max-width: 760px), (pointer: coarse) {
-  .catalog-form input, .catalog-form select, .catalog-admin-search input, .catalog-admin-table select { font-size: 16px; }
+  .catalog-form input, .catalog-form select, .catalog-admin-search input, .catalog-admin-table select, .catalog-page-size select { font-size: 16px; }
   .catalog-admin-table select { min-height: 44px; }
   .catalog-admin-search { min-height: 54px; }
 }

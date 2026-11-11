@@ -414,7 +414,7 @@ paths:
       summary: Список собственных заказов
       description: >-
         Только записи с customer_id текущего User; чужой ID возвращает 404.
-        Нужен подтверждённый полный профиль; иначе 409 PROFILE_REQUIRED.
+        Для чтения достаточно действующей сессии; отсутствие контактов или подтверждения email не блокирует просмотр.
         Совпадение контактов с гостевыми записями не назначает владельца.
       security: [{ UserCookie: [] }]
       x-required-roles: [partner, operator, admin]
@@ -428,7 +428,6 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/CustomerOrderPage' }
         '401': { $ref: '#/components/responses/Unauthorized' }
-        '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/ValidationError' }
     post:
       tags: [CustomerRecords]
@@ -477,7 +476,7 @@ paths:
       summary: Собственная карточка заказа
       description: >-
         Только записи с customer_id текущего User; чужой ID возвращает 404.
-        Нужен подтверждённый полный профиль; иначе 409 PROFILE_REQUIRED.
+        Для чтения достаточно действующей сессии; отсутствие контактов или подтверждения email не блокирует просмотр.
         Совпадение контактов с гостевыми записями не назначает владельца.
       security: [{ UserCookie: [] }]
       x-required-roles: [partner, operator, admin]
@@ -500,7 +499,7 @@ paths:
       summary: Список собственных обращений
       description: >-
         Только записи с customer_id текущего User; чужой ID возвращает 404.
-        Нужен подтверждённый полный профиль; иначе 409 PROFILE_REQUIRED.
+        Для чтения достаточно действующей сессии; отсутствие контактов или подтверждения email не блокирует просмотр.
         Совпадение контактов с гостевыми записями не назначает владельца.
       security: [{ UserCookie: [] }]
       x-required-roles: [partner, operator, admin]
@@ -514,7 +513,6 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/CustomerFeedbackPage' }
         '401': { $ref: '#/components/responses/Unauthorized' }
-        '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/ValidationError' }
     post:
       tags: [CustomerRecords]
@@ -556,7 +554,7 @@ paths:
       summary: Собственная карточка обращения
       description: >-
         Только записи с customer_id текущего User; чужой ID возвращает 404.
-        Нужен подтверждённый полный профиль; иначе 409 PROFILE_REQUIRED.
+        Для чтения достаточно действующей сессии; отсутствие контактов или подтверждения email не блокирует просмотр.
         Совпадение контактов с гостевыми записями не назначает владельца.
       security: [{ UserCookie: [] }]
       x-required-roles: [partner, operator, admin]
@@ -1754,7 +1752,7 @@ components:
         Общая серверная UserSession; cookie HttpOnly, SameSite=Strict, Secure на HTTPS,
         Path=/api. Права проверяются backend на каждом запросе. /admin/* требует admin;
         операционные /manager/* — operator/admin, session — любой активный User.
-        Собственные записи требуют подтверждённый профиль. Публичное создание
+        Чтение собственных записей доступно активному User; создание требует подтверждённый полный профиль. Публичное создание
         с действующей cookie отклоняется 409 CUSTOMER_FLOW_REQUIRED; с истёкшей — 401.
   parameters:
     RecordId:

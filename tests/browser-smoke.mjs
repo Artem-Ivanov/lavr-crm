@@ -578,6 +578,7 @@ test('manager creates a category and a SKU that survives reload and can be order
   await page.evaluate(() => { location.hash = 'crm'; });
   await signInDemoStaff(page);
   await page.getByRole('link', { name: 'Каталог', exact: true }).click();
+  await page.getByRole('combobox', { name: 'Записей на странице', exact: true }).selectOption('50');
   await page.locator('#category-form [name="categoryName"]').fill('Датчики');
   await page.locator('#category-form button[type="submit"]').click();
   await page.locator('#product-form [name="productName"]').fill('Тестовый датчик');
@@ -594,6 +595,7 @@ test('manager creates a category and a SKU that survives reload and can be order
   await page.reload({ waitUntil: 'networkidle' });
   await signInDemoStaff(page);
   await page.locator('.logo').first().click();
+  await page.getByRole('button', { name: 'Показать все категории', exact: true }).click();
   await page.locator(`.category-card[data-id="${product.category}"]`).waitFor();
   await page.locator('#promotions').waitFor();
   await page.locator('#search').fill('demo cust 001');
@@ -636,9 +638,11 @@ test('catalog save errors preserve forms and another tab receives catalog change
   const sibling = await page.context().newPage();
   await sibling.goto(`${baseUrl}`, { waitUntil: 'networkidle' });
   await page.locator('#category-form button[type="submit"]').click();
+  await sibling.getByRole('button', { name: 'Показать все категории', exact: true }).click();
   await sibling.getByRole('link', { name: /Электрика/ }).waitFor();
   const category = await page.evaluate(() => JSON.parse(localStorage.getItem('lavr.catalog.v1')).categories.find(item => item.name === 'Электрика'));
   await page.locator('[data-testid="product-category-filter-mann-oil"]').selectOption(category.id);
+  await sibling.getByRole('button', { name: 'Показать все категории', exact: true }).click();
   await sibling.locator(`.category-card[data-id="${category.id}"]`).click();
   assert.equal(await sibling.locator('.product-card').count(), 1);
   assert.match(await sibling.locator('.product-name').textContent(), /Масляный фильтр/);
@@ -713,6 +717,7 @@ test('long valid catalog names and identifiers remain readable at desktop and mo
     }
   }
   const product = catalog.products.at(-1);
+  await page.getByRole('button', { name: 'Показать все категории', exact: true }).click();
   await page.locator(`.category-card[data-id="${product.category}"]`).click();
   await assertViewFits(['#catalog-title'], 'selected category');
   await page.locator('.product-name').click();

@@ -1,9 +1,10 @@
 <script setup>
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import AppIcon from './AppIcon.vue';
 import { routeHash, targetHash } from '../routes.js';
 const props = defineProps({ categories: { type: Array, required: true }, site: { type: Object, required: true }, demo: Boolean });
 const emit = defineEmits(['feedback']);
+const categoriesExpanded = ref(false);
 const categoryIcons = { __proto__: null, oils: 'oil', filters: 'filter', brakes: 'brake', ignition: 'spark', suspension: 'spring', belts: 'belt' };
 const heroLines = computed(() => props.site.hero.title.split('\n'));
 const publicationStyle = publication => publication.style || (publication.kind === 'announcement' ? 'notice' : publication.images.length === 1 ? 'oil' : 'service');
@@ -36,9 +37,10 @@ const publicationLabel = publication => publication.label || ({ offer: 'Акци
 
   <section class="categories container landing-categories" aria-labelledby="categories-title">
     <div class="section-heading"><div><span class="eyebrow">{{ site.settings.categoriesKicker || 'ПРОСТО НАЙТИ. ЛЕГКО ВЫБРАТЬ.' }}</span><h2 id="categories-title">{{ site.settings.categoriesTitle }}</h2></div><a class="text-link" href="#catalog">Весь каталог <AppIcon name="arrow" /></a></div>
-    <div class="category-grid">
+    <div id="category-grid" class="category-grid" :class="{ 'is-collapsed': !categoriesExpanded }">
       <a v-for="category in categories" :key="category.id" :href="routeHash({ page: 'catalog', categoryId: category.id })" class="category-card" data-action="category" :data-id="category.id"><span class="category-art"><AppIcon :name="categoryIcons[category.id] || 'box'" /></span><strong>{{ category.name }}</strong><span>{{ category.productCount === undefined ? 'Открыть категорию' : `Позиций: ${category.productCount}` }} <AppIcon name="arrow" /></span></a>
     </div>
+    <button v-if="categories.length > 2" type="button" class="btn outline category-toggle" :aria-expanded="categoriesExpanded" aria-controls="category-grid" @click="categoriesExpanded = !categoriesExpanded">{{ categoriesExpanded ? 'Свернуть категории' : 'Показать все категории' }}</button>
     <p v-if="!categories.length" class="landing-empty">Категории пока не добавлены. Найдите запчасть по артикулу в поиске.</p>
   </section>
 
@@ -61,6 +63,9 @@ const publicationLabel = publication => publication.label || ({ offer: 'Акци
 .landing-benefits > div { min-width: 0; }
 .landing-categories { padding-block: 42px 46px; }
 .landing-categories .category-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.landing-categories .is-collapsed .category-card:nth-child(n+7) { display: none; }
+.category-toggle { display: none; margin: 18px auto 0; }
+.landing-categories:has(.category-card:nth-child(7)) .category-toggle { display: flex; }
 .landing-categories .category-card { min-width: 0; padding: 21px 18px; background: white; border-color: var(--line); }
 .landing-categories .category-card:hover { background: #fff7f7; border-color: #eaa5a9; }
 .landing-categories .category-art { width: 48px; height: 48px; justify-content: center; background: var(--paper); border-radius: 8px; margin-bottom: 17px; }
@@ -102,6 +107,8 @@ const publicationLabel = publication => publication.label || ({ offer: 'Акци
   .landing-benefits > div { padding-inline: 12px; gap: 10px; }
   .landing-benefits strong { font-size: 12px; }
   .landing-categories .category-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .landing-categories .is-collapsed .category-card:nth-child(n+4) { display: none; }
+  .landing-categories:has(.category-card:nth-child(4)) .category-toggle { display: flex; }
   .landing-categories .category-card { display: grid; grid-template-columns: 48px 1fr; gap: 0 16px; align-items: center; }
   .landing-categories .category-art { grid-row: span 2; margin: 0; }
   .landing-categories .category-card strong { min-height: 0; }
@@ -123,6 +130,8 @@ const publicationLabel = publication => publication.label || ({ offer: 'Акци
   .landing-categories .section-heading { align-items: end; }
   .landing-categories .section-heading .text-link { font-size: 11px; margin-top: 0; }
   .landing-categories .category-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .landing-categories .is-collapsed .category-card:nth-child(n+3) { display: none; }
+  .landing-categories:has(.category-card:nth-child(3)) .category-toggle { display: flex; }
   .landing-categories .category-card { display: block; padding: 16px; }
   .landing-categories .category-art { width: 43px; height: 43px; margin-bottom: 12px; }
   .landing-categories .category-card strong { min-height: 38px; font-size: 12px; }

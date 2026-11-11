@@ -7,7 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from . import feedback, orders
-from .auth import get_current_customer, require_customer_mutation
+from .auth import get_current_user, require_customer_mutation
 from .common import ApiError, page_response
 from .db import get_db
 
@@ -70,7 +70,7 @@ Limit = Annotated[int, Query(ge=1, le=100)]
 
 
 @router.get('/orders')
-def list_orders(offset: Offset = 0, limit: Limit = 24, db: Session = Depends(get_db), user=Depends(get_current_customer)):
+def list_orders(offset: Offset = 0, limit: Limit = 24, db: Session = Depends(get_db), user=Depends(get_current_user)):
     query = select(orders.Order).where(orders.Order.customer_id == user.id)
     total = db.scalar(select(func.count()).select_from(query.subquery()))
     records = db.scalars(query.order_by(orders.Order.created_at.desc(), orders.Order.id.desc()).offset(offset).limit(limit))
@@ -78,7 +78,7 @@ def list_orders(offset: Offset = 0, limit: Limit = 24, db: Session = Depends(get
 
 
 @router.get('/orders/{record_id}')
-def get_order(record_id: RecordId, db: Session = Depends(get_db), user=Depends(get_current_customer)):
+def get_order(record_id: RecordId, db: Session = Depends(get_db), user=Depends(get_current_user)):
     return customer_order(owned_record(db, orders.Order, record_id, user.id))
 
 
@@ -93,7 +93,7 @@ def create_order(body: CreateOrderRequest, response: Response, idempotency_key: 
 
 
 @router.get('/feedback')
-def list_feedback(offset: Offset = 0, limit: Limit = 24, db: Session = Depends(get_db), user=Depends(get_current_customer)):
+def list_feedback(offset: Offset = 0, limit: Limit = 24, db: Session = Depends(get_db), user=Depends(get_current_user)):
     query = select(feedback.Feedback).where(feedback.Feedback.customer_id == user.id)
     total = db.scalar(select(func.count()).select_from(query.subquery()))
     records = db.scalars(query.order_by(feedback.Feedback.created_at.desc(), feedback.Feedback.id.desc()).offset(offset).limit(limit))
@@ -101,7 +101,7 @@ def list_feedback(offset: Offset = 0, limit: Limit = 24, db: Session = Depends(g
 
 
 @router.get('/feedback/{record_id}')
-def get_feedback(record_id: RecordId, db: Session = Depends(get_db), user=Depends(get_current_customer)):
+def get_feedback(record_id: RecordId, db: Session = Depends(get_db), user=Depends(get_current_user)):
     return customer_feedback(db, owned_record(db, feedback.Feedback, record_id, user.id))
 
 

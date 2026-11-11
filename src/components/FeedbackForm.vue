@@ -44,7 +44,7 @@ async function submit() {
   busy.value = true; error.value = '';
   try {
     if (props.authLoading || props.needsRelogin) throw new Error('Войдите снова перед отправкой обращения.');
-    if (props.session && !props.session.user.profileComplete) throw new Error('Подтвердите контакты в личном кабинете.');
+    if (props.session && !props.session.user.profileComplete) throw new Error('Для отправки нужны подтверждённый email и телефон. Свяжитесь с магазином, чтобы уточнить данные.');
     if (!props.session && !draft.phone.trim() && !draft.email.trim()) throw new Error('Укажите телефон или email.');
     const body = props.session ? { type: type.value, message: draft.message } : normalizeFeedbackInput({ type: type.value, ...draft });
     if (cleanupPending) { clearFeedbackKey(scope); cleanupPending = false; }
@@ -79,7 +79,7 @@ defineExpose({ open, close });
       <h2 id="feedback-title">{{ type === 'request' ? 'Оставить запрос' : 'Свяжитесь со мной' }}</h2>
       <div class="feedback-variants" role="group" aria-label="Вариант обращения"><button type="button" :aria-pressed="type === 'contact'" :disabled="busy" @click="type = 'contact'">Свяжитесь со мной</button><button type="button" :aria-pressed="type === 'request'" :disabled="busy" @click="type = 'request'">Оставить запрос</button></div>
       <p v-if="session">Контакты из профиля: {{ session.user.email }} · {{ session.user.phone }}. Телефон не подтверждён.</p>
-      <p v-if="session && !session.user.profileComplete" class="form-error">Заполните и подтвердите <a href="#account" @click="close">профиль</a> перед отправкой.</p>
+      <p v-if="session && !session.user.profileComplete" class="form-error">Для отправки нужны подтверждённый email и телефон. Свяжитесь с магазином, чтобы уточнить данные.</p>
       <p v-if="needsRelogin" class="form-error">Сессия завершена. <a href="#login" @click="close">Войти снова</a></p>
       <p v-if="!session" id="feedback-contact-help">Укажите телефон или email. Достаточно одного способа связи.</p>
       <p v-if="api.mode === 'demo'" class="feedback-demo">Демонстрация: используйте тестовые контакты. Данные исчезнут при перезагрузке.</p>

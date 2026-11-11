@@ -103,10 +103,14 @@ test('signup activation and reload restart links retain destination, external re
  await page.goto(`${baseUrl}/#activate?returnTo=${destination}`); assert.equal(await page.getByRole('link', { name:'Начать регистрацию' }).getAttribute('href'), `#signup?returnTo=${destination}`);
  await page.goto(`${baseUrl}/#login?returnTo=https%3A%2F%2Fevil.test`); await emailLogin(page); await page.waitForURL('**/#account');
 });
-test('incomplete own profile defers requested record then activation restores it; incomplete staff stays staff', async t => {
+test('incomplete own profile reads the requested record without redirection and incomplete staff stays staff', async t => {
  const { page, state } = await open(t, { initial: session('partner','legacy',false), hash: 'account-orders?order=owned' });
- await page.waitForURL('**/#account?returnTo=%23account-orders%3Forder%3Downed'); assert.equal(state.calls.filter(call => call.path.startsWith('/customer/orders')).length,0);
- await page.locator('.account-form input[name="email"]').fill('legacy@example.test'); await page.locator('.account-form input[name="phone"]').fill('+79991234567'); await page.getByRole('button', { name:'Получить код', exact:true }).click(); await page.getByLabel('Код из письма').fill('123456'); await page.getByRole('button', { name:'Подтвердить код', exact:true }).click(); await page.waitForURL('**/#account-orders?order=owned');
+ await page.getByTestId('own-detail').waitFor();
+ assert.equal(await hashOf(page), '#account-orders?order=owned');
+ assert.equal(state.calls.filter(call => call.path === '/customer/orders/owned').length, 1);
+ assert.equal(state.calls.some(call => call.path.startsWith('/customer/profile/')), false);
+ assert.equal(await page.locator('.crm-page .account-form').count(), 0);
+ await page.getByTestId('account-profile').waitFor();
  const staff = await open(t, { initial: session('operator','staff',false), hash:'crm?order=staff-one' }); await staff.page.locator('dialog[open]').waitFor(); assert.equal(await hashOf(staff.page),'#crm?order=staff-one');
 });
 test('public async publication and section anchors focus actual card or report missing without private reads', async t => {

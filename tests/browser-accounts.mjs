@@ -10,7 +10,7 @@ const product = { id: 'part', externalId: 'external', sku: 'P-1', brand: 'A', na
 const order = id => ({ id: `order-${id}`, number: `PRIVATE-${id}`, createdAt: now, status: 'new', totalKopecks: 10000, fulfillment: { method: 'pickup', address: '' }, items: [{ productId: 'part', sku: 'P-1', brand: 'A', name: 'Тестовая деталь', quantity: 1, unitPriceKopecks: 10000 }] });
 const flow = { flowId: 'opaque-flow', resendAfterSeconds: 0 };
 const adminUser = { id: 'other', name: '', login: 'other@example.test', email: 'other@example.test', phone: '+79991234567', emailVerified: true, phoneVerified: false, role: 'partner', isActive: true, version: 1 };
-async function open(t, { initial = null, hash = '', width = 1440, handle } = {}) {
+async function open(t, { initial = null, hash = '', width = 1440, waitUntil = 'networkidle', handle } = {}) {
  const context = await browser.newContext({ viewport: { width, height: 1000 } }); const page = await context.newPage();
  page.setDefaultTimeout(5000); const errors = []; const state = { session: initial, calls: [], user: { ...adminUser } };
  page.on('pageerror', issue => errors.push(issue.message));
@@ -41,6 +41,7 @@ async function open(t, { initial = null, hash = '', width = 1440, handle } = {})
    const feedback = { id: 'own-feedback', number: 1, createdAt: now, type: 'request', message: body?.message || 'Мой вопрос', status: 'new', order: null };
    return method === 'POST' ? json(feedback, 201) : json({ items: [feedback], total: 1, offset: 0, limit: 24 });
   }
+  if (path === '/customer/feedback/own-feedback') return json({ id: 'own-feedback', number: 1, createdAt: now, type: 'request', message: 'Мой вопрос', status: 'new', order: null });
   if (path === '/admin/users') return json({ items: [state.user], total: 1, offset: 0, limit: 24 });
   if (path.startsWith('/admin/users/')) {
    if (method === 'PATCH') { Object.assign(state.user, body); state.user.version++; }
@@ -49,7 +50,7 @@ async function open(t, { initial = null, hash = '', width = 1440, handle } = {})
   if (path === '/manager/orders' || path === '/manager/feedback') return json({ items: [], total: 0, offset: 0, limit: 24 });
   return json({ code: 'NOT_FOUND', message: `Недоступен ${path}` }, 404);
  });
- await page.goto(`${baseUrl}/#${hash}`, { waitUntil: 'networkidle' });
+ await page.goto(`${baseUrl}/#${hash}`, { waitUntil });
  return { page, state };
 }
 async function signIn(page, email = 'partner@example.test') {
@@ -212,20 +213,63 @@ test('admin manages versioned roles and status, with stale versions requiring re
  assert.equal(state.calls.findLast(call => call.path.endsWith('/status')).headers['if-match'], '"3"');
  assert.ok(await page.locator('.crm-tabs a[href="#crm"]').count());
 });
-test('legacy profile completion keeps the same identity', async t => {
- const { page, state } = await open(t, { initial: session('operator', 'legacy', false), hash: 'account' });
- await page.locator('.account-form input[name="email"]').fill('legacy@example.test'); await page.locator('.account-form input[name="phone"]').fill('+79991234567'); await page.getByRole('button', { name: 'Получить код', exact: true }).click();
- await page.getByLabel('Код из письма').fill('123456'); await page.getByRole('button', { name: 'Подтвердить код', exact: true }).click(); await page.getByRole('heading', { name: 'Контакты профиля' }).waitFor(); assert.equal(state.session.user.id, 'legacy');
+test('partner without a phone sees owned orders and feedback below known profile values without activation', async t => {
+ const initial = session('partner', 'legacy', false);
+ Object.assign(initial.user, { name: 'Известный партнёр', email: 'legacy@example.test', emailVerified: true });
+ const { page, state } = await open(t, { initial, hash: 'account', width: 390 });
+ const cabinet = page.locator('.crm-page'), profile = page.getByTestId('account-profile');
+ await profile.getByRole('heading', { name: 'Контакты профиля', exact: true }).waitFor();
+ for (const value of ['Известный партнёр', 'legacy@example.test', 'Партнёр', 'Не указан']) assert.ok((await profile.innerText()).includes(value));
+ assert.equal(await profile.locator('input, select, textarea, form').count(), 0);
+ assert.equal(await cabinet.getByRole('heading', { name: 'Завершите профиль', exact: true }).count(), 0);
+ assert.equal(await cabinet.getByRole('link', { name: 'Профиль', exact: true }).count(), 0);
+ const ownOrder = cabinet.getByRole('link').filter({ hasText: '№ PRIVATE-legacy' }); await ownOrder.waitFor();
+ assert.equal(await ownOrder.getAttribute('href'), '#account-orders?order=order-legacy');
+ assert.equal(new URL(page.url()).hash, '#account');
+ assert.ok(await profile.evaluate(element => Boolean(element.compareDocumentPosition(document.querySelector('.account-panel nav')) & Node.DOCUMENT_POSITION_FOLLOWING)));
+ for (const width of [320, 390, 1440]) {
+  await page.setViewportSize({ width, height: 1000 });
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
+ }
+ await ownOrder.click(); await page.getByTestId('own-detail').waitFor();
+ assert.equal(new URL(page.url()).hash, '#account-orders?order=order-legacy');
+ await cabinet.getByRole('link', { name: '← К списку', exact: true }).click();
+ await page.reload({ waitUntil: 'networkidle' }); await cabinet.getByText('№ PRIVATE-legacy', { exact: true }).waitFor();
+ await cabinet.getByRole('link', { name: 'Мои обращения', exact: true }).click();
+ await cabinet.getByRole('link').filter({ hasText: 'Мой вопрос' }).click();
+ await page.getByTestId('own-detail').getByText('Мой вопрос', { exact: true }).waitFor();
+ assert.equal(new URL(page.url()).hash, '#account-feedback?case=own-feedback');
+ assert.equal(state.session.user.id, 'legacy');
+ assert.equal(state.calls.some(call => call.path.startsWith('/customer/profile/')), false);
+ assert.equal(state.calls.some(call => call.path.startsWith('/admin/') || call.path.startsWith('/manager/') && call.path !== '/manager/session'), false);
+ await page.getByRole('button', { name: 'Выйти', exact: true }).click();
+ await page.getByRole('heading', { name: 'Войти в личный кабинет', exact: true }).waitFor();
+ assert.equal(await page.getByTestId('account-profile').count(), 0);
+ assert.equal(await page.getByText('legacy@example.test', { exact: true }).count(), 0);
+});
+test('an incomplete partner with no owned records sees honest empty lists without a completion form', async t => {
+ const { page, state } = await open(t, { initial: session('partner', 'empty', false), hash: 'account', handle: async ({ path, method, json }) => {
+  if (method !== 'GET' || !['/customer/orders', '/customer/feedback'].includes(path)) return false;
+  await json({ items: [], total: 0, offset: 0, limit: 24 }); return true;
+ } });
+ await page.getByText('У вас пока нет заказов.', { exact: true }).waitFor();
+ assert.equal(await page.locator('.crm-page .account-form').count(), 0);
+ await page.locator('.crm-page').getByRole('link', { name: 'Мои обращения', exact: true }).click();
+ await page.getByText('У вас пока нет обращений.', { exact: true }).waitFor();
+ assert.equal(state.calls.some(call => call.path.startsWith('/customer/profile/')), false);
+ assert.ok((await page.getByTestId('account-profile').innerText()).includes('Не указано'));
 });
 test('a slow first-user response is discarded after logout and second-user login', async t => {
  let release; let held;
- const { page } = await open(t, { initial: session('partner', 'first'), hash: 'account', handle: async ({ path, route }) => { if (path === '/customer/orders' && !held) { held = true; await new Promise(resolve => { release = resolve; }); await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ items: [order('first')], total: 1, offset: 0, limit: 24 }) }); return true; } } });
- await page.locator('.crm-tabs a[href="#account-orders"]').click(); await page.getByText('Загружаем ваши данные…').waitFor();
+ t.after(() => release?.());
+ const { page } = await open(t, { initial: session('partner', 'first'), hash: 'account', waitUntil: 'domcontentloaded', handle: async ({ path, route }) => { if (path === '/customer/orders' && !held) { held = true; await new Promise(resolve => { release = resolve; }); await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ items: [order('first')], total: 1, offset: 0, limit: 24 }) }); return true; } } });
+ await page.getByText('Загружаем ваши данные…').waitFor();
  await page.getByRole('button', { name: 'Выйти', exact: true }).click();
  await page.waitForURL(url => url.hash === '#login');
  await page.locator('.account-section').getByRole('heading', { name: 'Войти в личный кабинет' }).waitFor();
  await signIn(page, 'second@example.test'); release();
- await page.locator('.crm-tabs a[href="#account-orders"]').click(); await page.getByText('№ PRIVATE-second', { exact: true }).waitFor(); assert.equal(await page.getByText('PRIVATE-first', { exact: false }).count(), 0);
+ await page.getByText('№ PRIVATE-second', { exact: true }).waitFor(); assert.equal(await page.getByText('PRIVATE-first', { exact: false }).count(), 0);
+ const profile = await page.getByTestId('account-profile').innerText(); assert.ok(profile.includes('second@example.test')); assert.ok(!profile.includes('first@example.test'));
 });
 test('expired signed-in checkout requires re-login and never falls back to guest', async t => {
  const { page, state } = await open(t, { initial: session(), hash: 'catalog', handle: async ({ path, method, json }) => { if (path === '/customer/orders' && method === 'POST') { await json({ code: 'SESSION_EXPIRED', message: 'Войдите снова' }, 401); return true; } } });
@@ -305,16 +349,20 @@ for (const [role, label] of [['admin', 'Администратор'], ['operator
 for (const role of ['admin', 'operator', 'partner']) test(`${role} account stays inside the shared cabinet menu`, async t => {
  const { page, state } = await open(t, { initial: session(role), hash: 'account' });
  const cabinet = page.locator('.crm-page');
- await cabinet.getByRole('heading', { name: 'Контакты профиля' }).waitFor();
+ const profile = page.getByTestId('account-profile'); await profile.getByRole('heading', { name: 'Контакты профиля' }).waitFor();
  const menu = cabinet.getByRole('navigation', { name: 'Разделы CRM', exact: true });
- assert.equal(await menu.getByRole('link', { name: 'Личный кабинет', exact: true }).getAttribute('aria-current'), 'page');
+ assert.equal(await menu.count(), role === 'partner' ? 0 : 1);
+ if (role !== 'partner') assert.equal(await menu.getByRole('link', { name: 'Личный кабинет', exact: true }).getAttribute('aria-current'), 'page');
  assert.equal(await menu.locator('a[href="#crm"]').count(), role === 'partner' ? 0 : 1);
  assert.equal(await menu.locator('a[href="#crm-content"]').count(), role === 'admin' ? 1 : 0);
  assert.equal(await menu.locator('a[href="#admin-users"]').count(), role === 'admin' ? 1 : 0);
+ assert.equal(await profile.locator('input, form').count(), 0);
+ assert.ok(await profile.evaluate(element => Boolean(element.compareDocumentPosition(document.querySelector('.crm-page nav')) & Node.DOCUMENT_POSITION_FOLLOWING)));
  assert.equal(await page.locator('main h1').count(), 1);
+ await cabinet.getByText(`№ PRIVATE-${role}`, { exact: true }).waitFor();
  await cabinet.getByRole('link', { name: 'Мои заказы', exact: true }).click();
  await cabinet.getByText(`№ PRIVATE-${role}`, { exact: true }).waitFor();
- assert.equal(await menu.getByRole('link', { name: 'Личный кабинет', exact: true }).getAttribute('aria-current'), 'page');
+ if (role !== 'partner') assert.equal(await menu.getByRole('link', { name: 'Личный кабинет', exact: true }).getAttribute('aria-current'), 'page');
  await page.reload({ waitUntil: 'networkidle' });
  await cabinet.getByText(`№ PRIVATE-${role}`, { exact: true }).waitFor();
  await cabinet.getByRole('link', { name: 'Мои обращения', exact: true }).click();
@@ -325,15 +373,20 @@ for (const role of ['admin', 'operator', 'partner']) test(`${role} account stays
 test('incomplete admin profile is embedded and leaves staff sections available at 320px', async t => {
  const { page } = await open(t, { initial: session('admin', 'admin', false), hash: 'account', width: 320 });
  const cabinet = page.locator('.crm-page');
- await cabinet.getByRole('heading', { name: 'Завершите профиль' }).waitFor();
+ const profile = page.getByTestId('account-profile'); await profile.getByRole('heading', { name: 'Контакты профиля' }).waitFor();
+ assert.equal(await cabinet.locator('.account-form').count(), 0);
+ assert.ok((await profile.innerText()).includes('Не указано'));
+ await cabinet.getByText('№ PRIVATE-admin', { exact: true }).waitFor();
  assert.equal(await page.locator('main h1').count(), 1);
  assert.equal(await cabinet.getByRole('navigation', { name: 'Вход и регистрация' }).count(), 0);
  assert.equal(await cabinet.locator('.container').count(), 0);
  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true);
  await cabinet.getByRole('link', { name: 'Обращения', exact: true }).click();
  await cabinet.getByRole('heading', { name: 'Обращения покупателей.' }).waitFor();
+ await profile.waitFor();
+ assert.ok(await profile.evaluate(element => Boolean(element.compareDocumentPosition(document.querySelector('.crm-page > nav')) & Node.DOCUMENT_POSITION_FOLLOWING)));
  await cabinet.getByRole('link', { name: 'Личный кабинет', exact: true }).click();
- await cabinet.getByRole('heading', { name: 'Завершите профиль' }).waitFor();
+ await profile.getByRole('heading', { name: 'Контакты профиля' }).waitFor();
  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true);
 });
 
@@ -341,6 +394,7 @@ test('guest direct account link keeps login inside the cabinet without duplicate
  const { page, state } = await open(t, { hash: 'account-orders?order=private', width: 320 });
  const cabinet = page.locator('.crm-page');
  await cabinet.getByRole('heading', { name: 'Войти в личный кабинет', exact: true }).waitFor();
+ assert.equal(await page.getByTestId('account-profile').count(), 0);
  assert.equal(await page.locator('main h1').count(), 1);
  assert.equal(await cabinet.locator('.container').count(), 0);
  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true);

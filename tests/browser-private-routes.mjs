@@ -34,6 +34,7 @@ async function open(t, { hash, initial = session(), handle } = {}) {
       if (method === 'POST') { state.session = session(); return json(state.session); }
       return state.session ? json(state.session) : json({ code: 'SESSION_REQUIRED', message: 'Войдите снова' }, 401);
     }
+    if (['/customer/orders', '/customer/feedback'].includes(path)) return json(pageData([]));
     if (path === '/admin/site') return json({ hero: { ...hero, imageId: null }, settings, menu: [], version: 2 }, 200, { ETag: '"2"' });
     if (path === '/admin/categories') return json(pageData([]));
     if (path === '/admin/publications') return json(pageData([publication('listed')]));

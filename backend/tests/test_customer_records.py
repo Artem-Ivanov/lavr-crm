@@ -118,8 +118,67 @@ def test_guest_cookie_guard_profile_requirement_and_no_contact_auto_claim(client
         for cookie, status in [(headers['Cookie'], 409), ('lavr_session=expired', 401), (manager_headers['Cookie'], 409)]:
             result = client.post(path, json=body, headers={'Origin': 'http://testserver', 'Cookie': cookie, 'Idempotency-Key': str(uuid4())})
             assert result.status_code == status, result.text
-    assert client.get('/api/customer/orders', headers=manager_headers).status_code == 409
+    incomplete_staff_orders = client.get('/api/customer/orders', headers=manager_headers)
+    assert incomplete_staff_orders.status_code == 200
+    assert incomplete_staff_orders.json()['items'] == []
     assert client.get('/api/customer/feedback/' + guest['id'], headers=headers).status_code == 404
+
+
+@pytest.mark.parametrize('missing', ['phone', 'email', 'verification'])
+def test_incomplete_profile_can_read_owned_history_but_cannot_submit_or_claim_other_records(client, db, customer, order_product, missing):
+    user, headers = customer
+    own = own_order(client, order_product, headers)
+    case = own_feedback(client, headers)
+    assert own.status_code == 201 and case.status_code == 202
+    expected_order, expected_case = own.json(), case.json()
+    guest_body = order_body(order_product)
+    guest_body['customer'].update(phone='+79991112233', email='private-buyer@example.test')
+    guest = guest_order(client, order_product, body=guest_body).json()
+    guest_case = guest_feedback(client, feedback_body(email='private-buyer@example.test', phone='+79991112233')).json()
+    other = guest_order(client, order_product).json()
+    other_case = guest_feedback(client).json()
+    db.get(Order, other['id']).customer_id = 'manager'
+    db.get(Feedback, other_case['id']).customer_id = 'manager'
+    if missing == 'verification':
+        user.email_verified_at = None
+    else:
+        user.profile = {key: value for key, value in user.profile.items() if key != missing}
+    db.commit()
+
+    for path, expected in [('/api/customer/orders', [expected_order]), ('/api/customer/feedback', [expected_case])]:
+        result = client.get(path, headers=headers)
+        assert result.status_code == 200, result.text
+        assert result.json()['items'] == expected and result.json()['total'] == 1
+    for path, expected in [('/api/customer/orders/' + expected_order['id'], expected_order),
+                           ('/api/customer/feedback/' + expected_case['id'], expected_case)]:
+        result = client.get(path, headers=headers)
+        assert result.status_code == 200, result.text
+        assert result.json() == expected
+        assert result.headers['cache-control'] == 'no-store'
+    for path in ['/api/customer/orders/' + guest['id'], '/api/customer/orders/' + other['id'],
+                 '/api/customer/feedback/' + guest_case['id'], '/api/customer/feedback/' + other_case['id']]:
+        assert client.get(path, headers=headers).status_code == 404
+    assert db.get(Order, guest['id']).customer_id is None
+    assert db.get(Feedback, guest_case['id']).customer_id is None
+    for result in [own_order(client, order_product, headers), own_feedback(client, headers)]:
+        assert result.status_code == 409 and result.json()['code'] == 'PROFILE_REQUIRED'
+
+
+@pytest.mark.parametrize('identity', ['guest', 'expired', 'inactive', 'revoked'])
+def test_own_history_reads_still_require_an_active_current_session(client, db, customer, order_product, identity):
+    user, headers = customer
+    order = own_order(client, order_product, headers).json()
+    case = own_feedback(client, headers).json()
+    if identity in ('guest', 'expired'):
+        headers = {'Cookie': '' if identity == 'guest' else 'lavr_session=expired'}
+    elif identity == 'inactive':
+        user.is_active = False
+    else:
+        user.auth_version += 1
+    db.commit()
+    for path in ['/api/customer/orders', '/api/customer/orders/' + order['id'],
+                 '/api/customer/feedback', '/api/customer/feedback/' + case['id']]:
+        assert client.get(path, headers=headers).status_code == 401
 
 
 def test_customer_conversion_propagates_owner_and_hides_internal_fields(client, db, customer, order_product, manager_headers):
