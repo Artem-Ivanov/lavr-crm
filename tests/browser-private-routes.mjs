@@ -131,13 +131,22 @@ test('saving a new publication makes its ID shareable and reload restores that r
   assert.deepEqual(prompts, []);
 });
 
-test('direct user ID survives staff login and reload, and list/back updates selection', async t => {
+test('staff login opens the account before explicit user selection, reload and list/back navigation', async t => {
   const id = 'пользователь ?&#%';
   const hash = routeHash({ page: 'admin-users', userId: id });
-  const { page, state } = await open(t, { hash, initial: null });
+  const { page, state } = await open(t, { hash, initial: null, handle: async ({ path, json }) => {
+    if (path !== '/admin/users') return false;
+    await json(pageData([user(id), user('listed-user')])); return true;
+  } });
   await page.locator('.account-form input[name="email"]').fill('admin@example.test');
   await page.locator('.account-form input[name="password"]').fill('long password');
   await page.locator('.account-form button[type="submit"]').click();
+  await page.waitForURL('**/#account-orders');
+  await page.getByTestId('account-profile').waitFor();
+  assert.equal(await page.getByTestId('user-detail').count(), 0);
+  assert.equal(state.calls.some(call => call.path.startsWith('/admin/users')), false);
+  await page.locator('.crm-page > nav.crm-tabs').getByRole('link', { name: 'Пользователи', exact: true }).click();
+  await page.locator('.account-user-row').filter({ hasText: `Пользователь ${id}` }).click();
   await page.getByTestId('user-detail').waitFor();
   assert.ok((await page.getByTestId('user-detail').textContent()).includes(id));
   assert.equal(new URL(page.url()).hash, hash);
@@ -147,7 +156,7 @@ test('direct user ID survives staff login and reload, and list/back updates sele
   await page.getByRole('link', { name: 'К списку пользователей', exact: true }).click();
   await page.waitForFunction(() => !document.querySelector('[data-testid="user-detail"]'));
   assert.equal(new URL(page.url()).hash, '#admin-users');
-  const listed = page.locator('.account-user-row');
+  const listed = page.locator('.account-user-row').filter({ hasText: 'Пользователь listed-user' });
   assert.equal(await listed.getAttribute('href'), '#admin-users?user=listed-user');
   await listed.click(); await page.getByTestId('user-detail').waitFor();
   assert.equal(new URL(page.url()).hash, '#admin-users?user=listed-user');
@@ -249,21 +258,24 @@ test('returning from an own order or feedback detail keeps the current list page
     await last.waitFor();
     assert.equal(await paging.locator('span').textContent(), '25–25 из 25', `${kind}: browser Back must retain page 2`);
     const other = kind === 'orders' ? 'feedback' : 'orders';
-    await page.getByRole('navigation', { name: 'Личный кабинет', exact: true }).getByRole('link', { name: kind === 'orders' ? 'Мои обращения' : 'Мои заказы', exact: true }).click();
+    await page.locator('.crm-page > nav.crm-tabs').getByRole('link', { name: kind === 'orders' ? 'Мои обращения' : 'Мои заказы', exact: true }).click();
     await page.waitForURL(`**/#account-${other}`);
-    await page.getByRole('navigation', { name: 'Личный кабинет', exact: true }).getByRole('link', { name: kind === 'orders' ? 'Мои заказы' : 'Мои обращения', exact: true }).click();
+    await page.locator('.crm-page > nav.crm-tabs').getByRole('link', { name: kind === 'orders' ? 'Мои заказы' : 'Мои обращения', exact: true }).click();
     await paging.waitFor();
     assert.equal(await paging.locator('span').textContent(), '1–24 из 25', `${kind}: changing sections must reset paging`);
   }
 });
 
-for (const kind of ['case', 'order']) test(`anonymous private ${kind} link uses email auth through recovery and registration and returns to the same record`, async t => {
+for (const kind of ['case', 'order']) test(`anonymous private ${kind} link uses email auth through recovery and registration and lands on the account`, async t => {
   const id = 'не на странице ?&#%';
   const target = routeHash({ page: kind === 'case' ? 'crm-feedback' : 'crm', [kind === 'case' ? 'caseId' : 'orderId']: id });
-  const privatePath = kind === 'case' ? `/manager/feedback/${encodeURIComponent(id)}` : `/manager/orders/${encodeURIComponent(id)}`;
+  const resource = kind === 'case' ? '/manager/feedback' : '/manager/orders';
+  const privatePath = `${resource}/${encodeURIComponent(id)}`;
+  const record = kind === 'case' ? feedbackCase(id) : { ...ownOrder(id), customer: { name: 'Покупатель', phone: '+79991234567', email: '' }, integrationStatus: 'pending_sync', externalDocumentId: null, version: 1, canCancel: true };
   const { page, state } = await open(t, { hash: target, initial: null, handle: async ({ path, json }) => {
+    if (path === resource) { await json(pageData([record])); return true; }
     if (path !== privatePath) return false;
-    await json(kind === 'case' ? feedbackCase(id) : { ...ownOrder(id), customer: { name: 'Покупатель', phone: '+79991234567', email: '' }, integrationStatus: 'pending_sync', externalDocumentId: null, version: 1, canCancel: true });
+    await json(record);
     return true;
   } });
   await page.locator('.account-form input[name="email"]').waitFor();
@@ -280,11 +292,18 @@ for (const kind of ['case', 'order']) test(`anonymous private ${kind} link uses 
   await page.locator('.account-form input[name="email"]').fill('ADMIN@Example.Test');
   await page.locator('.account-form input[name="password"]').fill('long password');
   await page.locator('.account-form button[type="submit"]').click();
-  await page.waitForFunction(expected => location.hash === expected, target);
-  await (kind === 'case' ? page.getByTestId('feedback-detail') : page.locator('.detail-dialog[open]')).waitFor();
+  await page.waitForURL('**/#account-orders');
+  await page.getByTestId('account-profile').waitFor();
+  assert.equal(await page.getByTestId('feedback-detail').count(), 0);
+  assert.equal(await page.locator('.detail-dialog[open]').count(), 0);
+  assert.equal(state.calls.some(call => call.path === privatePath), false);
   const login = state.calls.find(call => call.method === 'POST');
   assert.equal(login.path, '/customer/session');
   assert.deepEqual(login.body, { email: 'admin@example.test', password: 'long password' });
+  await page.locator('.crm-page > nav.crm-tabs').getByRole('link', { name: kind === 'case' ? 'Обращения' : 'Заказы', exact: true }).click();
+  await page.locator(kind === 'case' ? '.feedback-manager-list a' : '.order-number').click();
+  await page.waitForFunction(expected => location.hash === expected, target);
+  await (kind === 'case' ? page.getByTestId('feedback-detail') : page.locator('.detail-dialog[open]')).waitFor();
   assert.equal(state.calls.filter(call => call.path === privatePath).length, 1);
   if (kind === 'case') {
     assert.equal(await page.getByRole('heading', { name: '№12 от 02-11-2026 13:45', exact: true }).count(), 1);
@@ -292,7 +311,7 @@ for (const kind of ['case', 'order']) test(`anonymous private ${kind} link uses 
   }
 });
 
-test('a partner logging in through a private case link retains the destination and cannot read staff records', async t => {
+test('a partner logging in through a private case link lands on the account without reading staff records', async t => {
   const hash = '#crm-feedback?case=staff-only';
   const { page, state } = await open(t, { hash, initial: null, handle: async ({ path, method, state, json }) => {
     if (path !== '/customer/session' || method !== 'POST') return false;
@@ -301,8 +320,9 @@ test('a partner logging in through a private case link retains the destination a
   await page.locator('.account-form input[name="email"]').fill('partner@example.test');
   await page.locator('.account-form input[name="password"]').fill('long password');
   await page.locator('.account-form button[type="submit"]').click();
-  await page.getByText('Этот раздел недоступен.', { exact: false }).waitFor();
-  assert.equal(new URL(page.url()).hash, hash);
+  await page.waitForURL('**/#account-orders');
+  await page.getByTestId('account-profile').waitFor();
+  assert.equal(await page.getByTestId('feedback-detail').count(), 0);
   assert.equal(state.calls.some(call => call.path.startsWith('/manager/feedback')), false);
 });
 
@@ -347,15 +367,15 @@ test('account is an embedded menu section and leaving a dirty editor still asks 
   let prompts = 0;
   const reject = dialog => { prompts++; dialog.dismiss(); };
   page.on('dialog', reject);
-  await page.locator('.crm-page > nav').getByRole('link', { name: 'Личный кабинет', exact: true }).click();
+  await page.locator('.crm-page > nav').getByRole('link', { name: 'Мои заказы', exact: true }).click();
   await page.waitForFunction(expected => location.hash === expected, hash);
   assert.equal(await page.getByTestId('publication-title').inputValue(), 'Несохранённый заголовок');
   assert.equal(prompts, 1);
   page.off('dialog', reject);
   page.once('dialog', dialog => dialog.accept());
-  await page.locator('.crm-page > nav').getByRole('link', { name: 'Личный кабинет', exact: true }).click();
-  await page.locator('.crm-page').getByRole('heading', { name: 'Контакты профиля' }).waitFor();
-  assert.equal(await page.locator('.crm-page > nav a[href="#account"]').getAttribute('aria-current'), 'page');
+  await page.locator('.crm-page > nav').getByRole('link', { name: 'Мои заказы', exact: true }).click();
+  await page.locator('.crm-page h1').filter({ hasText: 'Мои заказы' }).waitFor();
+  assert.equal(await page.locator('.crm-page > nav a[href="#account-orders"]').getAttribute('aria-current'), 'page');
   await page.locator('.crm-page > nav').getByRole('link', { name: 'Контент сайта', exact: true }).click();
   await page.getByTestId('content-tab-site').waitFor();
   await page.goBack();

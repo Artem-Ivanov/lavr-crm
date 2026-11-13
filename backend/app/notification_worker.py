@@ -7,6 +7,7 @@ import re
 import time
 from collections.abc import Callable
 from datetime import datetime, timedelta
+from uuid import NAMESPACE_URL, uuid5
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import and_, func, or_, select
@@ -14,6 +15,7 @@ from sqlalchemy.dialects.postgresql import insert
 
 from .common import utcnow
 from .config import settings, validate_notification_transport
+from .crypto import seal_json
 from .db import SessionLocal
 from .feedback import Feedback
 from .integration import Outbox, TelegramDeliveryState
@@ -40,7 +42,12 @@ def is_configured(transport=None):
 
 def notification_payload(subject):
     created = subject.created_at.astimezone(ZoneInfo('Europe/Moscow')).strftime('%d-%m-%Y %H:%M')
-    if isinstance(subject, Order):
+    if isinstance(subject, Outbox):
+        url = site_link('crm-catalog')
+        button = 'Открыть каталог'
+        updated = datetime.fromisoformat(subject.payload['catalogUpdatedAt']).astimezone(ZoneInfo('Europe/Moscow')).strftime('%d-%m-%Y %H:%M')
+        text = f'Каталог требует обновления\nПоследнее обновление: {updated} МСК\nПриём заказов продолжается.'
+    elif isinstance(subject, Order):
         url = site_link('crm', {'order': subject.id})
         button = 'Открыть заказ'
         amount = f'{subject.total_kopecks // 100},{subject.total_kopecks % 100:02d} ₽'
@@ -132,6 +139,20 @@ def relay_snapshot(event_id, subject, now) -> NotificationRequest:
             'button': {'label': button['text'], 'url': button['url']}}
 
 
+def queue_catalog_warning(db, now):
+    from .catalog import Product, catalog_metadata
+
+    metadata = catalog_metadata(db)
+    if not metadata['stale'] or db.scalar(select(Product.id).limit(1)) is None:
+        return
+    event_id = str(uuid5(NAMESPACE_URL, 'lavr:catalog-stale:' + metadata['catalogUpdatedAt']))
+    if db.get(Outbox, event_id) is None:
+        payload = seal_json({'catalogUpdatedAt': metadata['catalogUpdatedAt']}, table='outbox', record_id=event_id, field='payload')
+        db.execute(insert(Outbox.__table__).values(id=event_id, event_type='catalog_stale_telegram', payload=payload,
+                    state='queued', attempts=0, created_at=now).on_conflict_do_nothing(index_elements=['id']))
+        db.commit()
+
+
 def process_once(*, session_factory=SessionLocal, send=send_telegram, now=None, relay_client_factory: Callable[[], NotifierClient] | None = None, orders_only=False):
     if not settings.telegram_notifications_enabled:
         return False
@@ -141,8 +162,9 @@ def process_once(*, session_factory=SessionLocal, send=send_telegram, now=None, 
         return False
     claimed_at = now or utcnow()
     with session_factory() as db:
+        queue_catalog_warning(db, claimed_at)
         event = db.scalar(select(Outbox).where(
-            Outbox.event_type.in_(('order_telegram',) if orders_only else ('feedback_telegram', 'order_telegram')),
+            Outbox.event_type.in_(('order_telegram', 'catalog_stale_telegram') if orders_only else ('feedback_telegram', 'order_telegram', 'catalog_stale_telegram')),
             or_(
                 and_(Outbox.state.in_(('queued', 'error', 'uncertain')),
                      or_(Outbox.next_attempt_at.is_(None), Outbox.next_attempt_at <= claimed_at)),
@@ -152,6 +174,15 @@ def process_once(*, session_factory=SessionLocal, send=send_telegram, now=None, 
         if event is None:
             return False
         saved = event.payload
+        if event.event_type == 'catalog_stale_telegram' and not saved.get('relay_request'):
+            from .catalog import catalog_metadata
+
+            current = catalog_metadata(db)
+            if not current['stale'] or current['catalogUpdatedAt'] != saved['catalogUpdatedAt']:
+                event.state = 'cancelled'
+                event.lease_until = event.next_attempt_at = None
+                db.commit()
+                return True
         was_uncertain = event.state == 'uncertain' or bool(saved.get('relay_duplicate_possible'))
         use_relay = bool(saved.get('relay_request')) or settings.notification_transport == 'relay'
         if not saved.get('relay_request') and not is_configured('relay' if use_relay else 'direct'):
@@ -163,7 +194,9 @@ def process_once(*, session_factory=SessionLocal, send=send_telegram, now=None, 
         event.attempts += 1
         event.lease_until = claimed_at + timedelta(seconds=LEASE_SECONDS)
         event_id, attempt, lease = event.id, event.attempts, event.lease_until
-        if event.event_type == 'order_telegram':
+        if event.event_type == 'catalog_stale_telegram':
+            subject, missing_code = event, 'CATALOG_WARNING_NOT_FOUND'
+        elif event.event_type == 'order_telegram':
             subject = db.get(Order, event.order_id) if event.order_id else None
             missing_code = 'ORDER_NOT_FOUND'
         else:
@@ -255,7 +288,7 @@ def process_once(*, session_factory=SessionLocal, send=send_telegram, now=None, 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description='Deliver queued Telegram notifications')
-    parser.add_argument('--orders-only', action='store_true', help='Process only order notifications')
+    parser.add_argument('--orders-only', action='store_true', help='Process order notifications and catalog warnings')
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO)
     previous_state = None

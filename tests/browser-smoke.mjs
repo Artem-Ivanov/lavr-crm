@@ -22,15 +22,25 @@ async function open(t, width = 1440) {
 }
 
 async function signInDemoStaff(page) {
-  if (!new URL(page.url()).hash.startsWith('#crm')) return;
-  await page.locator('.header-account .account-role, .crm-page .account-form').first().waitFor();
-  const form = page.locator('.crm-page .account-form');
+  const hash = new URL(page.url()).hash;
+  const destination = hash.startsWith('#login?') ? new URLSearchParams(hash.split('?')[1]).get('returnTo') : hash;
+  if (!destination?.startsWith('#crm')) return;
+  await page.locator('.header-account .crm-nav, .auth-dialog .account-form').first().waitFor();
+  const form = page.locator('.auth-dialog .account-form');
   if (await form.count()) {
     await form.locator('[name="email"]').fill('admin@example.test');
     await form.locator('[name="password"]').fill('demonstration');
     await form.locator('button[type="submit"]').click();
-    await page.locator('.header-account .account-role').waitFor();
+    await page.waitForURL('**/#account-orders');
+    assert.equal(new URL(page.url()).hash, '#account-orders');
+    await page.locator(`.crm-tabs a[href="${destination}"]`).click();
   }
+}
+async function proceedCheckout(page) {
+  await page.waitForFunction(() => document.querySelector('.checkout-continue')?.disabled === false);
+  await page.locator('.checkout-continue').click();
+  await page.waitForURL('**/#checkout');
+  await page.locator('#checkout-form').waitFor();
 }
 
 const mobileProfiles = [{ width: 320, height: 740 }, { width: 390, height: 844 }, { width: 844, height: 390 }];
@@ -338,11 +348,14 @@ test('true mobile SKU search, basket quantities, checkout and CRM use readable t
     assert.equal(await page.locator('.product-card').count(), 1);
     await page.locator('[data-action="add"][data-id="filter-mann-oil"]').tap();
     await page.locator('.header-cart').tap();
-    await mobileControls(page, ['.quantity-button', '.remove-button', '.checkout-submit'], ['[name="name"]', '[name="phone"]', '[name="email"]']);
+    await mobileControls(page, ['.quantity-button', '.remove-button', '.checkout-continue']);
     await pageFits(page, `basket ${viewport.width}`);
     assert.equal(await page.locator('.cart-item').evaluate(element => element.scrollWidth <= element.clientWidth + 1), true, 'The complete basket row must fit even at 320px');
     await page.locator('.quantity-button[data-quantity="2"]').tap();
     assert.equal(await page.locator('.quantity-input').inputValue(), '2');
+    await proceedCheckout(page);
+    await mobileControls(page, ['.checkout-submit'], ['[name="name"]', '[name="phone"]', '[name="email"]']);
+    await pageFits(page, `checkout ${viewport.width}`);
     await page.locator('[name="name"]').fill('Мобильный демопокупатель');
     await page.locator('[name="phone"]').fill('+79991234567');
     assert.equal(await page.locator('.pickup-details strong').textContent(), 'Самовывоз из магазина');
@@ -401,6 +414,7 @@ test('mobile catalog administration creates and assigns categories through a key
 async function checkout(page) {
   await page.locator('[data-action="add"][data-id="filter-mann-oil"]').click();
   await page.locator('.header-cart').click();
+  await proceedCheckout(page);
   await page.locator('[name="name"]').fill('Демо Покупатель');
   await page.locator('[name="phone"]').fill('+7 (999) 123-45-67');
   await page.locator('.checkout-submit').click();
@@ -432,6 +446,7 @@ test('checkout validates contacts and saves a pickup order in CRM', async t => {
   await page.locator('[data-action="add"][data-id="filter-mann-oil"]').click();
   await page.locator('.header-cart').click();
   await page.locator('[data-action="quantity"][data-quantity="2"]').click();
+  await proceedCheckout(page);
   await page.locator('[name="name"]').fill('Демо Покупатель');
   await page.locator('[name="phone"]').fill('123');
   await page.locator('.checkout-submit').click();
@@ -470,10 +485,11 @@ test('a second basket can be checked out after leaving confirmation through CRM'
   await page.locator('.receipt-actions a').click();
   await signInDemoStaff(page);
   await page.getByRole('button', { name: 'Выйти', exact: true }).click();
+  await page.getByRole('button', { name: 'Закрыть авторизацию', exact: true }).click();
   await page.locator('.catalog-nav').click();
   await page.locator('[data-action="add"][data-id="spark-ngk"]').click();
   await page.locator('.header-cart').click();
-  await page.locator('#checkout-form').waitFor();
+  await proceedCheckout(page);
   assert.equal(await page.locator('.receipt').count(), 0);
   await page.locator('[name="name"]').fill('Второй демопокупатель');
   await page.locator('[name="phone"]').fill('89991234567');
@@ -483,7 +499,9 @@ test('a second basket can be checked out after leaving confirmation through CRM'
   const sibling = await page.context().newPage();
   await sibling.goto(`${baseUrl}`, { waitUntil: 'networkidle' });
   await sibling.locator('[data-action="add"][data-id="spark-ngk"]').click();
-  await page.locator('#checkout-form').waitFor();
+  await page.locator('.header-cart').click();
+  await page.getByRole('checkbox', { name: 'Выбрать все', exact: true }).check();
+  await proceedCheckout(page);
   assert.equal(await page.locator('.receipt').count(), 0);
   await sibling.close();
 });
@@ -512,7 +530,12 @@ test('skip link keeps the current route and pickup checkout keeps keyboard acces
   await page.locator('.catalog-nav').click();
   await page.locator('[data-action="add"][data-id="filter-mann-oil"]').click();
   await page.locator('.header-cart').click();
+  await proceedCheckout(page);
   await page.locator('#checkout-form [name="name"]').focus();
+  await page.keyboard.press('Tab');
+  assert.equal(await page.locator('#checkout-form [name="phone"]').evaluate(element => element === document.activeElement), true);
+  await page.keyboard.press('Tab');
+  assert.equal(await page.locator('#checkout-form [name="email"]').evaluate(element => element === document.activeElement), true);
   await page.keyboard.press('Tab');
   assert.equal(await page.locator('.checkout-submit').evaluate(element => element === document.activeElement), true);
 });
@@ -521,6 +544,7 @@ test('stored customer text is escaped and a storage failure preserves the cart',
   const page = await open(t);
   await page.locator('[data-action="add"][data-id="filter-mann-oil"]').click();
   await page.locator('.header-cart').click();
+  await proceedCheckout(page);
   await page.locator('[name="name"]').fill('<img src=x onerror=alert(1)>');
   await page.locator('[name="phone"]').fill('+79991234567');
   await page.evaluate(() => {
@@ -533,7 +557,7 @@ test('stored customer text is escaped and a storage failure preserves the cart',
   });
   await page.locator('.checkout-submit').click();
   assert.match(await page.locator('#checkout-error').textContent(), /Корзина сохранена/);
-  assert.equal(await page.locator('.cart-item').count(), 1);
+  assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('lavr.cart.v1')).length), 1);
   await page.evaluate(() => window.restoreStorage());
   await page.locator('.checkout-submit').click();
   await page.locator('.receipt').waitFor();
@@ -606,6 +630,7 @@ test('manager creates a category and a SKU that survives reload and can be order
   await signInDemoStaff(page);
   await page.locator('.header-cart').click();
   await page.locator('[data-action="quantity"][data-quantity="2"]').click();
+  await proceedCheckout(page);
   await page.locator('[name="name"]').fill('Тестовый Покупатель');
   await page.locator('[name="phone"]').fill('+79991234567');
   await page.locator('.checkout-submit').click();
@@ -680,15 +705,17 @@ test('a catalog read error preserves custom cart rows and blocks checkout until 
   await page.locator('[data-action="add"][data-id="filter-mann-oil"]').click();
   assert.deepEqual(await page.evaluate(() => JSON.parse(localStorage.getItem('lavr.cart.v1'))), originalCart);
   await page.locator('.header-cart').click();
-  await page.locator('[name="name"]').fill('Демо Покупатель');
-  await page.locator('[name="phone"]').fill('+79991234567');
-  await page.locator('.checkout-submit').click();
-  assert.match(await page.locator('#checkout-error').textContent(), /каталог/);
+  assert.equal(await page.locator('.checkout-continue').isDisabled(), true);
+  assert.equal(await page.locator('#checkout-form').count(), 0);
+  assert.match(await page.locator('.storage-alert').textContent(), /каталог/);
   assert.equal(await page.evaluate(() => sessionStorage.getItem('lavr.orders.v1')), null);
   const sibling = await page.context().newPage();
   await sibling.goto(`${baseUrl}`);
   await sibling.evaluate(value => localStorage.setItem('lavr.catalog.v1', JSON.stringify(value)), catalog);
   await page.waitForFunction(() => document.querySelectorAll('.cart-item').length === 2);
+  await proceedCheckout(page);
+  await page.locator('[name="name"]').fill('Демо Покупатель');
+  await page.locator('[name="phone"]').fill('+79991234567');
   await page.locator('.checkout-submit').click();
   await page.locator('.receipt').waitFor();
   assert.equal(await page.evaluate(() => JSON.parse(sessionStorage.getItem('lavr.orders.v1'))[0].totalKopecks), 91468);
@@ -727,6 +754,8 @@ test('long valid catalog names and identifiers remain readable at desktop and mo
   await page.locator('dialog[open] .dialog-close').click();
   await page.locator('.header-cart').click();
   await assertViewFits(['.cart-items', '.cart-item-info', '.cart-item h3', '.order-summary'], 'cart');
+  await proceedCheckout(page);
+  await assertViewFits(['#checkout-form', '.order-summary'], 'checkout');
   await page.locator('[name="name"]').fill('Демо Покупатель');
   await page.locator('[name="phone"]').fill('+79991234567');
   await page.locator('.checkout-submit').click();

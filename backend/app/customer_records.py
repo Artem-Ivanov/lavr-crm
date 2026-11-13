@@ -1,4 +1,4 @@
-"""Private customer projections; contacts and ownership come from the session."""
+"""Private customer records; ownership comes from the session."""
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Header, Path, Query, Request, Response
@@ -7,13 +7,15 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from . import feedback, orders
-from .auth import get_current_user, require_customer_mutation
+from .auth import get_current_user, require_user_mutation
 from .common import ApiError, page_response
 from .db import get_db
 
 
 class CreateOrderRequest(orders.InputModel):
     name: str = Field(default='', max_length=100)
+    phone: str = Field(default='', max_length=30)
+    email: str = Field(default='', max_length=254)
     fulfillment: orders.FulfillmentInput
     items: list[orders.OrderItemInput] = Field(min_length=1, max_length=100)
 
@@ -83,9 +85,16 @@ def get_order(record_id: RecordId, db: Session = Depends(get_db), user=Depends(g
 
 
 @router.post('/orders', status_code=201)
-def create_order(body: CreateOrderRequest, response: Response, idempotency_key: str | None = Header(default=None), db: Session = Depends(get_db), user=Depends(require_customer_mutation)):
+def create_order(body: CreateOrderRequest, response: Response, idempotency_key: str | None = Header(default=None), db: Session = Depends(get_db), user=Depends(require_user_mutation)):
     profile = user.profile
-    customer = orders.CustomerInput.model_construct(name=body.name, phone=profile['phone'], email=profile['email'])
+    phone = body.phone if 'phone' in body.model_fields_set else (profile.get('phone') or '')
+    email = body.email if 'email' in body.model_fields_set else (profile.get('email') or '')
+    try:
+        phone = orders.CustomerInput.normalize_phone(phone)
+        email = orders.CustomerInput.check_email(email)
+    except ValueError as error:
+        raise ApiError(422, 'VALIDATION_ERROR', str(error)) from None
+    customer = orders.CustomerInput.model_construct(name=body.name or user.name, phone=phone, email=email)
     trusted = orders.CreateOrderRequest.model_construct(customer=customer, fulfillment=body.fulfillment, items=body.items)
     receipt, created = orders.accept_order(db, trusted, orders.parse_idempotency_key(idempotency_key), customer_id=user.id, receipt_builder=customer_order)
     response.status_code = 201 if created else 200
@@ -106,8 +115,8 @@ def get_feedback(record_id: RecordId, db: Session = Depends(get_db), user=Depend
 
 
 @router.post('/feedback', status_code=202)
-def create_feedback(body: CreateFeedbackRequest, request: Request, idempotency_key: str | None = Header(default=None), db: Session = Depends(get_db), user=Depends(require_customer_mutation)):
+def create_feedback(body: CreateFeedbackRequest, request: Request, idempotency_key: str | None = Header(default=None), db: Session = Depends(get_db), user=Depends(require_user_mutation)):
     profile = user.profile
-    trusted = feedback.CreateFeedbackRequest(type=body.type, message=body.message, phone=profile['phone'], email=profile['email'])
+    trusted = feedback.CreateFeedbackRequest.model_construct(type=body.type, message=body.message, phone=profile.get('phone') or '', email=profile.get('email') or '')
     case = feedback.accept_feedback(db, trusted, request, orders.parse_idempotency_key(idempotency_key), customer_id=user.id)
     return customer_feedback(db, case)

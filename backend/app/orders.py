@@ -1,7 +1,7 @@
 import hashlib
 import json
 import re
-from datetime import datetime, timedelta
+from datetime import datetime
 from decimal import Decimal
 from typing import Annotated, Literal
 from uuid import UUID
@@ -215,11 +215,9 @@ router = APIRouter(prefix='/api')
 
 
 def build_order(db: Session, body: CreateOrderRequest, *, customer_id=None) -> Order:
-    from .catalog import Category, Product, ProductPresentation, catalog_metadata
+    from .catalog import Category, Product, ProductPresentation
 
     erp_configured = integration.get_erp_adapter().is_configured
-    if catalog_metadata(db)['stale']:
-        raise ApiError(503, 'CATALOG_STALE', 'Цены и остатки требуют обновления. Приём заказов временно недоступен.')
     ids = [item.productId for item in body.items]
     products = {product.id: product for product in db.scalars(select(Product).where(Product.id.in_(ids)).order_by(Product.id).with_for_update())}
     presentations = {item.product_id: item for item in db.scalars(select(ProductPresentation).where(ProductPresentation.product_id.in_(ids)).order_by(ProductPresentation.product_id).with_for_update())}
@@ -239,8 +237,6 @@ def build_order(db: Session, body: CreateOrderRequest, *, customer_id=None) -> O
             validate_unit_quantity(item.quantity, product.unit)
         except ValueError as error:
             raise ApiError(422, 'VALIDATION_ERROR', str(error)) from None
-        if (product.accounting_source is not None or product.stock_observed_at is not None) and (product.stock_observed_at is None or utcnow() - product.stock_observed_at > timedelta(days=1)):
-            raise ApiError(503, 'CATALOG_STALE', 'Сведения об остатке товара требуют обновления. Приём заказов временно недоступен.')
         if product.price_kopecks != item.expectedUnitPriceKopecks:
             raise ApiError(409, 'PRICE_CHANGED', 'Цена изменилась. Подтвердите обновлённую корзину.', [{'productId': product.id, 'code': 'PRICE_CHANGED', 'currentPriceKopecks': product.price_kopecks}])
         available = max(0, product.stock - product.reserved)

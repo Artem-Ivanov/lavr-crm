@@ -154,6 +154,7 @@ async function open(t, { state = fixtures(), hash = '', seed = {}, handle, viewp
     }
     if (method === 'GET' && /^\/admin\/media\/[A-Za-z0-9_-]+\/file$/.test(path)) return route.fulfill({ status: 200, contentType: 'image/png', body: tinyPng });
     if (method === 'GET' && /^\/media\/[A-Za-z0-9_-]+$/.test(path)) return route.fulfill({ status: 200, contentType: 'image/png', body: tinyPng });
+    if (method === 'GET' && path === '/customer/orders') return json(route, pageData([], url));
     if (method === 'GET' && path === '/manager/orders') return json(route, pageData(state.orders, url));
     if (method === 'GET' && path === '/admin/categories') return json(route, pageData(state.categories, url));
     if (method === 'POST' && path === '/admin/categories') {
@@ -184,9 +185,14 @@ async function catalogReady(page) {
   await page.locator('.product-card').first().waitFor();
   await page.getByText('Загружаем каталог…', { exact: true }).waitFor({ state: 'hidden' });
 }
-async function checkoutReady(page) {
+async function cartReady(page) {
+  await page.waitForFunction(() => document.querySelector('.checkout-continue')?.disabled === false);
+}
+async function proceedCheckout(page) {
+  await cartReady(page);
+  await page.locator('.checkout-continue').click();
+  await page.waitForURL('**/#checkout');
   await page.locator('#checkout-form').waitFor();
-  await page.waitForFunction(() => document.querySelector('.checkout-submit')?.disabled === false);
 }
 async function search(page, query) {
   await page.locator('#search').fill(query);
@@ -195,6 +201,26 @@ async function search(page, query) {
 async function noServerStorage(page) {
   assert.deepEqual(await page.evaluate(() => window.storageWrites.filter(item => ['lavr.catalog.v1', 'lavr.orders.v1'].includes(item.key))), []);
 }
+
+test('delivery clarification appears only for zero stock and preserves known in-stock estimates', async t => {
+  const state = fixtures();
+  state.products = [
+    product('available-no-date', { stock: 2, deliveryDays: 0 }),
+    product('available-known-date', { stock: 2, deliveryDays: 3 }),
+    product('fractional-no-date', { stock: 0.001, unit: 'кг', deliveryDays: 0 }),
+    product('empty-no-date', { stock: 0, deliveryDays: 0 }),
+    product('empty-known-date', { stock: 0, deliveryDays: 3 }),
+  ];
+  const { page } = await open(t, { state, hash: '/#catalog' });
+  await catalogReady(page);
+  for (const item of state.products) {
+    const card = page.locator('.product-card').filter({ has: page.locator(`button[data-id="${item.id}"]`) });
+    assert.equal(await card.getByText('Срок получения уточняется', { exact: true }).count(), item.stock === 0 ? 1 : 0, item.id);
+    if (item.stock === 0) assert.equal(await card.locator('.add-button').isDisabled(), true);
+    else if (item.deliveryDays) assert.equal(await card.locator('.product-delivery').textContent(), 'Ориентировочно · 3 дн.');
+    else assert.equal(await card.locator('.product-delivery').count(), 0);
+  }
+});
 
 const mobileProfiles = [{ width: 320, height: 740 }, { width: 390, height: 844 }, { width: 844, height: 390 }];
 
@@ -262,6 +288,8 @@ test('mobile staff sign-in, CRM tables and category assignment stay touch and ke
     await page.locator('[name="email"]').fill('admin@example.test');
     await page.locator('[name="password"]').fill('browser-password');
     await page.locator('.account-card button[type="submit"]').tap();
+    await page.waitForURL('**/#account-orders');
+    await page.locator('.crm-tabs a[href="#crm"]').tap();
     await page.locator('.orders-table').waitFor();
     await mobileControls(page, ['.header-account button', '#order-search-form button', '.status-filter', '.order-number', '.table-action'], ['[name="orderQuery"]']);
     const ordersRegion = page.getByRole('region', { name: 'Заказы: прокрутка таблицы', exact: true });
@@ -379,10 +407,11 @@ test('a persisted off-page cart resolves through API and retries checkout with t
       return true;
     },
   });
-  await checkoutReady(page);
+  await cartReady(page);
   assert.ok(requests.some(item => item.path === `/catalog/${state.offPageProduct.id}`));
   assert.ok(!state.products.some(item => item.id === state.offPageProduct.id));
   assert.equal(await page.locator('.cart-item h3').textContent(), state.offPageProduct.name);
+  await proceedCheckout(page);
   await page.locator('[name="name"]').fill('API Покупатель');
   await page.locator('[name="phone"]').fill('+79991234567');
   await page.locator('[name="email"]').fill('api@example.test');
@@ -407,7 +436,8 @@ test('a persisted off-page cart resolves through API and retries checkout with t
   assert.ok(persistedAttempt?.includes(attempts[0].key), 'The uncertain request key survives reload');
   for (const privateValue of ['API Покупатель', '+79991234567', 'api@example.test', state.offPageProduct.id]) assert.ok(!persistedAttempt.includes(privateValue), 'The persisted attempt contains a digest, not customer or cart data');
   await page.reload({ waitUntil: 'domcontentloaded' });
-  await checkoutReady(page);
+  await page.locator('.header-cart').click();
+  await proceedCheckout(page);
   for (const [name, value] of Object.entries(attempts[0].body.customer)) await page.locator(`[name="${name}"]`).fill(value);
   await page.locator('.checkout-submit').click();
   await page.locator('.receipt').waitFor();
@@ -437,7 +467,7 @@ test('a delayed checkout receipt preserves a new cart received from another tab'
       return true;
     },
   });
-  await checkoutReady(page);
+  await proceedCheckout(page);
   await page.locator('[name="name"]').fill('Покупатель во время запроса');
   await page.locator('[name="phone"]').fill('+79991234567');
   const post = page.waitForRequest(request => new URL(request.url()).pathname === '/api/orders' && request.method() === 'POST');
@@ -449,14 +479,15 @@ test('a delayed checkout receipt preserves a new cart received from another tab'
     localStorage.setItem('lavr.cart.v1', newValue);
     dispatchEvent(new StorageEvent('storage', { key: 'lavr.cart.v1', newValue, storageArea: localStorage }));
   }, newCart);
-  await page.locator('.cart-item .remove-button[data-id="api-part-2"]').waitFor();
+  assert.deepEqual(await page.evaluate(() => JSON.parse(localStorage.getItem('lavr.cart.v1'))), newCart);
   releaseOrder();
   await page.locator('.receipt').waitFor();
   assert.deepEqual(submitted.items, [{ productId: state.products[0].id, quantity: 1, expectedUnitPriceKopecks: state.products[0].priceKopecks }]);
   assert.deepEqual(await page.evaluate(() => JSON.parse(localStorage.getItem('lavr.cart.v1'))), newCart, 'A receipt for the submitted cart must not clear a newer cart');
   await page.locator('[data-action="continue"]').click();
   await page.locator('.header-cart').click();
-  await checkoutReady(page);
+  await page.locator('.cart-item .remove-button[data-id="api-part-2"]').waitFor();
+  await page.getByText('Проверяем товары корзины…', { exact: true }).waitFor({ state: 'hidden' });
   assert.equal(await page.locator('.cart-item .remove-button[data-id="api-part-2"]').count(), 1);
   assert.deepEqual(await page.evaluate(() => JSON.parse(localStorage.getItem('lavr.cart.v1'))), newCart);
   await noServerStorage(page);
@@ -470,6 +501,9 @@ test('staff auth gates API access; managers cannot open admin catalog and admins
   await page.locator('[name="email"]').fill('manager@example.test');
   await page.locator('[name="password"]').fill('browser-password');
   await page.locator('.account-card button[type="submit"]').click();
+  await page.waitForURL('**/#account-orders');
+  assert.equal(requests.filter(item => item.path === '/manager/orders').length, 0);
+  await page.locator('.crm-tabs a[href="#crm"]').click();
   await page.locator('.orders-table').waitFor();
   assert.match(await page.locator('.orders-table').textContent(), /Серверный покупатель/);
   assert.equal(await page.locator('.crm-tabs a[href="#crm-catalog"]').count(), 0);
@@ -483,6 +517,8 @@ test('staff auth gates API access; managers cannot open admin catalog and admins
   await page.locator('[name="email"]').fill('admin@example.test');
   await page.locator('[name="password"]').fill('browser-password');
   await page.locator('.account-card button[type="submit"]').click();
+  await page.waitForURL('**/#account-orders');
+  await page.locator('.crm-tabs a[href="#crm-catalog"]').click();
   await page.locator('[data-testid="product-category-api-part-1"]').waitFor();
   assert.equal(await page.locator('#product-form').count(), 0, 'API mode cannot create accounting products');
   await page.locator('#category-name').fill('Категория создана сервером');
@@ -536,33 +572,100 @@ test('category assignment reads the presentation and sends only categoryId with 
   await noServerStorage(page);
 });
 
-test('unavailable products and a stale catalog preserve the cart draft until explicit removal and recovery', async t => {
+test('cart entry automatically checks stock again and preserves quantities for review', async t => {
+  const state = fixtures(); const id = state.products[0].id;
+  const { page, requests } = await open(t, { state, hash: '/#catalog', seed: { local: { 'lavr.cart.v1': JSON.stringify([{ productId: id, quantity: 2 }]) } } });
+  await catalogReady(page);
+  state.products[0].stock = 1;
+  const before = requests.filter(item => item.path === `/catalog/${id}`).length;
+  await page.locator('.header-cart').click();
+  await page.waitForFunction(() => document.querySelector('.quantity-input')?.max === '1' && !document.querySelector('[role="status"]')?.textContent.includes('Проверяем товары'));
+  assert.ok(requests.filter(item => item.path === `/catalog/${id}`).length > before);
+  assert.equal(await page.locator('.quantity-input').inputValue(), '2');
+  assert.equal(await page.locator('.checkout-continue').isDisabled(), true);
+  assert.equal(await page.getByRole('button', { name: /Повторить проверку|Проверить товары корзины/ }).count(), 0);
+  await page.locator('.quantity-input').fill('1'); await page.locator('.quantity-input').blur();
+  await cartReady(page);
+  await page.locator('.catalog-nav').click(); state.products[0].stock = 7;
+  await page.locator('.header-cart').click();
+  await page.waitForFunction(() => document.querySelector('.quantity-input')?.max === '7');
+  await cartReady(page);
+});
+
+for (const code of ['PRICE_CHANGED', 'OUT_OF_STOCK']) test(`checkout ${code} automatically refreshes cart without submitting it again`, async t => {
+  const state = fixtures(); const id = state.products[0].id;
+  const { page, requests } = await open(t, { state, hash: '/#cart', seed: { local: { 'lavr.cart.v1': JSON.stringify([{ productId: id, quantity: 1 }]) } }, handle: async ({ route, path, method }) => {
+    if (path !== '/orders' || method !== 'POST') return false;
+    if (code === 'PRICE_CHANGED') state.products[0].priceKopecks = 99900; else state.products[0].stock = 0;
+    await json(route, error(code, 'Данные товара изменились.'), 409); return true;
+  } });
+  await proceedCheckout(page);
+  await page.locator('[name="name"]').fill('Покупатель'); await page.locator('[name="phone"]').fill('+79991234567');
+  const before = requests.filter(item => item.path === `/catalog/${id}`).length;
+  const refreshed = page.waitForResponse(response => new URL(response.url()).pathname === `/api/catalog/${id}`);
+  await page.locator('.checkout-submit').click();
+  await page.waitForFunction(() => document.querySelector('#checkout-error')?.textContent.includes('Данные товара изменились'));
+  await (await refreshed).finished();
+  if (code === 'OUT_OF_STOCK') await page.waitForFunction(() => document.querySelector('.checkout-submit')?.disabled === true);
+  assert.ok(requests.filter(item => item.path === `/catalog/${id}`).length > before);
+  assert.equal(requests.filter(item => item.path === '/orders' && item.method === 'POST').length, 1);
+  await page.locator('.header-cart').click();
+  await page.waitForFunction(expected => expected.code === 'PRICE_CHANGED'
+    ? document.querySelector('.cart-item-info .muted')?.textContent.includes('999')
+    : document.querySelector('.quantity-input')?.max === '0', { code });
+  assert.equal(await page.getByRole('button', { name: /Повторить проверку|Проверить товары корзины/ }).count(), 0);
+  assert.equal(await page.locator('.quantity-input').inputValue(), '1');
+  if (code === 'OUT_OF_STOCK') assert.equal(await page.locator('.checkout-continue').isDisabled(), true);
+});
+
+test('unavailable products preserve the cart draft, while stale catalog data does not block available products', async t => {
   const state = fixtures();
   state.stale = true;
   const originalCart = [{ productId: state.products[0].id, quantity: 2 }, { productId: 'api-gone', quantity: 1 }];
-  const { page, requests } = await open(t, { state, hash: '/#cart', seed: { local: { 'lavr.cart.v1': JSON.stringify(originalCart) } } });
-  await page.getByRole('button', { name: 'Повторить проверку', exact: true }).waitFor();
+  const { page, requests } = await open(t, { state, hash: '/#cart', seed: { local: { 'lavr.cart.v1': JSON.stringify([originalCart[0]]) } } });
+  await proceedCheckout(page);
+  await page.locator('[name="name"]').fill('Сохранённый покупатель');
+  await page.locator('[name="phone"]').fill('+79991234567');
+  await page.locator('.header-cart').click();
+  await page.evaluate(cart => {
+    const newValue = JSON.stringify(cart);
+    localStorage.setItem('lavr.cart.v1', newValue);
+    dispatchEvent(new StorageEvent('storage', { key: 'lavr.cart.v1', newValue, storageArea: localStorage }));
+  }, originalCart);
+  await page.locator('.checkout-layout [role="alert"]').filter({ hasText: /проверить|обновить|недоступ/ }).waitFor();
   await page.getByText('Проверяем товары корзины…', { exact: true }).waitFor({ state: 'hidden' });
+  assert.equal(await page.getByRole('button', { name: /Повторить проверку|Проверить товары корзины/ }).count(), 0);
   assert.ok(requests.some(item => item.path === '/catalog/api-gone'));
   assert.equal(await page.locator('.cart-item').count(), 2);
   assert.deepEqual(await page.evaluate(() => JSON.parse(localStorage.getItem('lavr.cart.v1'))), originalCart);
-  assert.equal(await page.locator('.checkout-submit').isDisabled(), true);
-  await page.locator('[name="name"]').fill('Сохранённый покупатель');
-  await page.locator('[name="phone"]').fill('+79991234567');
+  assert.equal(await page.locator('.checkout-continue').isDisabled(), true);
+  assert.equal(await page.locator('#checkout-form').count(), 0);
   await page.locator('.remove-button[data-id="api-gone"]').click();
   assert.deepEqual(await page.evaluate(() => JSON.parse(localStorage.getItem('lavr.cart.v1'))), [originalCart[0]]);
-  await page.getByRole('button', { name: 'Повторить проверку', exact: true }).click();
-  await page.getByText('Остаток изменился или каталог ожидает обновления. Уменьшите количество либо повторите проверку.', { exact: true }).waitFor();
-  assert.equal(await page.locator('.checkout-submit').isDisabled(), true, 'Stale catalog still blocks checkout after removing the unavailable row');
-  assert.equal(await page.locator('[name="name"]').inputValue(), 'Сохранённый покупатель');
-  state.stale = false;
-  await page.getByRole('button', { name: 'Повторить проверку', exact: true }).click();
-  await checkoutReady(page);
+  await proceedCheckout(page);
   assert.equal(await page.locator('[name="name"]').inputValue(), 'Сохранённый покупатель');
   assert.equal(await page.locator('[name="phone"]').inputValue(), '+79991234567');
   assert.deepEqual(await page.evaluate(() => JSON.parse(localStorage.getItem('lavr.cart.v1'))), [originalCart[0]]);
   assert.equal(requests.filter(item => item.path === '/orders').length, 0);
   await noServerStorage(page);
+});
+
+test('stale catalog warning stays out of the storefront and guest checkout succeeds', async t => {
+  const state = fixtures(); state.stale = true;
+  const { page, requests } = await open(t, { state, hash: '/#catalog', handle: async ({ route, path, method }) => {
+    if (path !== '/orders' || method !== 'POST') return false;
+    await json(route, state.receipt, 201); return true;
+  } });
+  await catalogReady(page);
+  assert.equal(await page.getByText(/Цены и остатки ожидают обновления/).count(), 0);
+  await page.locator('.product-card button[data-action="add"]').first().click();
+  await page.locator('.header-cart').click();
+  await proceedCheckout(page);
+  await page.locator('[name="name"]').fill('Покупатель');
+  await page.locator('[name="phone"]').fill('+79991234567');
+  await page.locator('.checkout-submit').click();
+  await page.getByRole('heading', { name: 'Заказ на самовывоз принят', exact: true }).waitFor();
+  assert.equal(requests.filter(item => item.path === '/orders' && item.method === 'POST').length, 1);
 });
 
 test('expired catalog session returns to login instead of keeping an unusable admin screen', async t => {
@@ -581,7 +684,8 @@ test('expired catalog session returns to login instead of keeping an unusable ad
   await page.locator('[data-testid="product-category-api-part-1"]').waitFor();
   expire = true;
   await page.locator('#catalog-admin-search').fill('SKU');
-  await page.locator('.account-card').waitFor();
+  await page.locator('.crm-page').getByRole('link', { name: 'Войти снова', exact: true }).click();
+  await page.getByRole('dialog', { name: 'Авторизация', exact: true }).waitFor();
   assert.equal(await page.locator('#category-form').count(), 0);
   assert.match(await page.locator('.crm-page').textContent(), /Сессия завершена/);
   await noServerStorage(page);
@@ -614,12 +718,14 @@ test('a late status 401 from the previous session cannot invalidate a newer logi
   await page.locator('[name="email"]').fill('admin@example.test');
   await page.locator('[name="password"]').fill('browser-password');
   await page.locator('.account-card button[type="submit"]').click();
+  await page.waitForURL('**/#account-orders');
   await page.locator('.crm-tabs a[href="#crm-catalog"]').waitFor();
   const finished = page.waitForResponse(response => response.request().method() === 'PATCH' && response.url().endsWith('/status'));
   release();
   await finished;
-  await page.waitForFunction(() => !document.querySelector('.account-card') && document.querySelector('.header-account .crm-nav')?.title === 'API admin');
-  assert.equal(await page.locator('.account-card').count(), 0);
+  await page.waitForFunction(() => !document.querySelector('.auth-dialog[open]') && document.querySelector('.header-account .crm-nav')?.title === 'API admin');
+  assert.equal(await page.locator('.auth-dialog[open]').count(), 0);
+  assert.equal(new URL(page.url()).hash, '#account-orders');
   await noServerStorage(page);
 });
 
@@ -842,16 +948,19 @@ test('content access and failed saves preserve drafts while session generations 
   await page.locator('[name="email"]').fill('admin@example.test');
   await page.locator('[name="password"]').fill('browser-password');
   await page.locator('.account-card button[type="submit"]').click();
+  await page.waitForURL('**/#account-orders');
+  await page.locator('.crm-tabs a[href="#crm-content"]').click();
   await page.getByTestId('hero-title').waitFor();
   const finished = page.waitForResponse(response => response.request().method() === 'PATCH' && response.url().endsWith('/admin/site'));
   release();
   await (await finished).finished();
   await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-  assert.equal(await page.locator('.account-card').count(), 0, 'An unmounted editor cannot expire the newer login');
+  assert.equal(await page.locator('.auth-dialog[open]').count(), 0, 'An unmounted editor cannot expire the newer login');
   failure = 'expiry';
   await page.getByTestId('hero-title').fill('Проверка текущей сессии');
   await page.getByTestId('save-site').click();
-  await page.locator('.account-card').waitFor();
+  await page.locator('.crm-page').getByRole('link', { name: 'Войти снова', exact: true }).click();
+  await page.getByRole('dialog', { name: 'Авторизация', exact: true }).waitFor();
   assert.equal(await page.locator('.content-manager').count(), 0);
   assert.match(await page.locator('.crm-page').textContent(), /Сессия завершена/);
   await noServerStorage(page);
@@ -974,7 +1083,7 @@ test('a legacy guest checkout attempt keeps its original key after the accounts 
       await json(route, state.receipt, 200); return true;
     },
   });
-  await checkoutReady(page);
+  await proceedCheckout(page);
   await page.locator('#checkout-form [name="name"]').fill(legacyBody.customer.name);
   await page.locator('#checkout-form [name="phone"]').fill(legacyBody.customer.phone);
   await page.locator('.checkout-submit').click();

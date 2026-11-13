@@ -44,7 +44,6 @@ async function submit() {
   busy.value = true; error.value = '';
   try {
     if (props.authLoading || props.needsRelogin) throw new Error('Войдите снова перед отправкой обращения.');
-    if (props.session && !props.session.user.profileComplete) throw new Error('Для отправки нужны подтверждённый email и телефон. Свяжитесь с магазином, чтобы уточнить данные.');
     if (!props.session && !draft.phone.trim() && !draft.email.trim()) throw new Error('Укажите телефон или email.');
     const body = props.session ? { type: type.value, message: draft.message } : normalizeFeedbackInput({ type: type.value, ...draft });
     if (cleanupPending) { clearFeedbackKey(scope); cleanupPending = false; }
@@ -72,14 +71,13 @@ defineExpose({ open, close });
   <dialog ref="dialog" class="detail-dialog feedback-dialog" aria-labelledby="feedback-title" @cancel.prevent="close">
     <button type="button" class="dialog-close" aria-label="Закрыть" @click="close"><AppIcon name="close" /></button>
     <template v-if="receipt">
-      <div data-testid="feedback-receipt" tabindex="-1" role="status"><span class="eyebrow">{{ api.mode === 'demo' ? 'ДЕМОНСТРАЦИЯ' : 'ОБРАЩЕНИЕ ПРИНЯТО' }}</span><h2 id="feedback-title">{{ api.mode === 'demo' ? 'Демообращение сохранено' : 'Спасибо, мы свяжемся с вами' }}</h2><p>{{ api.mode === 'demo' ? 'Данные доступны только до перезагрузки страницы. Магазину они не отправлены.' : 'Менеджер свяжется с вами по указанным контактам. Онлайн-оплата не требуется.' }}</p></div>
+      <div data-testid="feedback-receipt" tabindex="-1" role="status"><span class="eyebrow">{{ api.mode === 'demo' ? 'ДЕМОНСТРАЦИЯ' : 'ОБРАЩЕНИЕ ПРИНЯТО' }}</span><h2 id="feedback-title">{{ api.mode === 'demo' ? 'Демообращение сохранено' : 'Обращение принято' }}</h2><p>{{ api.mode === 'demo' ? 'Данные доступны только до перезагрузки страницы. Магазину они не отправлены.' : 'Менеджер рассмотрит ваше обращение.' }}</p></div>
       <div class="feedback-actions"><button type="button" class="btn red" @click="close">Готово</button><button type="button" class="btn outline" @click="another">Отправить ещё обращение</button></div>
     </template>
     <template v-else>
       <h2 id="feedback-title">{{ type === 'request' ? 'Оставить запрос' : 'Свяжитесь со мной' }}</h2>
       <div class="feedback-variants" role="group" aria-label="Вариант обращения"><button type="button" :aria-pressed="type === 'contact'" :disabled="busy" @click="type = 'contact'">Свяжитесь со мной</button><button type="button" :aria-pressed="type === 'request'" :disabled="busy" @click="type = 'request'">Оставить запрос</button></div>
-      <p v-if="session">Контакты из профиля: {{ session.user.email }} · {{ session.user.phone }}. Телефон не подтверждён.</p>
-      <p v-if="session && !session.user.profileComplete" class="form-error">Для отправки нужны подтверждённый email и телефон. Свяжитесь с магазином, чтобы уточнить данные.</p>
+      <p v-if="session && (session.user.email || session.user.phone)">Контакты для связи: {{ [session.user.email, session.user.phone].filter(Boolean).join(' · ') }}.</p>
       <p v-if="needsRelogin" class="form-error">Сессия завершена. <a href="#login" @click="close">Войти снова</a></p>
       <p v-if="!session" id="feedback-contact-help">Укажите телефон или email. Достаточно одного способа связи.</p>
       <p v-if="api.mode === 'demo'" class="feedback-demo">Демонстрация: используйте тестовые контакты. Данные исчезнут при перезагрузке.</p>
@@ -94,7 +92,7 @@ defineExpose({ open, close });
           </div>
         </fieldset>
         <p v-if="error" class="form-error" role="alert" tabindex="-1">{{ error }}</p>
-        <button type="submit" data-testid="feedback-submit" class="btn red" :disabled="busy || authLoading || needsRelogin || session && !session.user.profileComplete">{{ busy ? 'Отправляем…' : 'Отправить обращение' }}</button>
+        <button type="submit" data-testid="feedback-submit" class="btn red" :disabled="busy || authLoading || needsRelogin">{{ busy ? 'Отправляем…' : 'Отправить обращение' }}</button>
         <p class="feedback-help">Контакты используются для ответа на ваше обращение.</p>
       </form>
     </template>

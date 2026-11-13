@@ -79,6 +79,8 @@ def _live(flow, payload, now, db):
             and flow.created_at + FLOW_LIFETIME > now and flow.expires_at > now and flow.attempts < 5
             and flow.generation == payload.get('generation')):
         return False
+    if flow.purpose == 'password_reset' and not re.fullmatch(r'[A-Za-z0-9_-]{43}', payload.get('code', '')):
+        return False
     if not hmac.compare_digest(flow.code_hmac, code_digest(flow, payload.get('code', ''))):
         return False
     pending = flow.payload
@@ -87,6 +89,8 @@ def _live(flow, payload, now, db):
     if pending.get('user_id'):
         user = db.get(User, pending['user_id'])
         if not user or not user.is_active or user.auth_version != pending['auth_version']:
+            return False
+        if flow.purpose == 'password_reset' and (user.email_lookup != flow.email_lookup or user.email_verified_at is None):
             return False
     return True
 

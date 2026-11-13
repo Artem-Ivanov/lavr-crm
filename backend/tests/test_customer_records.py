@@ -84,6 +84,176 @@ def test_customer_records_are_owned_profile_bound_and_private(client, db, custom
     assert 'private-buyer@example.test' not in raw and '+79991112233' not in raw
 
 
+@pytest.mark.parametrize(('changes', 'expected_name'), [
+    ({}, 'Имя из профиля'), ({'name': ''}, 'Имя из профиля'), ({'name': '   '}, 'Имя из профиля'),
+    ({'name': '  Другой получатель  '}, 'Другой получатель'), ({'name': 'П' * 100}, 'П' * 100),
+])
+def test_own_order_uses_profile_name_unless_an_override_is_supplied(client, db, customer, order_product, changes, expected_name):
+    user, headers = customer
+    user.name = 'Имя из профиля'
+    db.commit()
+    response = own_order(client, order_product, headers, **changes)
+    assert response.status_code == 201, response.text
+    order = db.get(Order, response.json()['id'])
+    assert order.customer == {'name': expected_name, 'phone': '+79991112233', 'email': 'private-buyer@example.test'}
+    db.refresh(user)
+    assert user.name == 'Имя из профиля'
+
+
+@pytest.mark.parametrize('role', ['partner', 'operator', 'admin'])
+@pytest.mark.parametrize(('state', 'overrides', 'expected_phone', 'expected_email'), [
+    ('unverified', {}, '+79991112233', 'private-buyer@example.test'),
+    ('phone_missing', {'phone': '8 (999) 000-00-01'}, '+79990000001', 'private-buyer@example.test'),
+    ('email_missing', {}, '+79991112233', ''),
+    ('null_contacts', {'phone': '+79990000001'}, '+79990000001', ''),
+    ('empty', {'phone': '8 (999) 000-00-01', 'email': ' checkout@example.test '}, '+79990000001', 'checkout@example.test'),
+    ('legacy_empty', {'phone': '+79990000001'}, '+79990000001', ''),
+    ('email_cleared', {'email': ''}, '+79991112233', ''),
+])
+def test_own_checkout_uses_valid_contacts_without_profile_confirmation(client, db, customer, order_product, role, state, overrides, expected_phone, expected_email):
+    user, headers = customer
+    user.role, user.name, user.email_verified_at = role, 'Имя из профиля', None
+    if state in ('phone_missing', 'email_missing'):
+        user.profile = {key: value for key, value in user.profile.items() if key != state.removesuffix('_missing')}
+    elif state == 'null_contacts':
+        user.profile = {'phone': None, 'email': None}
+    elif state == 'empty':
+        user.profile = {}
+    elif state == 'legacy_empty':
+        user.profile_ciphertext = None
+    db.commit()
+    before = user.profile, user.name, user.auth_version
+    key = str(uuid4())
+    response = own_order(client, order_product, headers, key=key, **overrides)
+    assert response.status_code == 201, response.text
+    order = db.get(Order, response.json()['id'])
+    assert order.customer_id == user.id
+    assert order.customer == {'name': 'Имя из профиля', 'phone': expected_phone, 'email': expected_email}
+    replay = own_order(client, order_product, headers, key=key, **overrides)
+    assert replay.status_code == 200 and replay.json() == response.json()
+    db.refresh(order_product)
+    assert order_product.reserved == 1
+    db.refresh(user)
+    assert (user.profile, user.name, user.auth_version) == before and user.email_verified_at is None
+    assert db.get(OrderAttempt, key).actor == user.id
+    export = db.scalar(select(Outbox).where(Outbox.order_id == order.id, Outbox.event_type == 'order_export'))
+    assert export.payload['customer'] == order.customer
+    assert db.scalar(select(Outbox).where(Outbox.order_id == order.id, Outbox.event_type == 'order_telegram')).state == 'queued'
+
+
+@pytest.mark.parametrize('overrides', [
+    {'phone': ''}, {'phone': 'bad'}, {'phone': '+12345678901'}, {'phone': '+7٩٩٩١٢٣٤٥٦٧'},
+    {'phone': None}, {'phone': 79990000001}, {'phone': '1' * 31},
+    {'email': 'bad'}, {'email': None}, {'email': 'x' * 255}, {'email': 'test\x00@example.test'},
+    {'customerId': 'manager'}, {'customer': {'phone': '+79990000001'}},
+])
+def test_own_checkout_rejects_invalid_supplied_contacts_without_profile_fallback(client, db, customer, order_product, overrides):
+    user, headers = customer
+    user.email_verified_at = None
+    db.commit()
+    before = user.profile
+    response = own_order(client, order_product, headers, **overrides)
+    assert response.status_code == 422, response.text
+    for model in (Order, OrderAttempt, Outbox):
+        assert db.scalars(select(model)).all() == []
+    db.refresh(order_product)
+    db.refresh(user)
+    assert order_product.reserved == 0 and user.profile == before
+
+
+@pytest.mark.parametrize('profile', [{}, {'phone': None}, {'phone': ''}, {'phone': 'invalid'}])
+def test_own_checkout_requires_valid_resolved_phone(client, db, customer, order_product, profile):
+    user, headers = customer
+    user.profile, user.email_verified_at = profile, None
+    db.commit()
+    response = own_order(client, order_product, headers, email='checkout@example.test')
+    assert response.status_code == 422, response.text
+    assert response.json()['code'] == 'VALIDATION_ERROR'
+    assert db.scalars(select(Order)).all() == []
+
+
+@pytest.mark.parametrize('invalid_headers', [
+    {'X-CSRF-Token': ''}, {'X-CSRF-Token': 'invalid'}, {'Origin': ''}, {'Origin': 'https://other.example'},
+])
+def test_own_checkout_without_complete_profile_keeps_origin_and_csrf(client, db, customer, order_product, invalid_headers):
+    user, headers = customer
+    user.profile, user.email_verified_at = {}, None
+    db.commit()
+    response = own_order(client, order_product, {**headers, **invalid_headers}, phone='+79990000001')
+    assert response.status_code == 403, response.text
+    assert db.scalars(select(Order)).all() == []
+
+
+def test_own_checkout_normalized_overrides_keep_snapshot_ownership_and_idempotency(client, db, customer, order_product, manager_headers):
+    user, headers = customer
+    user.profile, user.email_verified_at = {}, None
+    db.commit()
+    key = str(uuid4())
+    first = own_order(client, order_product, headers, key=key, phone='8 (999) 000-00-01', email=' checkout@example.test ')
+    assert first.status_code == 201, first.text
+    replay = own_order(client, order_product, headers, key=key, phone='+79990000001', email='checkout@example.test')
+    assert replay.status_code == 200 and replay.json() == first.json()
+    conflict = own_order(client, order_product, headers, key=key, phone='+79990000002', email='checkout@example.test')
+    assert conflict.status_code == 409 and conflict.json()['code'] == 'IDEMPOTENCY_CONFLICT'
+    assert own_order(client, order_product, manager_headers, key=key, phone='+79990000001', email='checkout@example.test').status_code == 409
+    assert client.get('/api/customer/orders/' + first.json()['id'], headers=manager_headers).status_code == 404
+    user.profile = {'phone': '+79990000003', 'email': 'changed@example.test'}
+    db.commit()
+    order = db.get(Order, first.json()['id'])
+    assert order.customer == {'name': '', 'phone': '+79990000001', 'email': 'checkout@example.test'}
+    db.refresh(order_product)
+    assert order_product.reserved == 1
+
+
+@pytest.mark.parametrize('name', [None, 'П' * 101, 'Получатель\x00'])
+def test_profile_name_does_not_bypass_supplied_order_name_validation(client, db, customer, order_product, name):
+    user, headers = customer
+    user.name = 'Имя из профиля'
+    db.commit()
+    response = own_order(client, order_product, headers, name=name)
+    assert response.status_code == 422, response.text
+    assert db.scalars(select(Order)).all() == []
+    db.refresh(order_product)
+    assert order_product.reserved == 0
+
+
+def test_profile_names_are_snapshots_bound_to_the_order_owner(client, db, customer, order_product, manager_headers):
+    from app.auth import User
+
+    user, headers = customer
+    user.name = 'Первый покупатель'
+    db.commit()
+    key = str(uuid4())
+    first = own_order(client, order_product, headers, key=key)
+    assert first.status_code == 201, first.text
+    replay = own_order(client, order_product, headers, key=key)
+    assert replay.status_code == 200 and replay.json() == first.json()
+
+    user.name = 'Новое имя первого'
+    other = User(id='other-named-customer', name='Второй покупатель', role='partner', is_active=True,
+                 password_hash=user.password_hash, email_verified_at=utcnow())
+    other.profile = {'email': 'other-named@example.test', 'phone': '+79994445566'}
+    db.add(other)
+    db.commit()
+    conflict = own_order(client, order_product, headers, key=key)
+    assert conflict.status_code == 409 and conflict.json()['code'] == 'IDEMPOTENCY_CONFLICT'
+    renamed = own_order(client, order_product, headers)
+    assert renamed.status_code == 201, renamed.text
+    assert db.get(Order, renamed.json()['id']).customer['name'] == 'Новое имя первого'
+    login = client.post('/api/customer/session', json={'email': 'other-named@example.test', 'password': 'customer-password-123'},
+                        headers={'Origin': 'http://testserver', 'Cookie': ''})
+    assert login.status_code == 200, login.text
+    other_headers = {'Cookie': 'lavr_session=' + login.cookies['lavr_session'], 'Origin': 'http://testserver', 'X-CSRF-Token': login.json()['csrfToken']}
+    second = own_order(client, order_product, other_headers)
+    assert second.status_code == 201, second.text
+    assert db.get(Order, second.json()['id']).customer['name'] == 'Второй покупатель'
+    assert client.get('/api/customer/orders/' + first.json()['id'], headers=other_headers).status_code == 404
+    detail = client.get('/api/manager/orders/' + first.json()['id'], headers=manager_headers)
+    assert detail.status_code == 200 and detail.json()['customer']['name'] == 'Первый покупатель'
+    event = db.scalar(select(Outbox).where(Outbox.order_id == first.json()['id'], Outbox.event_type == 'order_export'))
+    assert event.payload['customer']['name'] == 'Первый покупатель'
+
+
 def test_attempts_bind_actor_and_replay_never_discloses_other_owner(client, db, customer, order_product):
     user, headers = customer
     key = str(uuid4())
@@ -125,7 +295,7 @@ def test_guest_cookie_guard_profile_requirement_and_no_contact_auto_claim(client
 
 
 @pytest.mark.parametrize('missing', ['phone', 'email', 'verification'])
-def test_incomplete_profile_can_read_owned_history_but_cannot_submit_or_claim_other_records(client, db, customer, order_product, missing):
+def test_incomplete_profile_can_checkout_with_contacts_without_claiming_other_records(client, db, customer, order_product, missing):
     user, headers = customer
     own = own_order(client, order_product, headers)
     case = own_feedback(client, headers)
@@ -160,12 +330,101 @@ def test_incomplete_profile_can_read_owned_history_but_cannot_submit_or_claim_ot
         assert client.get(path, headers=headers).status_code == 404
     assert db.get(Order, guest['id']).customer_id is None
     assert db.get(Feedback, guest_case['id']).customer_id is None
-    for result in [own_order(client, order_product, headers), own_feedback(client, headers)]:
-        assert result.status_code == 409 and result.json()['code'] == 'PROFILE_REQUIRED'
+    order = own_order(client, order_product, headers, **({'phone': '+79991112233'} if missing == 'phone' else {}))
+    assert order.status_code == 201, order.text
+    assert db.get(Order, order.json()['id']).customer_id == user.id
+    request = own_feedback(client, headers)
+    assert request.status_code == 202, request.text
+    assert db.get(Feedback, request.json()['id']).customer_id == user.id
+
+
+@pytest.mark.parametrize('role', ['partner', 'operator', 'admin'])
+@pytest.mark.parametrize('profile_state', ['unverified', 'phone_missing', 'email_missing', 'null_contacts', 'empty', 'legacy_empty'])
+def test_any_active_account_can_send_private_feedback_without_contact_confirmation(client, db, customer, manager_headers, role, profile_state):
+    user, headers = customer
+    user.role = role
+    profile = user.profile
+    if profile_state == 'unverified':
+        user.email_verified_at = None
+    elif profile_state in ('phone_missing', 'email_missing'):
+        user.profile = {key: value for key, value in profile.items() if key != profile_state.removesuffix('_missing')}
+    elif profile_state == 'null_contacts':
+        user.profile = {'phone': None, 'email': None}
+        user.email_verified_at = None
+    elif profile_state == 'empty':
+        user.profile = {}
+        user.email_verified_at = None
+    else:
+        user.profile_ciphertext = None
+        user.email_verified_at = None
+    db.commit()
+    response = own_feedback(client, headers, message='  Вопрос\nо товаре  ')
+    assert response.status_code == 202, response.text
+    case = db.get(Feedback, response.json()['id'])
+    assert case.customer_id == case.actor == user.id
+    assert case.message == 'Вопрос\nо товаре'
+    assert case.phone == ('+79991112233' if profile_state in ('unverified', 'email_missing') else '')
+    assert case.email == ('private-buyer@example.test' if profile_state in ('unverified', 'phone_missing') else '')
+    event = db.get(Outbox, case.id)
+    assert event.event_type == 'feedback_telegram' and event.state == 'queued' and event.attempts == 0
+    assert event.payload == {'feedbackId': case.id}
+    assert client.get('/api/customer/feedback/' + case.id, headers=headers).json() == response.json()
+    assert client.get('/api/customer/feedback/' + case.id, headers=manager_headers).status_code == 404
+
+
+@pytest.mark.parametrize('changes', [
+    {'message': ''}, {'message': '   '}, {'message': 'Вопрос\x00'}, {'message': 'x' * 2001},
+    {'type': 'unknown'}, {'customerId': 'manager'}, {'email': 'another@example.test'}, {'phone': '+79990000000'},
+])
+def test_incomplete_feedback_profile_keeps_request_validation(client, db, customer, changes):
+    user, headers = customer
+    user.profile = {}
+    user.email_verified_at = None
+    db.commit()
+    response = own_feedback(client, headers, **changes)
+    assert response.status_code == 422, response.text
+    assert db.scalars(select(Feedback)).all() == []
+    assert db.scalars(select(Outbox)).all() == []
+
+
+@pytest.mark.parametrize('invalid_headers', [
+    {'X-CSRF-Token': ''}, {'X-CSRF-Token': 'invalid'}, {'Origin': ''}, {'Origin': 'https://other.example'},
+])
+def test_incomplete_feedback_profile_keeps_origin_and_csrf_protection(client, db, customer, invalid_headers):
+    user, headers = customer
+    user.profile = {}
+    user.email_verified_at = None
+    db.commit()
+    response = own_feedback(client, {**headers, **invalid_headers})
+    assert response.status_code == 403, response.text
+    assert db.scalars(select(Feedback)).all() == []
+
+
+def test_contactless_private_feedback_keeps_replay_ownership_and_throttling(client, db, customer, manager_headers):
+    user, headers = customer
+    user.profile_ciphertext = None
+    user.email_verified_at = None
+    db.commit()
+    key = str(uuid4())
+    first = own_feedback(client, headers, key=key)
+    assert first.status_code == 202, first.text
+    for _ in range(11):
+        assert own_feedback(client, headers, key=key).json() == first.json()
+    assert own_feedback(client, headers, key=key, message='Другой запрос').status_code == 409
+    assert own_feedback(client, manager_headers, key=key).status_code == 409
+    assert guest_feedback(client, key=key).status_code == 409
+    contact = own_feedback(client, headers, type='contact', message='')
+    assert contact.status_code == 202, contact.text
+    for _ in range(8):
+        assert own_feedback(client, headers).status_code == 202
+    blocked = own_feedback(client, headers)
+    assert blocked.status_code == 429 and blocked.json()['code'] == 'FEEDBACK_RATE_LIMIT'
+    assert int(blocked.headers['retry-after']) > 0
+    assert len(db.scalars(select(Feedback)).all()) == len(db.scalars(select(Outbox)).all()) == 10
 
 
 @pytest.mark.parametrize('identity', ['guest', 'expired', 'inactive', 'revoked'])
-def test_own_history_reads_still_require_an_active_current_session(client, db, customer, order_product, identity):
+def test_own_records_still_require_an_active_current_session(client, db, customer, order_product, identity):
     user, headers = customer
     order = own_order(client, order_product, headers).json()
     case = own_feedback(client, headers).json()
@@ -179,6 +438,8 @@ def test_own_history_reads_still_require_an_active_current_session(client, db, c
     for path in ['/api/customer/orders', '/api/customer/orders/' + order['id'],
                  '/api/customer/feedback', '/api/customer/feedback/' + case['id']]:
         assert client.get(path, headers=headers).status_code == 401
+    assert own_feedback(client, headers).status_code == 401
+    assert own_order(client, order_product, headers, phone='+79990000001').status_code == 401
 
 
 def test_customer_conversion_propagates_owner_and_hides_internal_fields(client, db, customer, order_product, manager_headers):
@@ -256,7 +517,7 @@ def test_legacy_delivery_customer_receipt_encrypts_address_and_stays_immutable(c
 
 
 @pytest.mark.parametrize(('legacy_name', 'role'), [('L' * 101, 'operator'), ('L' * 240, 'admin'), ('Legacy\nOperator', 'operator')], ids=('operator-101', 'admin-240', 'operator-multiline'))
-def test_legacy_display_name_is_preserved_without_becoming_buyer_name(client, db, customer, order_product, legacy_name, role):
+def test_legacy_profile_name_fills_orders_without_changing_feedback_or_profile(client, db, customer, order_product, legacy_name, role):
     user, headers = customer
     user.login = 'legacy-account'
     user.name = legacy_name
@@ -269,7 +530,7 @@ def test_legacy_display_name_is_preserved_without_becoming_buyer_name(client, db
     assert case.phone == '+79991112233' and case.email == 'private-buyer@example.test'
     response = own_order(client, order_product, headers)
     assert response.status_code == 201, response.text
-    assert db.get(Order, response.json()['id']).customer['name'] == ''
+    assert db.get(Order, response.json()['id']).customer['name'] == legacy_name
     response = own_order(client, order_product, headers, name='Buyer name')
     assert response.status_code == 201, response.text
     assert db.get(Order, response.json()['id']).customer['name'] == 'Buyer name'

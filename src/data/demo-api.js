@@ -174,7 +174,7 @@ export function createDemoApi({ localStorage = globalThis.localStorage, sessionS
     async getOwnOrders(paging) { const actor = signedIn().user.id; return page([...ownOrders.values()].filter(entry => entry.actor === actor).map(entry => customerOrder(entry.order)), paging); },
     async getOwnOrder(id) { const actor = signedIn().user.id; const entry = ownOrders.get(id); if (!entry || entry.actor !== actor) throw Object.assign(new Error('Заказ не найден.'), { status: 404 }); return customerOrder(entry.order); },
     async createOwnOrder(input, key) {
-      validateOwnOrder(input);
+      input = validateOwnOrder(input);
       if (typeof key !== 'string' || !/^[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}$/i.test(key)) throw new Error('Некорректный ключ заказа.');
       const actor = signedIn().user.id;
       const signature = JSON.stringify({ actor, input });
@@ -182,7 +182,8 @@ export function createDemoApi({ localStorage = globalThis.localStorage, sessionS
       const user = signedIn().user;
       const products = readCatalog(true).catalog.products;
       for (const item of input.items) if (products.find(product => product.id === item.productId)?.priceKopecks !== item.expectedUnitPriceKopecks) throw new Error('Цена изменилась. Обновите корзину.');
-      const order = buildOrder(input.items, { name: input.name || '', email: user.email, phone: user.phone }, input.fulfillment, products, { allowEmptyName: true });
+      const order = buildOrder(input.items, { name: input.name || '', email: input.email ?? user.email ?? '', phone: input.phone ?? user.phone ?? '' }, input.fulfillment, products, { allowEmptyName: true });
+      if (!order.customer.name) order.customer.name = user.name;
       ownOrders.set(order.id, { actor, order }); ownAttempts.set(key, { signature, id: order.id });
       return customerOrder(order);
     },

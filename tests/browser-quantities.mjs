@@ -8,6 +8,12 @@ const baseUrl = process.env.BASE_URL || 'http://127.0.0.1:5198';
 const catalog = initialCatalog();
 Object.assign(catalog.products[0], { name: 'Разливное тестовое масло', sku: '', brand: '', unit: 'кг', stock: 9.785, priceKopecks: 101 });
 const productId = catalog.products[0].id;
+async function proceedCheckout(page) {
+  await page.waitForFunction(() => document.querySelector('.checkout-continue')?.disabled === false);
+  await page.locator('.checkout-continue').click();
+  await page.waitForURL('**/#checkout');
+  await page.locator('#checkout-form').waitFor();
+}
 
 for (const width of [1440, 320]) test(`fractional cart reviews legacy units, accepts comma and renders rounded totals at ${width}px`, async t => {
   const context = await browser.newContext({ viewport: { width, height: 1000 } });
@@ -22,7 +28,7 @@ for (const width of [1440, 320]) test(`fractional cart reviews legacy units, acc
   }, { catalog, productId });
   await page.goto(`${baseUrl}/#cart`, { waitUntil: 'networkidle' });
   await page.getByText('Единица изменилась:', { exact: false }).waitFor();
-  assert.equal(await page.locator('.checkout-submit').isDisabled(), true);
+  assert.equal(await page.locator('.checkout-continue').isDisabled(), true);
   await page.getByRole('button', { name: /Выбрать заново/ }).click();
   const input = page.locator('.quantity-input');
   assert.equal(await input.inputValue(), '0,001');
@@ -34,6 +40,7 @@ for (const width of [1440, 320]) test(`fractional cart reviews legacy units, acc
   assert.equal(await page.locator('.cart-count').innerText(), '1');
   assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('lavr.cart.v1'))[0].quantity), 0.955);
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  await proceedCheckout(page);
   await page.locator('[name="name"]').fill('Тестовый покупатель');
   await page.locator('[name="phone"]').fill('+79991234567');
   await page.locator('.checkout-submit').click();
@@ -43,9 +50,11 @@ for (const width of [1440, 320]) test(`fractional cart reviews legacy units, acc
   assert.equal(saved.items[0].unit, 'кг'); assert.equal(saved.items[0].lineTotalKopecks, 96);
   if (width === 1440) {
     await page.evaluate(() => { location.hash = '#crm'; });
-    await page.locator('.crm-page .account-form [name="email"]').fill('admin@example.test');
-    await page.locator('.crm-page .account-form [name="password"]').fill('demonstration');
-    await page.locator('.crm-page .account-form button[type="submit"]').click();
+    await page.locator('.auth-dialog .account-form [name="email"]').fill('admin@example.test');
+    await page.locator('.auth-dialog .account-form [name="password"]').fill('demonstration');
+    await page.locator('.auth-dialog .account-form button[type="submit"]').click();
+    await page.waitForURL('**/#account-orders');
+    await page.locator('.crm-tabs a[href="#crm"]').click();
     await page.locator('.order-number').first().click();
     await page.locator('.order-detail-items').waitFor();
     assert.match(await page.locator('.order-detail-items').innerText(), /0,955 кг/);
@@ -55,6 +64,7 @@ for (const width of [1440, 320]) test(`fractional cart reviews legacy units, acc
     await page.locator(`[data-action="add"][data-id="${productId}"]`).first().click();
     await page.locator('.header-cart').click();
     await page.locator('.quantity-input').fill('0,955'); await page.locator('.quantity-input').press('Tab');
+    await proceedCheckout(page);
     await page.locator('.checkout-submit').click();
     await page.getByRole('heading', { name: 'Демозаказ создан' }).waitFor();
     await page.evaluate(() => { location.hash = '#account-orders'; });

@@ -17,6 +17,7 @@ def mail_settings(monkeypatch):
     monkeypatch.setattr(settings, 'smtp_host', 'smtp.example.test')
     monkeypatch.setattr(settings, 'smtp_from', 'accounts@example.test')
     monkeypatch.setattr(settings, 'smtp_tls_mode', 'tls')
+    monkeypatch.setattr(settings, 'public_site_url', 'https://shop.example')
 
 
 def signup(client, email='new@example.test', password=' chosen-password-123 ', phone='8 (999) 123-45-67', **kwargs):
@@ -227,9 +228,9 @@ def test_password_reset_revokes_all_target_sessions_and_preserves_other_users(cl
     code = deliver(db_engine)[0]['code']
     flow = response.json()['flowId']
     wrong_purpose = activate(client, flow, code)
-    assert wrong_purpose.status_code == 400
+    assert wrong_purpose.status_code == 422
     before = db.get(User, 'partner').profile, db.get(User, 'partner').role
-    response = client.post('/api/customer/auth/password-reset/confirm', json={'flowId': flow, 'code': code, 'newPassword': 'new-password-456'})
+    response = client.post('/api/customer/auth/password-reset/confirm', json={'flowId': flow, 'token': code, 'newPassword': 'new-password-456', 'confirmPassword': 'new-password-456'})
     assert response.status_code == 204, response.text
     assert client.get('/api/customer/session', headers={'Cookie': target_cookie}).status_code == 401
     assert client.get('/api/manager/session', headers=partner_headers).status_code == 401
@@ -240,7 +241,7 @@ def test_password_reset_revokes_all_target_sessions_and_preserves_other_users(cl
     assert user.auth_version == 2 and user.is_active
     assert db.scalar(select(func.count()).select_from(UserSession).where(UserSession.user_id == user.id)) == 0
     assert client.post('/api/customer/session', json={'email': 'buyer@example.test', 'password': 'new-password-456'}).status_code == 200
-    assert client.post('/api/customer/auth/password-reset/confirm', json={'flowId': flow, 'code': code, 'newPassword': 'another-password'}).status_code == 400
+    assert client.post('/api/customer/auth/password-reset/confirm', json={'flowId': flow, 'token': code, 'newPassword': 'another-password', 'confirmPassword': 'another-password'}).status_code == 400
 
 
 def test_profile_completion_updates_same_identity_without_changing_credentials(client, db_engine, db, mail_settings, manager_headers):
@@ -345,7 +346,7 @@ def test_reset_started_before_admin_block_cannot_change_password(client, db_engi
     old_hash = user.password_hash
     user.is_active, user.auth_version = False, user.auth_version + 1
     db.commit()
-    response = client.post('/api/customer/auth/password-reset/confirm', json={'flowId': response.json()['flowId'], 'code': code, 'newPassword': 'new-password-456'})
+    response = client.post('/api/customer/auth/password-reset/confirm', json={'flowId': response.json()['flowId'], 'token': code, 'newPassword': 'new-password-456', 'confirmPassword': 'new-password-456'})
     assert response.status_code == 400
     db.expire_all()
     assert db.get(User, 'partner').password_hash == old_hash
@@ -371,7 +372,7 @@ def test_public_flow_mutations_require_allowed_origin(client, mail_settings):
     for path, body in [('signup', {'email': 'other@example.test', 'phone': '+79991234567', 'password': 'long-password-123'}),
                        ('activate', {'flowId': flow, 'code': '123456'}), ('resend', {'flowId': flow}),
                        ('password-reset', {'email': 'new@example.test'}),
-                       ('password-reset/confirm', {'flowId': flow, 'code': '123456', 'newPassword': 'long-password-123'})]:
+                       ('password-reset/confirm', {'flowId': flow, 'token': 'a' * 43, 'newPassword': 'long-password-123', 'confirmPassword': 'long-password-123'})]:
         assert client.post('/api/customer/auth/' + path, json=body, headers={'Origin': 'https://evil.test'}).status_code == 403
 
 

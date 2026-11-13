@@ -5,9 +5,10 @@ import math
 import secrets
 from datetime import datetime, timedelta
 from typing import Annotated
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Request, Response
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy import CheckConstraint, DateTime, Integer, String, delete, select, text
 from sqlalchemy.dialects.postgresql import JSONB, insert
 from sqlalchemy.orm import Mapped, Session, mapped_column
@@ -90,9 +91,17 @@ class ConfirmInput(FlowInput):
     code: Annotated[str, Field(pattern=r'^[0-9]{6}$')]
 
 
-class ResetInput(ConfirmInput):
+class ResetInput(FlowInput):
+    token: Annotated[str, Field(pattern=r'^[A-Za-z0-9_-]{43}$')]
     newPassword: Annotated[str, Field(min_length=12, max_length=256)]
-    _password = field_validator('newPassword')(SignupInput.password_text.__func__)
+    confirmPassword: Annotated[str, Field(min_length=12, max_length=256)]
+    _password = field_validator('newPassword', 'confirmPassword')(SignupInput.password_text.__func__)
+
+    @model_validator(mode='after')
+    def matching_passwords(self):
+        if self.newPassword != self.confirmPassword:
+            raise ValueError('Пароли не совпадают.')
+        return self
 
 
 def cookie_name(flow_id):
@@ -135,16 +144,31 @@ def _require_mail(*, signup=False):
         raise ApiError(503, 'EMAIL_NOT_CONFIGURED', 'Подтверждение по email временно недоступно.')
 
 
+def _reset_origin():
+    from .telegram_api import site_origin
+
+    origin = site_origin()
+    if not origin or not origin.startswith('https://') or '\\' in origin:
+        raise ApiError(503, 'EMAIL_NOT_CONFIGURED', 'Восстановление пароля по email временно недоступно.')
+    return origin
+
+
 def _queue(db, flow, now):
+    origin = _reset_origin() if flow.purpose == 'password_reset' else None
     flow.expires_at = min(now + CODE_LIFETIME, flow.created_at + FLOW_LIFETIME)
     flow.last_sent_at = now
     if flow.encrypted_payload is None:
         return
-    code = f'{secrets.randbelow(1000000):06d}'
+    code = secrets.token_urlsafe(32) if origin else f'{secrets.randbelow(1000000):06d}'
     flow.code_hmac = code_digest(flow, code)
+    subject, message = 'Код подтверждения MIRZAP67', f'Ваш код подтверждения MIRZAP67: {code}. Код действует 10 минут.'
+    if origin:
+        link = origin + '/#password-reset?' + urlencode({'flow': flow.flow_id, 'token': code})
+        subject = 'Восстановление пароля MIRZAP67'
+        message = f'Для восстановления пароля MIRZAP67 откройте ссылку:\n{link}\nСсылка действует 10 минут. Если вы не запрашивали восстановление, проигнорируйте письмо.'
     db.add(Outbox(id=new_id(), event_type='customer_verification_email', state='queued', attempts=0,
                   payload={'flowId': flow.flow_id, 'generation': flow.generation, 'to': flow.payload['email'], 'code': code,
-                           'subject': 'Код подтверждения MIRZAP67', 'text': f'Ваш код подтверждения MIRZAP67: {code}. Код действует 10 минут.'}))
+                           'subject': subject, 'text': message}))
 
 
 def _begin(db, request, response, purpose, email, payload, *, limits_reserved=False):
@@ -172,9 +196,10 @@ def _valid(flow, request, now):
                 and flow.consumed_at is None and flow.created_at + FLOW_LIFETIME > now)
 
 
-def _invalid(db):
+def _invalid(db, *, reset=False):
     db.commit()
-    raise ApiError(400, 'INVALID_CHALLENGE', 'Код недействителен. Начните подтверждение заново.')
+    message = 'Ссылка недействительна или срок действия истёк. Запросите новую ссылку.' if reset else 'Код недействителен. Начните подтверждение заново.'
+    raise ApiError(400, 'INVALID_CHALLENGE', message)
 
 
 def _locked_flow(db, request, flow_id, action, now, *, increment=True):
@@ -185,13 +210,16 @@ def _locked_flow(db, request, flow_id, action, now, *, increment=True):
 
 def _verify(db, request, body, purpose, now):
     flow = _locked_flow(db, request, body.flowId, 'check', now)
-    if not _valid(flow, request, now) or flow.purpose != purpose or flow.expires_at <= now:
-        _invalid(db)
+    valid = _valid(flow, request, now) if purpose != 'password_reset' else bool(
+        flow and flow.consumed_at is None and flow.created_at + FLOW_LIFETIME > now)
+    if not valid or flow.purpose != purpose or flow.expires_at <= now:
+        _invalid(db, reset=purpose == 'password_reset')
     if flow.attempts >= 5:
         _rate_error(db, math.ceil((flow.created_at + FLOW_LIFETIME - now).total_seconds()))
-    if flow.encrypted_payload is None or not flow.code_hmac or not hmac.compare_digest(flow.code_hmac, code_digest(flow, body.code)):
+    proof = body.token if purpose == 'password_reset' else body.code
+    if flow.encrypted_payload is None or not flow.code_hmac or not hmac.compare_digest(flow.code_hmac, code_digest(flow, proof)):
         flow.attempts += 1
-        _invalid(db)
+        _invalid(db, reset=purpose == 'password_reset')
     return flow
 
 
@@ -261,6 +289,7 @@ def resend(body: FlowInput, request: Request, db: Session = Depends(get_db)):
 def password_reset(body: EmailInput, request: Request, response: Response, db: Session = Depends(get_db)):
     check_origin(request)
     _require_mail()
+    _reset_origin()
     user = db.scalar(select(User).where(User.email_lookup == lookup_digest('email', body.email), User.email_verified_at.is_not(None), User.is_active.is_(True)))
     payload = {'email': body.email, 'user_id': user.id, 'auth_version': user.auth_version} if user else None
     return _begin(db, request, response, 'password_reset', body.email, payload)
@@ -273,8 +302,8 @@ def confirm_password_reset(body: ResetInput, request: Request, response: Respons
     flow = _verify(db, request, body, 'password_reset', now)
     payload = flow.payload
     user = db.scalar(select(User).where(User.id == payload['user_id']).with_for_update().execution_options(populate_existing=True))
-    if not user or not user.is_active or user.auth_version != payload['auth_version'] or user.email_lookup != flow.email_lookup:
-        _invalid(db)
+    if not user or not user.is_active or user.auth_version != payload['auth_version'] or user.email_lookup != flow.email_lookup or user.email_verified_at is None:
+        _invalid(db, reset=True)
     user.password_hash = hash_password(body.newPassword)
     user.auth_version += 1
     db.execute(delete(UserSession).where(UserSession.user_id == user.id))

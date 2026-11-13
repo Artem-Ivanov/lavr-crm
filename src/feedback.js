@@ -36,7 +36,7 @@ function field(value, max, message, multiline = false) {
   return value.trim();
 }
 
-export function normalizeFeedbackInput(input) {
+function normalizeFeedbackFields(input) {
   if (!object(input) || Object.keys(input).some(key => !inputKeys.includes(key)) || !['contact', 'request'].includes(input.type)) {
     throw new Error('Выберите обращение: связаться с вами или оставить запрос.');
   }
@@ -54,10 +54,15 @@ export function normalizeFeedbackInput(input) {
     address: field(messengerInput.address, 254, 'Контакт в мессенджере должен быть не длиннее 254 символов.'),
   };
   if (Boolean(messenger.service) !== Boolean(messenger.address)) throw new Error('Укажите сервис мессенджера и контакт в нём.');
-  if (!phone && !email && !messenger.address) throw new Error('Укажите хотя бы один способ связи: телефон, email или мессенджер.');
   const message = field(input.message, 2000, 'Текст обращения должен быть не длиннее 2000 символов и без управляющих символов.', true);
   if (input.type === 'request' && !message) throw new Error('Напишите ваш запрос.');
   return { type: input.type, name, phone, email, messenger, message };
+}
+
+export function normalizeFeedbackInput(input) {
+  const body = normalizeFeedbackFields(input);
+  if (!body.phone && !body.email && !body.messenger.address) throw new Error('Укажите хотя бы один способ связи: телефон, email или мессенджер.');
+  return body;
 }
 
 export function normalizeFeedbackStatus(input) {
@@ -96,7 +101,7 @@ export function isFeedbackCase(value) {
     || !Object.hasOwn(FEEDBACK_STATUSES, value.status) || !Number.isSafeInteger(value.version) || value.version < 1
     || !(value.assignedTo === null || staff(value.assignedTo)) || !string(value.resolution, 2000, true) || !optionalDemo(value)) return false;
   try {
-    const normalized = normalizeFeedbackInput(Object.fromEntries(inputKeys.map(key => [key, value[key]])));
+    const normalized = normalizeFeedbackFields(Object.fromEntries(inputKeys.map(key => [key, value[key]])));
     if (inputKeys.filter(key => key !== 'messenger').some(key => normalized[key] !== value[key])
       || normalized.messenger.service !== value.messenger.service || normalized.messenger.address !== value.messenger.address) return false;
   } catch { return false; }

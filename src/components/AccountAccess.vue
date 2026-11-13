@@ -1,22 +1,25 @@
 <script setup>
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue';
 import { routeHash, safeReturnTo } from '../routes.js';
-const props = defineProps({ api: { type: Object, required: true }, page: { type: String, required: true }, returnTo: { type: String, default: '' }, embedded: Boolean });
-const emit = defineEmits(['authenticated', 'identity-changing', 'staff-error', 'navigate']);
+const props = defineProps({ api: { type: Object, required: true }, page: { type: String, required: true }, returnTo: { type: String, default: '' }, resetLink: { type: Object, default: null }, embedded: Boolean });
+const emit = defineEmits(['authenticated', 'identity-changing', 'staff-error', 'navigate', 'password-reset']);
 const authHash = page => routeHash({ page, returnTo: safeReturnTo(props.returnTo) });
-const draft = reactive({ email: '', phone: '', password: '', code: '' });
+const draft = reactive({ email: '', phone: '', password: '', confirmPassword: '', code: '' });
 const busy = ref(false);
 const error = ref('');
 const notice = ref('');
 const flow = ref(null);
 const remaining = ref(0);
+const requestingReset = ref(false);
 let deadline = 0;
 let active = true;
 let generation = 0;
-const confirming = computed(() => !!flow.value && (props.page === 'activate' || props.page === 'password-reset'));
-const title = computed(() => confirming.value ? props.page === 'password-reset' ? 'Новый пароль' : 'Подтвердите email' : ({ login: 'Войти в личный кабинет', signup: 'Регистрация', activate: 'Подтвердите email', 'password-reset': 'Восстановить пароль' })[props.page]);
+const confirming = computed(() => !!flow.value && props.page === 'activate');
+const resetting = computed(() => props.page === 'password-reset' && props.resetLink && !requestingReset.value);
+const title = computed(() => resetting.value && !props.resetLink.invalid ? 'Новый пароль' : ({ login: 'Войти в личный кабинет', signup: 'Регистрация', activate: 'Подтвердите email', 'password-reset': 'Восстановить пароль' })[props.page]);
 const timer = setInterval(() => { remaining.value = Math.max(0, Math.ceil((deadline - Date.now()) / 1000)); }, 1000);
-watch(() => props.page, () => { generation++; busy.value = false; error.value = ''; draft.password = ''; draft.code = ''; if (!['activate', 'password-reset'].includes(props.page)) { flow.value = null; notice.value = ''; } });
+function clearSecrets() { draft.password = ''; draft.confirmPassword = ''; draft.code = ''; }
+watch(() => [props.page, props.returnTo, props.resetLink?.flowId, props.resetLink?.token, props.resetLink?.invalid], () => { generation++; busy.value = false; error.value = ''; clearSecrets(); requestingReset.value = false; if (props.page !== 'activate') { flow.value = null; notice.value = ''; } });
 function setFlow(result) {
   flow.value = result;
   deadline = Date.now() + result.resendAfterSeconds * 1000;
@@ -31,26 +34,24 @@ async function perform(operation) {
   catch (issue) { if (active && current === generation) error.value = issue.message; }
   finally { if (active && current === generation) busy.value = false; }
 }
-function authenticated(result, current) { if (active && current === generation) { draft.password = ''; draft.code = ''; flow.value = null; emit('authenticated', result); } }
+function authenticated(result, current) { if (active && current === generation) { clearSecrets(); flow.value = null; emit('authenticated', result); } }
 function submit() {
-  perform(async current => {
-    if (confirming.value) {
+  return perform(async current => {
+    if (resetting.value && !props.resetLink.invalid) {
+      if (draft.password !== draft.confirmPassword) throw new Error('Пароли не совпадают.');
+      await props.api.confirmPasswordReset({ flowId: props.resetLink.flowId, token: props.resetLink.token, newPassword: draft.password, confirmPassword: draft.confirmPassword });
+      if (active && current === generation) { clearSecrets(); emit('password-reset'); }
+    } else if (confirming.value) {
       const body = { flowId: flow.value.flowId, code: draft.code };
-      if (props.page === 'password-reset') {
-        emit('identity-changing');
-        await props.api.confirmPasswordReset({ ...body, newPassword: draft.password });
-        if (active && current === generation) { flow.value = null; draft.password = ''; draft.code = ''; notice.value = 'Пароль изменён. Войдите с новым паролем.'; }
-      } else {
-        emit('identity-changing');
-        authenticated(await props.api.activate(body), current);
-      }
+      emit('identity-changing');
+      authenticated(await props.api.activate(body), current);
     } else if (props.page === 'signup') {
       const body = { email: draft.email, phone: draft.phone };
       const result = await props.api.signup({ ...body, password: draft.password });
       if (active && current === generation) { setFlow(result); draft.password = ''; emit('navigate', authHash('activate')); }
     } else if (props.page === 'password-reset') {
-      const result = await props.api.requestPasswordReset({ email: draft.email });
-      if (active && current === generation) setFlow(result);
+      await props.api.requestPasswordReset({ email: draft.email });
+      if (active && current === generation) notice.value = 'Если для этого email доступно восстановление, письмо со ссылкой будет отправлено. Проверьте входящие и спам.';
     } else if (props.page === 'login') {
       emit('identity-changing');
       authenticated(await props.api.loginUser({ email: draft.email, password: draft.password }), current);
@@ -58,8 +59,8 @@ function submit() {
   });
 }
 function resend() { perform(async current => { const result = await props.api.resendCode({ flowId: flow.value.flowId }); if (active && current === generation) setFlow(result); }); }
-function restart() { flow.value = null; notice.value = ''; error.value = ''; draft.code = ''; draft.password = ''; if (props.page === 'activate') emit('navigate', authHash('signup')); }
-onBeforeUnmount(() => { active = false; generation++; clearInterval(timer); draft.password = ''; draft.code = ''; });
+function restart() { generation++; busy.value = false; flow.value = null; notice.value = ''; error.value = ''; clearSecrets(); if (props.page === 'password-reset') { requestingReset.value = true; emit('navigate', authHash('password-reset')); } else if (props.page === 'activate') emit('navigate', authHash('signup')); }
+onBeforeUnmount(() => { active = false; generation++; clearInterval(timer); clearSecrets(); });
 </script>
 
 <template>
@@ -68,11 +69,15 @@ onBeforeUnmount(() => { active = false; generation++; clearInterval(timer); draf
       <p v-if="api.mode === 'demo'" class="api-feedback">Симуляция: настоящие аккаунты и письма не создаются. Для просмотра используйте email admin@example.test, operator@example.test или partner@example.test и любой непустой пароль.</p>
       <p v-if="notice" role="status">{{ notice }}</p>
       <template v-if="page === 'activate' && !flow"><p>Подтверждение доступно в браузере, где начата регистрация. Начните заново, если страница была перезагружена.</p><a :href="authHash('signup')" class="btn red">Начать регистрацию</a></template>
+      <template v-else-if="resetting && resetLink.invalid"><p role="alert">Ссылка восстановления некорректна или неполна. Запросите новую ссылку на email.</p><button type="button" class="btn red" @click="restart">Запросить новую ссылку</button></template>
       <form v-else class="account-form" :aria-busy="busy" @submit.prevent="submit">
         <fieldset :disabled="busy"><legend class="sr-only">{{ title }}</legend>
-          <template v-if="confirming">
+          <template v-if="resetting">
+            <label>Новый пароль<input v-model="draft.password" name="newPassword" type="password" minlength="12" maxlength="256" autocomplete="new-password" aria-describedby="reset-password-help" required></label><small id="reset-password-help">От 12 до 256 символов.</small>
+            <label>Подтвердите пароль<input v-model="draft.confirmPassword" name="confirmPassword" type="password" minlength="12" maxlength="256" autocomplete="new-password" required></label>
+          </template>
+          <template v-else-if="confirming">
             <label>Код из письма<input v-model="draft.code" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" minlength="6" maxlength="6" required></label>
-            <label v-if="page === 'password-reset'">Новый пароль<input v-model="draft.password" name="newPassword" type="password" minlength="12" maxlength="256" autocomplete="new-password" required><small>От 12 до 256 символов.</small></label>
           </template>
           <template v-else>
             <label>Email<input v-model="draft.email" name="email" type="email" autocomplete="email" maxlength="254" required></label>
@@ -81,8 +86,9 @@ onBeforeUnmount(() => { active = false; generation++; clearInterval(timer); draf
           </template>
         </fieldset>
         <p v-if="error" class="form-error" role="alert">{{ error }}</p>
-        <button type="submit" class="btn red" :disabled="busy">{{ busy ? 'Подождите…' : confirming ? page === 'password-reset' ? 'Сохранить новый пароль' : 'Подтвердить код' : page === 'login' ? 'Войти' : 'Получить код' }}</button>
+        <button type="submit" class="btn red" :disabled="busy">{{ busy ? 'Подождите…' : resetting ? 'Сохранить новый пароль' : confirming ? 'Подтвердить код' : page === 'login' ? 'Войти' : page === 'password-reset' ? 'Отправить ссылку' : 'Получить код' }}</button>
         <div v-if="confirming" class="account-actions"><button type="button" class="btn outline" :disabled="busy || remaining > 0" @click="resend">{{ remaining ? `Повторить через ${remaining} с` : 'Отправить код повторно' }}</button><button type="button" class="text-link" :disabled="busy" @click="restart">Начать заново</button></div>
+        <div v-if="resetting" class="account-actions"><button type="button" class="btn outline" :disabled="busy" @click="restart">Запросить новую ссылку</button></div>
       </form>
       <nav class="account-actions" aria-label="Вход и регистрация"><a v-if="page !== 'login'" :href="authHash('login')">Войти</a><a v-if="page !== 'signup'" :href="authHash('signup')">Зарегистрироваться</a><a v-if="page === 'login'" :href="authHash('password-reset')">Забыли пароль?</a></nav>
     </div>

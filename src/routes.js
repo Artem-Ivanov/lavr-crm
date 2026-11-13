@@ -1,4 +1,4 @@
-const pages = ['home', 'catalog', 'cart', 'crm', 'crm-catalog', 'crm-content', 'crm-feedback', 'admin-users', 'login', 'signup', 'activate', 'password-reset', 'account', 'account-orders', 'account-feedback'];
+const pages = ['home', 'catalog', 'cart', 'checkout', 'crm', 'crm-catalog', 'crm-content', 'crm-feedback', 'admin-users', 'login', 'signup', 'activate', 'password-reset', 'account', 'account-orders', 'account-feedback'];
 const authPages = ['login', 'signup', 'activate', 'password-reset'];
 const fields = { category: 'categoryId', product: 'productId', section: 'section', publication: 'publicationId', order: 'orderId', case: 'caseId', user: 'userId', tab: 'tab', returnTo: 'returnTo' };
 const pageFields = {
@@ -105,6 +105,19 @@ export function safeReturnTo(value) {
   } catch {
     return '';
   }
+}
+
+export function parsePasswordResetLink(hash) {
+  if (typeof hash !== 'string' || hash.replace(/^#/, '').split('?')[0] !== 'password-reset') return null;
+  try {
+    const { params } = queryParts(hash);
+    const flows = params.getAll('flow'), tokens = params.getAll('token');
+    if (!flows.length && !tokens.length) return null;
+    if (flows.length === 1 && tokens.length === 1
+      && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(flows[0])
+      && /^[A-Za-z0-9_-]{43}$/.test(tokens[0])) return { flowId: flows[0], token: tokens[0] };
+  } catch { /* Malformed links restart recovery without retaining credentials. */ }
+  return { invalid: true };
 }
 
 export function targetHash(target) {

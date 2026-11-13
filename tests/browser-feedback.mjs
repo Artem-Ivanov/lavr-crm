@@ -48,7 +48,7 @@ async function open(t, { hash = '', viewport = { width: 1440, height: 1100 }, se
       if (path.endsWith('/notes')) { state.notes.push(body); found.history.push({ id: `note-${state.notes.length}`, createdAt: now, staff: { id: staff.user.id, name: staff.user.name }, action: 'feedback.note_added', ...body }); found.version++; return json(route, found); }
       if (path.endsWith('/order')) { state.conversions.push({ body, key: request.headers()['idempotency-key'] }); return failure(route, 'Адаптер 1С не настроен', 503, 'ERP_NOT_CONFIGURED'); }
     }
-    if (path === '/manager/orders') return json(route, { items: [], total: 0, offset: 0, limit: 24 });
+    if (path === '/customer/orders' || path === '/manager/orders') return json(route, { items: [], total: 0, offset: 0, limit: 24 });
     return failure(route, `Unexpected ${method} ${path}`, 404);
   });
   await page.goto(`${baseUrl}/#${hash}`, { waitUntil: 'networkidle' });
@@ -59,6 +59,7 @@ async function login(page) {
   await form.getByLabel('Email', { exact: true }).fill('manager@example.test');
   await form.getByLabel('Пароль', { exact: true }).fill('test-password');
   await form.getByRole('button', { name: 'Войти', exact: true }).click();
+  await page.waitForURL('**/#account-orders');
 }
 
 test('public form validates every contact, preserves draft and accepts an email-only request', async t => {
@@ -130,9 +131,10 @@ test('a successful submission allows a fresh request immediately and after reope
   assert.equal(await dialog.getByLabel('Email', { exact: true }).inputValue(), '');
 });
 
-test('case deep link survives login, notes and closure remain in the same case', async t => {
+test('case deep link opens after account landing, notes and closure remain in the same case', async t => {
   const { page, state } = await open(t, { hash: `crm-feedback?case=${ids[1]}` });
   await login(page);
+  await page.evaluate(id => { location.hash = `crm-feedback?case=${id}`; }, ids[1]);
   await page.getByTestId('feedback-detail').waitFor();
   assert.match(await page.getByTestId('feedback-detail').textContent(), /№2 от 20-10-2026 12:00/);
   await page.getByRole('button', { name: 'Взять в работу', exact: true }).click();
@@ -263,13 +265,14 @@ test('a version conflict and rejected navigation preserve a manager note', async
   assert.equal(state.notes.length, 1);
 });
 
-test('order deep link opens after login and reload independently of the list page', async t => {
+test('order deep link opens after account landing and reload independently of the list page', async t => {
   const order = { id: 'linked-order-1', number: 'ORDER-100', createdAt: now, totalKopecks: product.priceKopecks, status: 'new', integrationStatus: 'pending_sync', customer: { name: 'Покупатель заказа', phone: '+79991234567', email: '' }, fulfillment: { method: 'pickup', address: '' }, items: [{ productId: product.id, sku: product.sku, brand: product.brand, name: product.name, quantity: 1, unitPriceKopecks: product.priceKopecks }], version: 1, canCancel: true, externalDocumentId: null };
   const { page } = await open(t, { hash: `crm?order=${order.id}`, handle: async ({ route, path, state }) => {
     if (path === `/manager/orders/${order.id}`) { await (state.session ? json(route, order) : failure(route, 'Войдите в кабинет', 401)); return true; }
     return false;
   } });
   await login(page);
+  await page.evaluate(id => { location.hash = `crm?order=${id}`; }, order.id);
   await page.getByRole('dialog').getByRole('heading', { name: 'Заказ № ORDER-100', exact: true }).waitFor();
   await page.reload();
   await page.getByRole('dialog').getByRole('heading', { name: 'Заказ № ORDER-100', exact: true }).waitFor();

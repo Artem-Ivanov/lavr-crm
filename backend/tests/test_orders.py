@@ -126,19 +126,25 @@ def test_order_conflicts_do_not_leave_attempts_or_reserves(client, order_product
     assert order_product.reserved == 0
 
 
-def test_hidden_category_and_stale_catalog_block_orders(client, order_product, db):
+def test_hidden_category_blocks_orders(client, order_product, db):
     category = db.get(Category, 'order-test-category')
     category.is_visible = False
     db.commit()
     response = submit(client, order_product)
     assert response.status_code == 409
     assert response.json()['code'] == 'PRODUCT_UNAVAILABLE'
-    category.is_visible = True
+
+
+def test_stale_catalog_accepts_orders_and_remains_visible_to_staff(client, order_product, db, admin_headers):
     db.get(IntegrationState, 1).catalog_updated_at = utcnow() - timedelta(days=2)
     db.commit()
     response = submit(client, order_product)
-    assert response.status_code == 503
-    assert response.json()['code'] == 'CATALOG_STALE'
+    assert response.status_code == 201, response.text
+    db.refresh(order_product)
+    assert order_product.reserved == 1
+    health = client.get('/api/manager/integration/health', headers=admin_headers)
+    assert health.status_code == 200
+    assert health.json()['catalogStale'] is True
 
 
 def test_last_unit_is_reserved_once_under_real_concurrent_transactions(client, order_product, db):
@@ -332,14 +338,16 @@ def test_legacy_unitless_basket_cannot_reinterpret_new_unit(client, order_produc
     assert order_product.reserved == 0
 
 
-def test_imported_product_observation_cannot_be_refreshed_by_accounting_update(client, order_product, db):
+@pytest.mark.parametrize('observation_age', [2, None])
+def test_imported_product_observation_does_not_block_orders(client, order_product, db, observation_age):
     order_product.accounting_source = 'file:stock'
-    order_product.stock_observed_at = utcnow() - timedelta(days=2)
+    order_product.stock_observed_at = utcnow() - timedelta(days=observation_age) if observation_age else None
     order_product.updated_at = utcnow()
     db.commit()
     response = submit(client, order_product)
-    assert response.status_code == 503, response.text
-    assert response.json()['code'] == 'CATALOG_STALE'
+    assert response.status_code == 201, response.text
+    db.refresh(order_product)
+    assert order_product.reserved == 1
 
 
 def test_legacy_snapshot_cancellation_uses_normal_units(client, order_product, db, manager_headers):

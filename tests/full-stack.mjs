@@ -165,7 +165,8 @@ test('live Docker stack stores catalog/content/images in PostgreSQL and serves V
     await page.locator('.account-form input[name="email"]').fill(login);
     await page.locator('.account-form input[name="password"]').fill(password);
     await page.locator('.account-form button[type="submit"]').click();
-    await page.locator('.header-account .account-role').waitFor();
+    await page.waitForURL('**/#account-orders');
+    await page.getByTestId('account-profile').waitFor();
     await page.goto(baseUrl + '/#crm-content');
     await page.getByTestId('hero-title').waitFor();
     assert.equal(await page.locator('.account-form').count(), 0);
@@ -213,7 +214,10 @@ test('live Docker stack stores catalog/content/images in PostgreSQL and serves V
   const cartBefore = await mobile.evaluate(() => localStorage.getItem('lavr.cart.v1'));
   assert.equal(JSON.parse(cartBefore)[0].quantity, 1);
   await fits(mobile, 'Mobile cart');
-  if (await mobile.locator('.checkout-submit').isEnabled()) {
+  if (await mobile.locator('.checkout-continue').isEnabled()) {
+    await mobile.locator('.checkout-continue').click();
+    await mobile.waitForURL('**/#checkout');
+    await fits(mobile, 'Mobile checkout');
     await mobile.locator('#checkout-form input[name="name"]').fill('QA purchase');
     await mobile.locator('#checkout-form input[name="phone"]').fill('+79991234567');
     const orderResponse = mobile.waitForResponse(response => new URL(response.url()).pathname === '/api/orders' && response.request().method() === 'POST');

@@ -31,7 +31,7 @@ const orderStatuses = ['new', 'confirmed', 'ready', 'completed', 'cancelled'];
 const integrationStatuses = ['not_connected', 'pending_sync', 'exporting', 'exported', 'error', 'cancelled_before_sync'];
 const receipt = value => object(value) && id(value.id) && text(value.number, 1, 80) && timestamp(value.createdAt)
   && integer(value.totalKopecks) && orderStatuses.includes(value.status) && integrationStatuses.includes(value.integrationStatus);
-const customer = (value, allowEmptyName = false) => object(value) && text(value.name, allowEmptyName ? 0 : 1, 100) && text(value.phone, 10, 30) && (value.email === undefined || text(value.email, 0, 254));
+const customer = (value, snapshot = false) => object(value) && text(value.name, snapshot ? 0 : 1, snapshot ? 240 : 100) && text(value.phone, 10, 30) && (value.email === undefined || text(value.email, 0, 254));
 const fulfillment = value => object(value) && ['pickup', 'delivery'].includes(value.method)
   && (value.address === undefined || text(value.address, 0, 500)) && (value.method !== 'delivery' || text(value.address, 1, 500) && value.address.trim().length > 0);
 const orderItem = value => object(value) && id(value.productId) && text(value.sku, 0, 80) && text(value.brand, 0, 80)
@@ -121,8 +121,8 @@ export function createHttpApi({ baseUrl = '/api', fetchImpl = globalThis.fetch }
       ...(body === undefined ? {} : { body: multipart ? body : JSON.stringify(body) }),
     });
     if (identityBound && generation !== sessionGeneration) throw apiError('Аккаунт изменился. Повторите запрос.', undefined, 'SESSION_CHANGED');
-    if (response.status === 401 && generation === sessionGeneration) csrfToken = null;
-    if (response.status === 204 && response.ok && empty) return { data: undefined };
+    if (response.status === 401 && generation === sessionGeneration && path !== '/customer/auth/password-reset/confirm') csrfToken = null;
+    if (response.ok && empty) { checked(response.status, status => status === 204); return { data: undefined }; }
     let data;
     if (/^application\/json(?:\s*;|$)/i.test(response.headers.get('Content-Type') || '')) {
       try { data = await response.json(); } catch { /* An error page must never replace application data. */ }
@@ -323,8 +323,9 @@ export function createHttpApi({ baseUrl = '/api', fetchImpl = globalThis.fetch }
     async requestPasswordReset(input) { return checked((await request('/customer/auth/password-reset', { method: 'POST', body: normalizeAccountInput(input, 'reset') })).data, isAccountFlow); },
     async confirmPasswordReset(input) {
       const body = normalizeAccountInput(input, 'password');
-      ++sessionGeneration; csrfToken = null;
+      const generation = sessionGeneration;
       await request('/customer/auth/password-reset/confirm', { method: 'POST', body, empty: true, identityBound: true });
+      if (generation === sessionGeneration) { ++sessionGeneration; csrfToken = null; }
     },
     async startProfileActivation(input) { return checked((await request('/customer/profile/activation', { method: 'POST', body: normalizeAccountInput(input, 'profile'), protectedMutation: true, identityBound: true })).data, isAccountFlow); },
     async confirmProfileActivation(input) { return loadSession('POST', normalizeAccountInput(input, 'confirm'), '/customer/profile/activation/confirm', true); },

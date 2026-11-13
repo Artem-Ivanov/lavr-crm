@@ -6,6 +6,7 @@ import { isUserSession, isOwnOrder, isOwnFeedback, isAdminUser } from '../src/ac
 const session = { user: { id: 'customer-1', name: '', email: 'buyer@example.org', phone: '+79991234567', emailVerified: true, phoneVerified: false, profileComplete: true }, capabilities: { operate: false, editSite: false, manageUsers: false }, csrfToken: 'a'.repeat(32), expiresAt: '2027-01-01T00:00:00Z' };
 const key = '9a55cbe9-3743-4f32-9c83-4c01955ade11';
 const flow = { flowId: 'opaque-flow', resendAfterSeconds: 60 };
+const resetBody = { flowId: '9a55cbe9-3743-4f32-9c83-4c01955ade11', token: 'a'.repeat(43), newPassword: 'another password', confirmPassword: 'another password' };
 const order = { id: 'order-1', number: 'L-1', createdAt: '2026-10-28T10:00:00Z', status: 'new', totalKopecks: 100, fulfillment: { method: 'pickup', address: '' }, items: [{ productId: 'part', sku: 'P-1', brand: 'A', name: 'Деталь', quantity: 1, unitPriceKopecks: 100 }] };
 const feedback = { id: 'feedback-1', number: 1, createdAt: order.createdAt, type: 'request', message: 'Вопрос', status: 'new', order: null };
 const json = (value, status = 200, headers = {}) => new Response(JSON.stringify(value), { status, headers: { 'Content-Type': 'application/json', ...headers } });
@@ -50,17 +51,70 @@ test('signup activation resend recovery and profile completion follow exact rout
   await api.resendCode({ flowId: flow.flowId });
   await api.activate({ flowId: flow.flowId, code: '123456' });
   await api.requestPasswordReset({ email: 'buyer@example.org' });
-  await api.confirmPasswordReset({ flowId: flow.flowId, code: '123456', newPassword: 'another password' });
+  await api.confirmPasswordReset(resetBody);
   await api.loginUser({ email: 'buyer@example.org', password: ' password1234 ' });
   await api.startProfileActivation({ email: 'buyer@example.org', phone: '+79991234567' });
   await api.confirmProfileActivation({ flowId: flow.flowId, code: '123456' });
   assert.deepEqual(calls.map(call => call.url), ['/api/customer/auth/signup', '/api/customer/auth/resend', '/api/customer/auth/activate', '/api/customer/auth/password-reset', '/api/customer/auth/password-reset/confirm', '/api/customer/session', '/api/customer/profile/activation', '/api/customer/profile/activation/confirm']);
   assert.deepEqual(JSON.parse(calls[0].body), { email: 'buyer@example.org', phone: '+79991234567', password: ' password1234 ' });
+  assert.deepEqual(JSON.parse(calls[4].body), resetBody);
+  assert.equal(calls[4].headers['X-CSRF-Token'], undefined);
   assert.equal(calls[6].headers['X-CSRF-Token'], session.csrfToken);
   assert.equal(calls[7].headers['X-CSRF-Token'], session.csrfToken);
 });
 
-test('own endpoints omit contacts and never accept owner or role input', async () => {
+test('reset links reject invalid tokens, mismatched passwords and legacy codes before requests', async () => {
+  const { api, calls } = setup([]);
+  for (const patch of [{ flowId: 'opaque-flow' }, { token: 'a'.repeat(42) }, { token: 'a'.repeat(44) }, { token: '!'.repeat(43) }, { token: null }, { code: '123456' }, { newPassword: 'too short', confirmPassword: 'too short' }, { newPassword: 'a'.repeat(257), confirmPassword: 'a'.repeat(257) }, { newPassword: 'password\0secret', confirmPassword: 'password\0secret' }, { confirmPassword: 'different password' }, { confirmPassword: 123 }]) {
+    await assert.rejects(api.confirmPasswordReset({ ...resetBody, ...patch }));
+  }
+  await assert.rejects(api.confirmPasswordReset({ flowId: resetBody.flowId, code: '123456', newPassword: resetBody.newPassword }));
+  assert.equal(calls.length, 0);
+});
+
+test('reset links preserve matching password bytes and clear the old session only after success', async () => {
+  const { api, calls } = setup([json(session), new Response(null, { status: 204 })]);
+  await api.getUserSession();
+  const body = { ...resetBody, newPassword: '  password1234  ', confirmPassword: '  password1234  ' };
+  await api.confirmPasswordReset(body);
+  assert.deepEqual(JSON.parse(calls[1].body), body);
+  await assert.rejects(api.createOwnFeedback({ type: 'request', message: 'Вопрос' }, key), error => error.code === 'SESSION_REQUIRED');
+  assert.equal(calls.length, 2);
+});
+
+test('reset confirmation requires its final 204 response before clearing the session', async () => {
+  for (const response of [json(flow, 202), json({ accepted: true })]) {
+    const { api, calls } = setup([json(session), response, json(feedback, 201)]);
+    await api.getUserSession();
+    await assert.rejects(api.confirmPasswordReset(resetBody), error => error.code === 'INVALID_RESPONSE');
+    await api.createOwnFeedback({ type: 'request', message: 'Вопрос' }, key);
+    assert.equal(calls.at(-1).headers['X-CSRF-Token'], session.csrfToken);
+  }
+});
+
+for (const status of [400, 401]) test(`a failed reset link (${status}) keeps the signed-in session usable`, async () => {
+  const { api, calls } = setup([json(session), json({ code: 'INVALID_RESET_LINK', message: 'Ссылка истекла' }, status), json(feedback, 201)]);
+  await api.getUserSession();
+  await assert.rejects(api.confirmPasswordReset(resetBody), error => error.code === 'INVALID_RESET_LINK');
+  await api.createOwnFeedback({ type: 'request', message: 'Вопрос' }, key);
+  assert.equal(calls[2].headers['X-CSRF-Token'], session.csrfToken);
+});
+
+test('a reset response from an older identity cannot clear a newer login', async () => {
+  let release;
+  const pending = new Promise(resolve => { release = resolve; });
+  const calls = [];
+  const api = createHttpApi({ fetchImpl: async (url, options) => { calls.push({ url, ...options }); return url.endsWith('/confirm') ? pending : url.endsWith('/feedback') ? json(feedback, 201) : json(session); } });
+  await api.getUserSession();
+  const reset = api.confirmPasswordReset(resetBody);
+  await api.loginUser({ email: 'next@example.org', password: 'long password' });
+  release(new Response(null, { status: 204 }));
+  await assert.rejects(reset, error => error.code === 'SESSION_CHANGED');
+  await api.createOwnFeedback({ type: 'request', message: 'Вопрос' }, key);
+  assert.equal(calls.at(-1).headers['X-CSRF-Token'], session.csrfToken);
+});
+
+test('own endpoints use profile fallbacks and never accept owner or role input', async () => {
   const { api, calls } = setup([json(session), json(page(order)), json(order), json(order, 201), json(page(feedback)), json(feedback), json(feedback, 201)]);
   await api.getUserSession();
   await api.getOwnOrders(); await api.getOwnOrder(order.id);
@@ -74,6 +128,21 @@ test('own endpoints omit contacts and never accept owner or role input', async (
   await assert.rejects(api.createOwnOrder({ ...body, customer: { email: 'other@example.org' } }, key));
   await assert.rejects(api.createOwnFeedback({ type: 'request', message: 'Вопрос', role: 'admin' }, key));
   assert.equal(calls.length, 7);
+});
+
+test('own checkout sends explicit contacts for an unverified incomplete account with session and CSRF intact', async () => {
+  const incomplete = { ...session, user: { ...session.user, name: 'Имя профиля', phone: null, email: null, emailVerified: false, profileComplete: false } };
+  const { api, calls } = setup([json(incomplete), json(order, 201)]);
+  const before = await api.getUserSession();
+  const body = { fulfillment: order.fulfillment, items: [{ productId: 'part', quantity: 1, expectedUnitPriceKopecks: 100 }], phone: '8 (999) 123-45-67', email: '' };
+  assert.deepEqual(await api.createOwnOrder(body, key), order);
+  assert.equal(calls[1].url, '/api/customer/orders');
+  assert.deepEqual(JSON.parse(calls[1].body), { ...body, phone: '+79991234567' });
+  assert.equal(calls[1].headers['X-CSRF-Token'], incomplete.csrfToken);
+  assert.equal(calls[1].headers['Idempotency-Key'], key);
+  assert.deepEqual(before, incomplete);
+  for (const patch of [{ phone: '' }, { phone: null }, { email: null }, { email: 'bad' }, { customerId: 'other' }]) await assert.rejects(api.createOwnOrder({ ...body, ...patch }, key));
+  assert.equal(calls.length, 2);
 });
 
 test('customer DTOs reject leaked operational fields', async () => {

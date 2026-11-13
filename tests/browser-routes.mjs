@@ -69,7 +69,10 @@ test('category anchors survive fresh tab/reload and product modal follows URL ba
  await category.click(); await page.waitForURL('**/#catalog?category=parts');
  await page.reload(); assert.equal(await page.locator('input[name="category"][value="parts"]').isChecked(), true);
  const productLink = page.locator('.product-name'); assert.equal(await productLink.getAttribute('href'), '#catalog?category=parts&product=part');
+ assert.match(await page.locator('.product-brand').textContent(), /Арт\. P-1/);
  await productLink.click(); await page.locator('dialog[open] #dialog-title').waitFor(); assert.match(await hashOf(page), /product=part/);
+ const article = page.locator('.product-specs > div').filter({ has: page.getByText('Артикул', { exact: true }) });
+ assert.equal(await article.locator('dd').textContent(), 'P-1');
  await page.goBack(); await page.waitForFunction(() => !document.querySelector('dialog[open]'));
  await page.goForward(); await page.locator('dialog[open] #dialog-title').waitFor();
  await page.locator('dialog [data-action="close"]').click(); await page.waitForURL('**/#catalog?category=parts');
@@ -88,20 +91,21 @@ test('staff order list anchors and direct route open before list selection and c
  await page.locator('dialog [data-action="close"]').click(); await page.waitForURL('**/#crm');
  const link=page.locator('.order-number'); assert.equal(await link.getAttribute('href'), '#crm?order=staff-one'); await link.click(); await page.locator('dialog[open]').waitFor();
 });
-test('anonymous private destination survives email login and is never fetched before login', async t => {
+test('anonymous private destination requires login and authentication opens the account landing', async t => {
  const { page, state } = await open(t, { hash: 'account-orders?order=owned' });
  await page.locator('.account-form input[name="email"]').waitFor();
- assert.equal(new URL(page.url()).hash, '#account-orders?order=owned');
+ assert.equal(new URL(page.url()).hash, '#login?returnTo=%23account-orders%3Forder%3Downed');
  assert.equal(state.calls.filter(call => call.path.startsWith('/customer/orders')).length,0);
- await emailLogin(page); await page.waitForURL('**/#account-orders?order=owned'); await page.locator('[data-testid="own-detail"]').waitFor();
+ await emailLogin(page); await page.waitForURL('**/#account-orders'); await page.getByText('№ PRIVATE-partner', { exact: true }).waitFor();
+ assert.equal(state.calls.some(call => call.path === '/customer/orders/owned'), false);
 });
-test('signup activation and reload restart links retain destination, external return falls back safely', async t => {
+test('signup activation and external return both use the common account landing', async t => {
  const destination=encodeURIComponent('#account-orders?order=owned');
  const { page } = await open(t, { hash: `signup?returnTo=${destination}` });
  await page.locator('.account-form input[name="email"]').fill('new@example.test'); await page.locator('.account-form input[name="phone"]').fill('+79991234567'); await page.locator('.account-form input[name="password"]').fill('long password'); await page.getByRole('button', { name: 'Получить код', exact: true }).click();
- await page.waitForURL(`**/#activate?returnTo=${destination}`); await page.getByLabel('Код из письма').fill('123456'); await page.getByRole('button', { name: 'Подтвердить код', exact: true }).click(); await page.waitForURL('**/#account-orders?order=owned');
+ await page.waitForURL(`**/#activate?returnTo=${destination}`); await page.getByLabel('Код из письма').fill('123456'); await page.getByRole('button', { name: 'Подтвердить код', exact: true }).click(); await page.waitForURL('**/#account-orders');
  await page.goto(`${baseUrl}/#activate?returnTo=${destination}`); assert.equal(await page.getByRole('link', { name:'Начать регистрацию' }).getAttribute('href'), `#signup?returnTo=${destination}`);
- await page.goto(`${baseUrl}/#login?returnTo=https%3A%2F%2Fevil.test`); await emailLogin(page); await page.waitForURL('**/#account');
+ await page.goto(`${baseUrl}/#login?returnTo=https%3A%2F%2Fevil.test`); await emailLogin(page); await page.waitForURL('**/#account-orders');
 });
 test('incomplete own profile reads the requested record without redirection and incomplete staff stays staff', async t => {
  const { page, state } = await open(t, { initial: session('partner','legacy',false), hash: 'account-orders?order=owned' });
@@ -159,12 +163,14 @@ test('late public detail cannot replace new selection; direct detail does not wa
  await page.locator('.product-name').click(); await page.locator('dialog[open]').waitFor(); await page.evaluate(() => {location.hash='catalog?product=second';});
  await page.getByRole('heading', {name:'Вторая деталь',exact:true}).waitFor(); release(); await page.waitForTimeout(100); assert.equal(await page.locator('#dialog-title').textContent(),'Вторая деталь');
 });
-test('wrong role never fetches staff order and re-login preserves stale own destination', async t => {
+test('wrong role never fetches staff order and re-login resets an expired own detail to the account', async t => {
  const denied=await open(t,{initial:session('partner'),hash:'crm?order=staff-one'}); await denied.page.getByText('Этот раздел недоступен.',{exact:false}).waitFor(); assert.equal(denied.state.calls.filter(call => call.path.startsWith('/manager/orders')).length,0);
  let expired=true;
  const {page,state}=await open(t,{initial:session('partner'),hash:'account-orders?order=owned',handle:async({path,json})=>{if(path === '/customer/orders/owned' && expired){expired=false;await json({code:'SESSION_REQUIRED',message:'Сессия завершена'},401);return true;}return false;}});
- await page.locator('.account-form input[name="email"]').waitFor(); assert.equal(new URL(page.url()).hash, '#account-orders?order=owned'); await emailLogin(page); await page.waitForURL('**/#account-orders?order=owned'); await page.locator('[data-testid="own-detail"]').waitFor();
- assert.equal(state.calls.filter(call=>call.path==='/customer/orders/owned').length,2);
+ await page.locator('.crm-page').getByRole('link', { name: 'Войти снова', exact: true }).click();
+ await page.locator('.account-form input[name="email"]').waitFor(); assert.equal(new URL(page.url()).hash, '#login?returnTo=%23account-orders%3Forder%3Downed'); await emailLogin(page); await page.waitForURL('**/#account-orders'); await page.getByText('№ PRIVATE-partner', { exact: true }).waitFor();
+ assert.equal(state.calls.filter(call=>call.path==='/customer/orders/owned').length,1);
+ assert.equal(await page.getByTestId('own-detail').count(), 0);
 });
 
 test('native modified clicks open public menu, product and staff order in new tabs without navigating original', async t => {

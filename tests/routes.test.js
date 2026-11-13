@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { parseRoute, routeHash, safeReturnTo, targetHash } from '../src/routes.js';
+import { parseRoute, parsePasswordResetLink, routeHash, safeReturnTo, targetHash } from '../src/routes.js';
 
 const fixture = JSON.parse(readFileSync(new URL('./fixtures/navigation-v1.json', import.meta.url), 'utf8'));
 const empty = (page = 'home', valid = true) => ({
@@ -9,6 +9,32 @@ const empty = (page = 'home', valid = true) => ({
   userId: '', tab: 'site', returnTo: '', valid,
 });
 const fields = { case: 'caseId', order: 'orderId', category: 'categoryId', product: 'productId', publication: 'publicationId', user: 'userId' };
+
+test('checkout has its own canonical route without exposing contact or selection data', () => {
+  assert.deepEqual(parseRoute('#checkout'), empty('checkout'));
+  assert.equal(routeHash(empty('checkout')), '#checkout');
+  assert.equal(safeReturnTo('#checkout'), '#checkout');
+  assert.equal(routeHash(parseRoute('#checkout?phone=secret&email=secret&items=part')), '#checkout');
+});
+
+test('password reset credentials are parsed separately and never serialized as navigation', () => {
+  const flowId = '9a55cbe9-3743-4f32-9c83-4c01955ade11', token = 'A'.repeat(43);
+  const link = `#password-reset?flow=${flowId}&token=${token}`;
+  assert.deepEqual(parsePasswordResetLink(link), { flowId, token });
+  assert.deepEqual(parsePasswordResetLink(link.replace(token, `%41${'A'.repeat(42)}`)), { flowId, token });
+  assert.deepEqual(parseRoute(link), empty('password-reset'));
+  assert.equal(routeHash(parseRoute(link)), '#password-reset');
+  assert.equal(safeReturnTo(link), '');
+  for (const hash of ['', '#home', '#login?token=secret', '#password-reset', '#password-reset?returnTo=%23account']) assert.equal(parsePasswordResetLink(hash), null);
+  for (const query of [
+    `flow=${flowId}`, `token=${token}`, `flow=${flowId}&token=`, `flow=wrong&token=${token}`,
+    `flow=${flowId}&token=${'A'.repeat(42)}`, `flow=${flowId}&token=${'A'.repeat(44)}`,
+    `flow=${flowId}&flow=${flowId}&token=${token}`, `flow=${flowId}&token=${token}&token=${token}`,
+    `flow=${flowId}&token=%FF`, `flow=${flowId}&token=%`, `flow=${flowId}&token=${'A'.repeat(42)}%0a`,
+    `flow=${flowId}&token=${token}%0a`, `flow=${flowId}%0a&token=${token}`,
+    `flow=${flowId}&token=${'A'.repeat(42)}+`, `flow=${flowId}&token=${'A'.repeat(42)}%252d`,
+  ]) assert.deepEqual(parsePasswordResetLink(`#password-reset?${query}`), { invalid: true }, query);
+});
 
 for (const { page, query, hash } of fixture.valid) {
   test(`shared canonical destination ${hash}`, () => {

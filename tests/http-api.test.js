@@ -39,6 +39,15 @@ function setup(responses, options = {}) {
   return { api, calls };
 }
 
+test('manager order snapshots keep full profile names while guest names stay bounded', async () => {
+  const snapshot = { ...order, customer: { ...order.customer, name: 'Ю'.repeat(240) } };
+  const { api, calls } = setup([json(page([snapshot])), json(snapshot)]);
+  assert.deepEqual((await api.getOrders()).items, [snapshot]);
+  assert.deepEqual(await api.getOrder(snapshot.id), snapshot);
+  await assert.rejects(api.createOrder({ customer: snapshot.customer, fulfillment: snapshot.fulfillment, items: [{ productId: 'oil', quantity: 1, expectedUnitPriceKopecks: product.priceKopecks }] }, '4ae0d71f-c330-421c-b87e-6ce552158069'));
+  assert.equal(calls.length, 2);
+});
+
 test('API uses only a same-origin path and declares server-owned product creation', () => {
   const { api } = setup([]);
   assert.equal(api.mode, 'api');

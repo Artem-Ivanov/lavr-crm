@@ -38,6 +38,14 @@ test('feedback list and detail validate complete cases and ETags', async () => {
   assert.equal(calls[1].url, `/api/manager/feedback/${key}`);
 });
 
+test('manager list and detail accept account feedback without profile contacts', async () => {
+  const contactless = { ...feedback, name: '', email: '', type: 'request', message: 'Нужен фильтр' };
+  const page = { items: [feedback, contactless], total: 2, offset: 0, limit: 24 };
+  const { api } = setup([json(page), json(contactless, 200, { ETag: '"1"' })]);
+  assert.deepEqual(await api.getFeedback(), page);
+  assert.deepEqual(await api.getFeedbackDetail(key), contactless);
+});
+
 test('manager list and detail accept a server case at the Unicode message limit', async () => {
   const serverCase = { ...feedback, type: 'request', message: '😀'.repeat(2000) };
   const page = { items: [serverCase], total: 1, offset: 0, limit: 24 };

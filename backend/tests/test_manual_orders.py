@@ -82,30 +82,42 @@ def test_manual_last_unit_is_reserved_once_by_concurrent_transactions(client, ma
 
 @pytest.mark.parametrize(('guard', 'code'), [
     ('price', 'PRICE_CHANGED'), ('unit', 'UNIT_CHANGED'), ('hidden', 'PRODUCT_UNAVAILABLE'),
-    ('catalog_stale', 'CATALOG_STALE'), ('stock_stale', 'CATALOG_STALE'), ('stock', 'OUT_OF_STOCK'),
+    ('stock', 'OUT_OF_STOCK'),
 ])
-def test_manual_acceptance_keeps_catalog_guards(client, manual_product, db, guard, code):
+def test_stale_manual_acceptance_keeps_catalog_guards(client, manual_product, db, guard, code):
     body = order_body(manual_product)
+    db.get(IntegrationState, 1).catalog_updated_at = utcnow() - timedelta(days=2)
+    manual_product.accounting_source = 'file:stock'
+    manual_product.stock_observed_at = utcnow() - timedelta(days=2)
     if guard == 'price':
         body['items'][0]['expectedUnitPriceKopecks'] = 1
     elif guard == 'unit':
         body['items'][0]['expectedUnit'] = 'кг'
     elif guard == 'hidden':
         db.get(Category, 'order-test-category').is_visible = False
-    elif guard == 'catalog_stale':
-        db.get(IntegrationState, 1).catalog_updated_at = utcnow() - timedelta(days=2)
-    elif guard == 'stock_stale':
-        manual_product.accounting_source = 'file:stock'
-        manual_product.stock_observed_at = utcnow() - timedelta(days=2)
     else:
         manual_product.stock = 0
     db.commit()
     response = submit(client, manual_product, body=body)
-    assert response.status_code in (409, 503), response.text
+    assert response.status_code == 409, response.text
     assert response.json()['code'] == code
     db.refresh(manual_product)
     assert manual_product.reserved == 0
     assert db.scalar(select(func.count()).select_from(Outbox)) == 0
+
+
+def test_stale_manual_order_reserves_stock_and_queues_notification(client, manual_product, db):
+    db.get(IntegrationState, 1).catalog_updated_at = utcnow() - timedelta(days=2)
+    manual_product.accounting_source = 'file:stock'
+    manual_product.stock_observed_at = utcnow() - timedelta(days=2)
+    db.commit()
+    response = submit(client, manual_product)
+    assert response.status_code == 201, response.text
+    assert response.json()['integrationStatus'] == 'not_connected'
+    db.refresh(manual_product)
+    assert manual_product.reserved == 1
+    event = db.scalar(select(Outbox).where(Outbox.order_id == response.json()['id']))
+    assert event.event_type == 'order_telegram' and event.state == 'queued'
 
 
 def test_manual_manager_progression_consumes_stock_once_with_audit_and_version(client, manual_product, manager_headers, db, monkeypatch):

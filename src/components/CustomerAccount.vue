@@ -28,9 +28,7 @@ const url = id => routeHash({ page: isOrders.value ? 'account-orders' : 'account
 onBeforeUnmount(() => { active = false; request++; items.value = []; selected.value = null; });
 </script>
 <template>
-  <section :class="embedded ? 'account-panel' : 'container account-section'"><h1 v-if="!embedded">{{ page === 'account-orders' ? 'Мои заказы' : page === 'account-feedback' ? 'Мои обращения' : 'Личный кабинет' }}</h1>
-    <nav class="crm-tabs" aria-label="Личный кабинет"><a href="#account-orders" :class="{ selected: isOrders }" :aria-current="isOrders ? 'page' : undefined">Мои заказы</a><a href="#account-feedback" :class="{ selected: !isOrders }" :aria-current="!isOrders ? 'page' : undefined">Мои обращения</a></nav>
-    <h2 v-if="page === 'account'">Мои заказы</h2>
+  <section :class="embedded ? 'account-panel' : 'container account-section'"><h1 v-if="!embedded">{{ isOrders ? 'Мои заказы' : 'Мои обращения' }}</h1>
     <button v-if="page === 'account-feedback' && !recordId" type="button" class="btn red" @click="emit('feedback', 'request', $event)">Новое обращение</button>
     <a v-if="recordId" :href="`#${page}`" class="text-link">← К списку</a>
     <p v-if="busy" class="api-feedback" role="status">Загружаем ваши данные…</p>

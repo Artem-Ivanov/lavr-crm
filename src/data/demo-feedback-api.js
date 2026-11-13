@@ -47,6 +47,20 @@ export function createDemoFeedbackApi({ getSession, getCustomerSession, createOr
     cases.set(feedback.id, feedback);
     return project(feedback, user);
   }
+  function createFeedback(body) {
+    const id = crypto.randomUUID();
+    const createdAt = new Date().toISOString();
+    if (!Number.isSafeInteger(nextNumber)) throw error('Номера обращений закончились.', 503, 'FEEDBACK_NUMBER_EXHAUSTED');
+    const number = nextNumber++;
+    const receipt = { id, number, createdAt, state: 'accepted', demo: true };
+    const feedback = {
+      ...body, id, number, createdAt, updatedAt: createdAt, status: 'new', assignedTo: null, version: 1,
+      resolution: '', order: null, history: [{ id: crypto.randomUUID(), createdAt, staff: null, action: 'feedback.created', text: '', contactMethod: '' }],
+      notification: { state: 'not_configured', code: null }, demo: true,
+    };
+    cases.set(id, feedback);
+    return receipt;
+  }
 
   const api = {
     async submitFeedback(input, key) {
@@ -58,17 +72,7 @@ export function createDemoFeedbackApi({ getSession, getCustomerSession, createOr
         if (previous.signature !== signature) throw error('Ключ повторного запроса уже использован для другого обращения.', 409, 'IDEMPOTENCY_CONFLICT');
         return Object.freeze(clone(previous.receipt));
       }
-      const id = crypto.randomUUID();
-      const createdAt = new Date().toISOString();
-      if (!Number.isSafeInteger(nextNumber)) throw error('Номера обращений закончились.', 503, 'FEEDBACK_NUMBER_EXHAUSTED');
-      const number = nextNumber++;
-      const receipt = { id, number, createdAt, state: 'accepted', demo: true };
-      const feedback = {
-        ...body, id, number, createdAt, updatedAt: createdAt, status: 'new', assignedTo: null, version: 1,
-        resolution: '', order: null, history: [{ id: crypto.randomUUID(), createdAt, staff: null, action: 'feedback.created', text: '', contactMethod: '' }],
-        notification: { state: 'not_configured', code: null }, demo: true,
-      };
-      cases.set(id, feedback);
+      const receipt = createFeedback(body);
       submissions.set(key, { signature, receipt });
       return Object.freeze(clone(receipt));
     },
@@ -142,10 +146,11 @@ export function createDemoFeedbackApi({ getSession, getCustomerSession, createOr
   return { ...api,
     async createOwnFeedback(input, key) {
       const body = normalizeOwnFeedback(input); const { user } = await getCustomerSession();
+      if (!validKey(key)) throw new Error('Некорректный ключ повторной отправки обращения.');
       const signature = JSON.stringify({ actor: user.id, body });
       const previous = ownAttempts.get(key);
       if (previous) { if (previous.signature !== signature) throw error('Ключ другой попытки.', 409, 'IDEMPOTENCY_CONFLICT'); return own(get(previous.id)); }
-      const receipt = await api.submitFeedback({ ...body, name: user.name, email: user.email, phone: user.phone, messenger: { service: '', address: '' } }, key);
+      const receipt = createFeedback({ ...body, name: user.name ?? '', email: user.email ?? '', phone: user.phone ?? '', messenger: { service: '', address: '' } });
       owners.set(receipt.id, user.id); ownAttempts.set(key, { signature, id: receipt.id }); return own(get(receipt.id));
     },
     async getOwnFeedback({ offset = 0, limit = 24 } = {}) { const { user } = await getCustomerSession(); const items = [...cases.values()].filter(item => owners.get(item.id) === user.id); return { items: items.slice(offset, offset + limit).map(own), total: items.length, offset, limit }; },

@@ -18,17 +18,17 @@ defineEmits(['open', 'add']);
 <template>
   <article class="product-card">
     <div class="product-image">
-      <a :href="routeHash({ page: 'catalog', categoryId, productId: product.id })" class="product-image-button" data-action="product" :data-id="product.id" :data-focus-key="`image-${product.id}`" :aria-label="`Подробнее: ${product.websiteTitle || product.name}`" @click="$emit('open', product.id, $event)">
+      <div class="product-image-button">
         <img v-if="product.image" :src="product.image" :alt="`Иллюстрация категории ${category}`" loading="lazy">
         <span v-else class="product-placeholder"><AppIcon name="box" /><small>Фото пока нет</small></span>
-      </a>
+      </div>
       <span v-if="demo && index < 2" class="product-tag">ВЫБОР ДЛЯ ТО</span>
     </div>
     <div class="product-info">
       <div class="product-brand">{{ product.brand }}<span v-if="product.sku">Арт. {{ product.sku }}</span></div>
       <a :href="routeHash({ page: 'catalog', categoryId, productId: product.id })" class="product-name" data-action="product" :data-id="product.id" :data-focus-key="`view-${product.id}`" @click="$emit('open', product.id, $event)">{{ product.websiteTitle || product.name }}</a>
       <p class="product-stock" :class="{ unavailable: !product.stock }"><span></span>{{ product.stock ? `В наличии · ${formatQuantity(product.stock, productUnit(product))}` : 'Нет в наличии' }}</p>
-      <small v-if="product.stock" class="product-delivery">{{ product.deliveryDays ? `${demo ? 'Срок в демо' : 'Ориентировочно'} · ${product.deliveryDays} дн.` : 'Срок получения уточняется' }}</small>
+      <small v-if="!product.stock || product.deliveryDays" class="product-delivery">{{ product.stock ? `${demo ? 'Срок в демо' : 'Ориентировочно'} · ${product.deliveryDays} дн.` : 'Срок получения уточняется' }}</small>
       <div class="product-bottom">
         <strong>{{ price }}<small class="unit-price">за {{ productUnit(product) }}</small></strong>
         <button type="button" class="btn add-button" :class="{ added: quantity }" data-action="add" :data-id="product.id" :data-focus-key="`add-${product.id}`" :disabled="!canAddQuantity(product, quantity)" @click="$emit('add', product.id)">

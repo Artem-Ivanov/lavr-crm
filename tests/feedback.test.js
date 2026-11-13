@@ -46,6 +46,18 @@ test('feedback rejects missing contacts and validates every supplied contact and
   ]) assert.throws(() => normalizeFeedbackInput(body), Error);
 });
 
+test('manager cases accept contactless account feedback and keep validating every supplied field', () => {
+  const contactless = { ...feedback, ...empty };
+  assert.equal(isFeedbackCase(contactless), true);
+  assert.equal(isFeedbackCase({ ...contactless, type: 'request', message: 'Нужен фильтр' }), true);
+  assert.throws(() => normalizeFeedbackInput(empty), /способ связи/);
+  for (const patch of [
+    { type: 'unknown' }, { name: 12 }, { name: 'a'.repeat(101) }, { name: 'Иван\u0085' },
+    { phone: 'wrong' }, { email: 'bad' }, { messenger: null }, { messenger: { service: 'Telegram', address: '' } },
+    { message: 12 }, { message: 'a'.repeat(2001) }, { message: 'x\tfoo' }, { type: 'request', message: '' },
+  ]) assert.equal(isFeedbackCase({ ...contactless, ...patch }), false, JSON.stringify(patch));
+});
+
 test('public receipt never admits manager fields and manager case validates nested trust boundaries', () => {
   assert.equal(isFeedbackReceipt(receipt), true);
   assert.equal(isFeedbackReceipt({ ...receipt, demo: true }), true);
